@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RenKill v1.4.3
+RenKill v1.4.4
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Detects, kills, and removes RenEngine Loader /
 HijackLoader infostealer artifacts from Windows systems.
@@ -27,6 +27,7 @@ import ctypes
 import hashlib
 import json
 import re
+import base64
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, filedialog
 
@@ -48,7 +49,7 @@ except ImportError:
 #  IOC DATABASE
 # ═══════════════════════════════════════════════════════════════════════════════
 
-VERSION = "1.4.3"
+VERSION = "1.4.4"
 TOOL_NAME = "RenKill"
 
 MALICIOUS_FILENAMES = {
@@ -112,6 +113,13 @@ PROCESS_IOC_MARKERS = {
     "dksyvguj.exe",
     "dbghelp.dll",
     "pla.dll",
+    "instsatp_",
+    "t11_asm",
+    "amatera",
+    "amaterastealer",
+    "antivmgpu",
+    "antivmhypervisornames",
+    "antivmmacs",
     "rshell",
     "esal",
     "modtask",
@@ -213,6 +221,14 @@ SOURCE_LURE_KEYWORDS = {
     "mega",
     "go.zovo",
     "coreldraw",
+    "artistapirata",
+    "awdescargas",
+    "filedownloads",
+    "gamesleech",
+    "parapcc",
+    "saglamindir",
+    "zdescargas",
+    "hentakugames",
 }
 
 SOURCE_LURE_FILENAME_STRONG = {
@@ -242,6 +258,23 @@ SOURCE_LURE_FILENAME_STRONG = {
     "go.zovo",
     "coreldraw",
 }
+
+GENERIC_LAUNCHER_KEYWORDS = (
+    "activator",
+    "crack",
+    "fix",
+    "install",
+    "installer",
+    "launcher",
+    "loader",
+    "patch",
+    "repair",
+    "setup",
+    "unlock",
+    "update",
+)
+
+RENPY_LAUNCHER_SCRIPT_EXTENSIONS = {".py", ".pyc", ".pyo"}
 
 SOURCE_LURE_EXTENSIONS = {
     ".zip", ".rar", ".7z", ".iso", ".lnk", ".url", ".html", ".htm",
@@ -445,7 +478,11 @@ NON_REMOVABLE_DIR_BASENAMES = {
 }
 
 STRONG_CAMPAIGN_MARKERS = {
+    "amatera",
     "archive.rpa",
+    "antivmgpu",
+    "antivmhypervisornames",
+    "antivmmacs",
     "broker_crypt_v4_i386",
     "cc32290mt.dll",
     "chime.exe",
@@ -461,7 +498,9 @@ STRONG_CAMPAIGN_MARKERS = {
     "renloader",
     "renpy",
     "script.rpyc",
+    "instsatp_",
     "taig.gr",
+    "t11_asm",
     "vsdebugscriptagent170",
     "w8cpbgqi.exe",
     "zoneind.exe",
@@ -475,6 +514,8 @@ MANUAL_REVIEW_CATEGORIES = {
     "Hosts Tampering Review",
     "Proxy Configuration Review",
     "Source Lure Artifact",
+    "Suspicious Loader Stage Directory",
+    "Suspicious RenPy Loader Bundle",
     "WinHTTP Proxy Review",
 }
 
@@ -549,6 +590,7 @@ PERSISTENCE_THREAT_CATEGORIES = {
     "AppInit Persistence",
     "Disabled Startup Artifact",
     "HijackLoader Stage Directory",
+    "Suspicious Loader Stage Directory",
     "IFEO Persistence",
     "Injected/Sideloaded DLL",
     "Loader Container DLL",
@@ -559,6 +601,81 @@ PERSISTENCE_THREAT_CATEGORIES = {
     "Registry Persistence",
     "Startup Persistence Artifact",
     "WMI Persistence",
+}
+
+RENLOADER_CORRELATION_CATEGORIES = {
+    "Active C2 Connection",
+    "AppInit Persistence",
+    "Campaign IOC Process",
+    "Defender Exclusion",
+    "Execution Trace Anomaly",
+    "Exact IOC Hash",
+    "HijackLoader Stage Artifact",
+    "HijackLoader Stage Directory",
+    "IFEO Persistence",
+    "Injected/Sideloaded DLL",
+    "Loader Container DLL",
+    "Malicious Archive/Script",
+    "Malicious File",
+    "Malicious Process",
+    "Malicious Scheduled Task",
+    "Malicious Service",
+    "Persistence Artifact",
+    "Persistence Process",
+    "Persistence Staging Directory",
+    "Registry Persistence",
+    "RenEngine Bundle",
+    "Stealer Script Host",
+    "Suspicious Loader Stage Directory",
+    "Suspicious RenPy Loader Bundle",
+    "WMI Persistence",
+}
+
+PROCESS_REMEDIATION_CATEGORIES = {
+    "Active C2 Connection",
+    "Campaign IOC Process",
+    "Execution Trace Anomaly",
+    "Injected/Sideloaded DLL",
+    "Malicious Child Process",
+    "Malicious Process",
+    "Malicious Service",
+    "Paranoid Masquerade Process",
+    "Paranoid Networked Process",
+    "Paranoid Script Host",
+    "Persistence Process",
+    "Process in Temp",
+    "Stealer Script Host",
+    "Suspicious Process",
+    "Suspicious Userland Process",
+    "WMI Persistence",
+}
+
+FILE_REMEDIATION_CATEGORIES = {
+    "AppInit Persistence",
+    "Defender Exclusion",
+    "Disabled Startup Artifact",
+    "Dropped Executable",
+    "Exact IOC Hash",
+    "Firewall Rule Review",
+    "HijackLoader Stage Artifact",
+    "HijackLoader Stage Directory",
+    "Hijacked Module Init",
+    "IFEO Persistence",
+    "Loader Container DLL",
+    "Malicious Archive/Script",
+    "Malicious File",
+    "Malicious Shortcut",
+    "Payload Key File",
+    "Persistence Artifact",
+    "Persistence Staging Directory",
+    "Proxy Configuration Review",
+    "RenEngine Bundle",
+    "Startup Persistence Artifact",
+}
+
+CORRELATED_FILE_REMEDIATION_CATEGORIES = {
+    "Suspicious Loader Stage Directory",
+    "Suspicious RenPy Loader Bundle",
 }
 
 SUSPICIOUS_REG_PATTERNS = [
@@ -597,6 +714,32 @@ def _build_scan_roots():
 
 
 SCAN_ROOTS = _build_scan_roots()
+
+RECOVERY_DIRNAME = "Recovery"
+RECOVERY_SESSIONS_DIR = "sessions"
+RECOVERY_LATEST_FILE = "latest_session.txt"
+RESTORE_CONFLICT_SUFFIX = ".renkill_restore"
+
+if WINREG_OK:
+    HIVE_NAME_TO_CONST = {
+        "HKCU": winreg.HKEY_CURRENT_USER,
+        "HKLM": winreg.HKEY_LOCAL_MACHINE,
+    }
+    HIVE_CONST_TO_NAME = {value: key for key, value in HIVE_NAME_TO_CONST.items()}
+    REG_TYPE_NAMES = {
+        winreg.REG_BINARY: "REG_BINARY",
+        winreg.REG_DWORD: "REG_DWORD",
+        winreg.REG_EXPAND_SZ: "REG_EXPAND_SZ",
+        winreg.REG_MULTI_SZ: "REG_MULTI_SZ",
+        winreg.REG_QWORD: "REG_QWORD",
+        winreg.REG_SZ: "REG_SZ",
+    }
+    REG_NAME_TO_TYPE = {value: key for key, value in REG_TYPE_NAMES.items()}
+else:
+    HIVE_NAME_TO_CONST = {}
+    HIVE_CONST_TO_NAME = {}
+    REG_TYPE_NAMES = {}
+    REG_NAME_TO_TYPE = {}
 
 
 def sanitize_for_display(text):
@@ -678,6 +821,7 @@ class ScanEngine:
         self._file_meta_cache = {}
         self._module_scan_pid_targets = set()
         self._shortcut_scan_rows = None
+        self._reset_recovery_state()
 
     def _add(self, severity, category, description, path=None, action=None):
         t = Threat(severity, category, description, path, action)
@@ -691,9 +835,561 @@ class ScanEngine:
             self.exposure_notes.append(note)
             self.log(description if not path else f"{description}: {path}", "WARN")
 
+    def _recovery_root(self):
+        candidates = [
+            os.path.join(os.environ.get("PROGRAMDATA", ""), TOOL_NAME, RECOVERY_DIRNAME),
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), TOOL_NAME, RECOVERY_DIRNAME),
+            os.path.join(os.getcwd(), f"{TOOL_NAME}_{RECOVERY_DIRNAME}"),
+        ]
+        for candidate in candidates:
+            if not candidate:
+                continue
+            try:
+                os.makedirs(os.path.join(candidate, RECOVERY_SESSIONS_DIR), exist_ok=True)
+                return candidate
+            except Exception:
+                continue
+        return ""
+
+    def _latest_recovery_pointer(self):
+        root = self._recovery_root()
+        return os.path.join(root, RECOVERY_LATEST_FILE) if root else ""
+
+    def _session_dir(self, session_id):
+        root = self._recovery_root()
+        if not root or not session_id:
+            return ""
+        return os.path.join(root, RECOVERY_SESSIONS_DIR, session_id)
+
+    def _write_manifest_dict(self, manifest):
+        session_id = str(manifest.get("session_id") or "")
+        session_dir = self._session_dir(session_id)
+        if not session_dir:
+            return False
+        try:
+            os.makedirs(session_dir, exist_ok=True)
+            manifest_path = os.path.join(session_dir, "manifest.json")
+            with open(manifest_path, "w", encoding="utf-8") as handle:
+                json.dump(manifest, handle, indent=2)
+            return True
+        except Exception:
+            return False
+
+    def _persist_recovery_session(self):
+        if not self._recovery_session:
+            return False
+        if not self._write_manifest_dict(self._recovery_session):
+            return False
+        pointer = self._latest_recovery_pointer()
+        if pointer:
+            try:
+                with open(pointer, "w", encoding="utf-8") as handle:
+                    handle.write(self._recovery_session["session_id"])
+            except Exception:
+                pass
+        self._recovery_manifest_path = os.path.join(self._session_dir(self._recovery_session["session_id"]), "manifest.json")
+        return True
+
+    def _begin_recovery_session(self):
+        if self._recovery_session:
+            return True
+        root = self._recovery_root()
+        if not root:
+            if not self._recovery_warning_emitted:
+                self.log("Recovery snapshot could not be created. Revert will be unavailable for this cleanup.", "WARN")
+                self._recovery_warning_emitted = True
+            return False
+
+        session_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_dir = self._session_dir(session_id)
+        try:
+            os.makedirs(os.path.join(session_dir, "paths"), exist_ok=True)
+            os.makedirs(os.path.join(session_dir, "tasks"), exist_ok=True)
+        except Exception:
+            if not self._recovery_warning_emitted:
+                self.log("Recovery snapshot could not be created. Revert will be unavailable for this cleanup.", "WARN")
+                self._recovery_warning_emitted = True
+            return False
+
+        self._recovery_session = {
+            "session_id": session_id,
+            "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "tool_version": VERSION,
+            "entries": [],
+            "notes": [],
+        }
+        self._persist_recovery_session()
+        self.log("Recovery snapshot started for this cleanup session.", "INFO")
+        return True
+
+    def _record_recovery_entry(self, entry):
+        if not self._begin_recovery_session():
+            return False
+        payload = dict(entry)
+        payload.setdefault("recorded_at", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        self._recovery_session["entries"].append(payload)
+        self._persist_recovery_session()
+        return True
+
+    def _record_recovery_note(self, note):
+        if not self._begin_recovery_session():
+            return False
+        text = str(note or "").strip()
+        if not text:
+            return False
+        self._recovery_session["notes"].append(text)
+        self._persist_recovery_session()
+        return True
+
+    def latest_recovery_manifest(self):
+        pointer = self._latest_recovery_pointer()
+        if not pointer or not os.path.isfile(pointer):
+            return None
+        try:
+            with open(pointer, "r", encoding="utf-8") as handle:
+                session_id = handle.read().strip()
+        except Exception:
+            return None
+        if not session_id:
+            return None
+        manifest_path = os.path.join(self._session_dir(session_id), "manifest.json")
+        if not os.path.isfile(manifest_path):
+            return None
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as handle:
+                manifest = json.load(handle)
+        except Exception:
+            return None
+        if manifest.get("reverted_at"):
+            return None
+        if not manifest.get("entries"):
+            return None
+        return manifest
+
+    def latest_recovery_summary(self):
+        manifest = self.latest_recovery_manifest()
+        if not manifest:
+            return {
+                "available": False,
+                "created_at": "",
+                "session_id": "",
+                "reversible_count": 0,
+                "note_count": 0,
+            }
+        return {
+            "available": True,
+            "created_at": str(manifest.get("created_at") or ""),
+            "session_id": str(manifest.get("session_id") or ""),
+            "reversible_count": len(manifest.get("entries") or []),
+            "note_count": len(manifest.get("notes") or []),
+        }
+
+    @staticmethod
+    def _safe_backup_name(path):
+        base = os.path.basename(os.path.normpath(path or "")) or "item"
+        return re.sub(r"[^A-Za-z0-9._-]+", "_", base)
+
+    def _move_path_to_recovery(self, path):
+        if not os.path.exists(path):
+            return None
+        if not self._begin_recovery_session():
+            return None
+        session_dir = self._session_dir(self._recovery_session["session_id"])
+        counter = len(self._recovery_session["entries"]) + 1
+        backup_name = f"{counter:04d}_{self._safe_backup_name(path)}"
+        backup_path = os.path.join(session_dir, "paths", backup_name)
+        try:
+            shutil.move(path, backup_path)
+        except PermissionError:
+            try:
+                subprocess.run(["attrib", "-r", "-s", "-h", path], capture_output=True, creationflags=0x08000000)
+                shutil.move(path, backup_path)
+            except Exception:
+                return None
+        except Exception:
+            return None
+
+        entry = {
+            "kind": "path_move",
+            "original_path": path,
+            "backup_path": backup_path,
+            "is_dir": bool(os.path.isdir(backup_path)),
+        }
+        self._record_recovery_entry(entry)
+        return backup_path
+
+    @staticmethod
+    def _serialize_reg_data(value, reg_type):
+        if WINREG_OK and reg_type == winreg.REG_BINARY:
+            return {
+                "encoding": "base64",
+                "value": base64.b64encode(bytes(value)).decode("ascii"),
+            }
+        if WINREG_OK and reg_type == winreg.REG_MULTI_SZ:
+            return {
+                "encoding": "list",
+                "value": list(value),
+            }
+        if WINREG_OK and reg_type in (winreg.REG_DWORD, winreg.REG_QWORD):
+            return {
+                "encoding": "int",
+                "value": int(value),
+            }
+        return {
+            "encoding": "str",
+            "value": str(value),
+        }
+
+    @staticmethod
+    def _deserialize_reg_data(payload):
+        encoding = str((payload or {}).get("encoding") or "")
+        value = (payload or {}).get("value")
+        if encoding == "base64":
+            try:
+                return base64.b64decode(value or "")
+            except Exception:
+                return b""
+        if encoding == "list":
+            return list(value or [])
+        if encoding == "int":
+            try:
+                return int(value)
+            except Exception:
+                return 0
+        return str(value or "")
+
+    def _capture_reg_value_entry(self, hive, subkey, name):
+        if not WINREG_OK:
+            return None
+        hive_name = HIVE_CONST_TO_NAME.get(hive, "")
+        if not hive_name:
+            return None
+        try:
+            key = winreg.OpenKey(hive, subkey)
+            value, reg_type = winreg.QueryValueEx(key, name)
+            winreg.CloseKey(key)
+        except Exception:
+            return None
+        return {
+            "kind": "reg_delete",
+            "hive": hive_name,
+            "subkey": subkey,
+            "name": name,
+            "type_name": REG_TYPE_NAMES.get(reg_type, "REG_SZ"),
+            "data": self._serialize_reg_data(value, reg_type),
+        }
+
+    def _capture_reg_state(self, hive, subkey, name):
+        if not WINREG_OK:
+            return None
+        hive_name = HIVE_CONST_TO_NAME.get(hive, "")
+        if not hive_name:
+            return None
+        try:
+            key = winreg.OpenKey(hive, subkey)
+        except (FileNotFoundError, PermissionError):
+            return {
+                "hive": hive_name,
+                "subkey": subkey,
+                "name": name,
+                "exists": False,
+            }
+        try:
+            value, reg_type = winreg.QueryValueEx(key, name)
+            snapshot = {
+                "hive": hive_name,
+                "subkey": subkey,
+                "name": name,
+                "exists": True,
+                "type_name": REG_TYPE_NAMES.get(reg_type, "REG_SZ"),
+                "data": self._serialize_reg_data(value, reg_type),
+            }
+        except OSError:
+            snapshot = {
+                "hive": hive_name,
+                "subkey": subkey,
+                "name": name,
+                "exists": False,
+            }
+        try:
+            winreg.CloseKey(key)
+        except Exception:
+            pass
+        return snapshot
+
+    def _restore_reg_state(self, snapshot):
+        if not WINREG_OK or not snapshot:
+            return False
+        hive = HIVE_NAME_TO_CONST.get(str(snapshot.get("hive") or ""))
+        subkey = str(snapshot.get("subkey") or "")
+        name = str(snapshot.get("name") or "")
+        if hive is None or not subkey or not name:
+            return False
+        try:
+            key = winreg.CreateKeyEx(hive, subkey, 0, winreg.KEY_SET_VALUE)
+            if snapshot.get("exists"):
+                reg_type = REG_NAME_TO_TYPE.get(str(snapshot.get("type_name") or ""), winreg.REG_SZ)
+                data = self._deserialize_reg_data(snapshot.get("data"))
+                winreg.SetValueEx(key, name, 0, reg_type, data)
+            else:
+                try:
+                    winreg.DeleteValue(key, name)
+                except OSError:
+                    pass
+            winreg.CloseKey(key)
+            return True
+        except Exception:
+            return False
+
+    def _capture_task_xml(self, task_name):
+        if not task_name or not self._begin_recovery_session():
+            return None
+        try:
+            result = subprocess.run(
+                ["schtasks", "/query", "/tn", task_name, "/xml"],
+                capture_output=True,
+                text=True,
+                timeout=20,
+                creationflags=0x08000000,
+            )
+        except Exception:
+            return None
+        if result.returncode != 0 or not (result.stdout or "").strip():
+            return None
+        session_dir = self._session_dir(self._recovery_session["session_id"])
+        backup_name = f"{len(self._recovery_session['entries']) + 1:04d}_{self._safe_backup_name(task_name)}.xml"
+        xml_path = os.path.join(session_dir, "tasks", backup_name)
+        try:
+            with open(xml_path, "w", encoding="utf-16") as handle:
+                handle.write(result.stdout)
+        except Exception:
+            try:
+                with open(xml_path, "w", encoding="utf-8") as handle:
+                    handle.write(result.stdout)
+            except Exception:
+                return None
+        return {
+            "kind": "task_delete",
+            "task_name": task_name,
+            "xml_path": xml_path,
+        }
+
+    def _capture_firewall_rule(self, rule_name):
+        if not rule_name:
+            return None
+        escaped = rule_name.replace("'", "''")
+        rows = self._run_powershell_json(
+            "$rule = Get-NetFirewallRule -Name '" + escaped + "' -ErrorAction SilentlyContinue | Select-Object -First 1; "
+            "if ($rule) { "
+            "$app = $rule | Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue | Select-Object -First 1; "
+            "$port = $rule | Get-NetFirewallPortFilter -ErrorAction SilentlyContinue | Select-Object -First 1; "
+            "$addr = $rule | Get-NetFirewallAddressFilter -ErrorAction SilentlyContinue | Select-Object -First 1; "
+            "$svc = $rule | Get-NetFirewallServiceFilter -ErrorAction SilentlyContinue | Select-Object -First 1; "
+            "[pscustomobject]@{ "
+            "Name=$rule.Name; DisplayName=$rule.DisplayName; Description=$rule.Description; "
+            "Direction=[string]$rule.Direction; Action=[string]$rule.Action; Profile=[string]$rule.Profile; "
+            "Enabled=[string]$rule.Enabled; Program=$app.Program; Service=$svc.Service; "
+            "Protocol=$port.Protocol; LocalPort=$port.LocalPort; RemotePort=$port.RemotePort; "
+            "LocalAddress=$addr.LocalAddress; RemoteAddress=$addr.RemoteAddress "
+            "} | ConvertTo-Json -Compress }",
+            timeout=20,
+        )
+        if not rows:
+            return None
+        return {
+            "kind": "firewall_rule_remove",
+            "rule": rows[0],
+        }
+
+    @staticmethod
+    def _powershell_quote(value):
+        return "'" + str(value or "").replace("'", "''") + "'"
+
+    def _restore_path_entry(self, entry):
+        original_path = str(entry.get("original_path") or "")
+        backup_path = str(entry.get("backup_path") or "")
+        if not original_path or not backup_path or not os.path.exists(backup_path):
+            return False, ""
+
+        target_path = original_path
+        if os.path.exists(original_path):
+            candidate = original_path + RESTORE_CONFLICT_SUFFIX
+            suffix = 1
+            while os.path.exists(candidate):
+                suffix += 1
+                candidate = f"{original_path}{RESTORE_CONFLICT_SUFFIX}_{suffix}"
+            target_path = candidate
+
+        try:
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            shutil.move(backup_path, target_path)
+            return True, target_path
+        except Exception:
+            return False, ""
+
+    def _restore_task_entry(self, entry):
+        task_name = str(entry.get("task_name") or "")
+        xml_path = str(entry.get("xml_path") or "")
+        if not task_name or not xml_path or not os.path.isfile(xml_path):
+            return False
+        try:
+            result = subprocess.run(
+                ["schtasks", "/create", "/tn", task_name, "/xml", xml_path, "/f"],
+                capture_output=True,
+                text=True,
+                timeout=20,
+                creationflags=0x08000000,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    def _restore_firewall_entry(self, entry):
+        rule = entry.get("rule") or {}
+        if not rule:
+            return False
+        params = []
+        for key in ("Name", "DisplayName", "Description", "Direction", "Action", "Profile"):
+            value = str(rule.get(key) or "")
+            if value and value.lower() not in {"any", "notconfigured"}:
+                params.append(f"-{key} {self._powershell_quote(value)}")
+        enabled = str(rule.get("Enabled") or "")
+        if enabled.lower() in {"true", "false"}:
+            params.append(f"-Enabled {enabled}")
+        for key in ("Program", "Service", "LocalPort", "RemotePort", "LocalAddress", "RemoteAddress"):
+            value = str(rule.get(key) or "")
+            if value and value.lower() not in {"any", "notconfigured"}:
+                params.append(f"-{key} {self._powershell_quote(value)}")
+        protocol = str(rule.get("Protocol") or "")
+        if protocol and protocol.lower() not in {"any", "notconfigured"}:
+            params.append(f"-Protocol {self._powershell_quote(protocol)}")
+        if not params:
+            return False
+        script = "try { New-NetFirewallRule " + " ".join(params) + " -ErrorAction Stop | Out-Null } catch { exit 1 }"
+        result = self._run_powershell(script, timeout=20)
+        return bool(result is not None and result.returncode == 0)
+
+    def _restore_defender_exclusion_entry(self, entry):
+        kind = str(entry.get("exclusion_kind") or "")
+        value = str(entry.get("value") or "")
+        if not kind or not value:
+            return False
+        quoted = self._powershell_quote(value)
+        if kind == "Path":
+            script = f"try {{ Add-MpPreference -ExclusionPath {quoted} -ErrorAction Stop }} catch {{ exit 1 }}"
+        elif kind == "Process":
+            script = f"try {{ Add-MpPreference -ExclusionProcess {quoted} -ErrorAction Stop }} catch {{ exit 1 }}"
+        elif kind == "Extension":
+            script = f"try {{ Add-MpPreference -ExclusionExtension {quoted} -ErrorAction Stop }} catch {{ exit 1 }}"
+        else:
+            return False
+        result = self._run_powershell(script, timeout=20)
+        return bool(result is not None and result.returncode == 0)
+
+    def _restore_proxy_entry(self, entry):
+        snapshots = entry.get("snapshots") or []
+        restored_any = False
+        for snapshot in snapshots:
+            restored_any = self._restore_reg_state(snapshot) or restored_any
+        return restored_any
+
+    def revert_last_remediation(self):
+        manifest = self.latest_recovery_manifest()
+        if not manifest:
+            return {
+                "restored": 0,
+                "failed": 0,
+                "conflicts": 0,
+                "notes": [],
+            }
+
+        restored = 0
+        failed = 0
+        conflicts = 0
+        for entry in reversed(manifest.get("entries") or []):
+            kind = str(entry.get("kind") or "")
+            ok = False
+            conflict_target = ""
+            if kind == "path_move":
+                ok, conflict_target = self._restore_path_entry(entry)
+                if ok and conflict_target and conflict_target != entry.get("original_path"):
+                    conflicts += 1
+                    self.log(
+                        f"Restored quarantined item to conflict-safe path: {conflict_target}",
+                        "WARN",
+                    )
+            elif kind == "reg_delete":
+                ok = self._restore_reg_state(entry)
+            elif kind == "proxy_reset":
+                ok = self._restore_proxy_entry(entry)
+            elif kind == "defender_exclusion_remove":
+                ok = self._restore_defender_exclusion_entry(entry)
+            elif kind == "firewall_rule_remove":
+                ok = self._restore_firewall_entry(entry)
+            elif kind == "task_delete":
+                ok = self._restore_task_entry(entry)
+
+            if ok:
+                restored += 1
+            else:
+                failed += 1
+                self.log(f"Could not restore recorded change: {kind}", "WARN")
+
+        manifest["reverted_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        manifest["revert_result"] = {
+            "restored": restored,
+            "failed": failed,
+            "conflicts": conflicts,
+        }
+        self._write_manifest_dict(manifest)
+
+        pointer = self._latest_recovery_pointer()
+        if pointer and os.path.isfile(pointer):
+            try:
+                os.remove(pointer)
+            except Exception:
+                pass
+
+        for note in manifest.get("notes") or []:
+            self.log(f"Not reversible: {note}", "WARN")
+
+        return {
+            "restored": restored,
+            "failed": failed,
+            "conflicts": conflicts,
+            "notes": manifest.get("notes") or [],
+        }
+
     @staticmethod
     def _clamp_score(value, lower=5, upper=98):
         return max(lower, min(upper, int(value)))
+
+    def _reset_recovery_state(self):
+        self._recovery_session = None
+        self._recovery_manifest_path = ""
+        self._recovery_warning_emitted = False
+
+    def _active_file_remediation_categories(self):
+        categories = set(FILE_REMEDIATION_CATEGORIES)
+        if self._has_renloader_corroboration():
+            categories.update(CORRELATED_FILE_REMEDIATION_CATEGORIES)
+        return categories
+
+    def _run_remediation_bucket(self, categories):
+        for threat in sorted(self.threats):
+            if threat.category in categories and threat.action and not threat.remediated:
+                threat.action()
+                threat.remediated = True
+
+    def _log_recovery_snapshot_summary(self):
+        if not self._recovery_session:
+            return
+        reversible_count = len(self._recovery_session.get("entries") or [])
+        note_count = len(self._recovery_session.get("notes") or [])
+        self.log(
+            f"Recovery snapshot recorded {reversible_count} reversible change(s) and {note_count} note(s).",
+            "INFO",
+        )
 
     def summarize_threats(self):
         if not self.threats:
@@ -714,7 +1410,9 @@ class ScanEngine:
         renloader_markers = (
             "instaler", "lnstaier", "renpy", "archive.rpa", "script.rpyc",
             "iviewers.dll", "broker_crypt_v4_i386", "froodjurain",
-            "vsdebugscriptagent170", "zoneind.exe", "chime.exe"
+            "vsdebugscriptagent170", "zoneind.exe", "chime.exe",
+            "amatera", "instsatp_", "t11_asm", "antivmgpu",
+            "antivmhypervisornames", "antivmmacs",
         )
         generic_markers = (
             "acr", "acrstealer", "lumma", "rhadamanthys", "vidar",
@@ -735,6 +1433,7 @@ class ScanEngine:
             "Persistence Artifact",
             "Persistence Process",
             "Persistence Staging Directory",
+            "Suspicious Loader Stage Directory",
             "Malicious Shortcut",
             "Campaign IOC Process",
             "Injected/Sideloaded DLL",
@@ -744,6 +1443,7 @@ class ScanEngine:
             "HijackLoader Stage Artifact",
             "Loader Container DLL",
             "WMI Persistence",
+            "Suspicious RenPy Loader Bundle",
         })
         generic_stealer_hits += sum(1 for cat in categories if cat in {
             "Active C2 Connection",
@@ -756,6 +1456,9 @@ class ScanEngine:
             "Paranoid Networked Process",
             "Startup Persistence Artifact",
         })
+
+        if self._has_renloader_corroboration():
+            renloader_hits += 2
 
         suspicious_only = all(cat in {
             "Suspicious Userland Process",
@@ -1395,6 +2098,92 @@ class ScanEngine:
             return self._file_contains_ascii_or_utf16le(path, SOURCE_LURE_KEYWORDS)
         return False
 
+    @staticmethod
+    def _has_generic_launcher_stem(stems):
+        for stem in stems:
+            lowered = str(stem or "").lower()
+            if any(keyword in lowered for keyword in GENERIC_LAUNCHER_KEYWORDS):
+                return True
+        return False
+
+    def _profile_renpy_bundle(self, dirpath, dir_names_lower, filenames):
+        if not RENENGINE_FOLDER_SET.issubset(dir_names_lower):
+            return None
+
+        names_lower = [name.lower() for name in filenames]
+        exe_stems = {
+            os.path.splitext(name)[0]
+            for name in names_lower
+            if name.endswith(".exe")
+        }
+        script_stems = {
+            os.path.splitext(name)[0]
+            for name in names_lower
+            if os.path.splitext(name)[1] in RENPY_LAUNCHER_SCRIPT_EXTENSIONS
+        }
+        paired_stems = sorted(exe_stems & script_stems)
+        suspicious_location = (
+            self._path_in_user_writable_exec_zone(dirpath.lower())
+            or self._in_temp(dirpath)
+            or self._is_user_visible_root(dirpath)
+        )
+        lure_context = self._contains_marker(
+            " ".join([dirpath] + names_lower),
+            SOURCE_LURE_KEYWORDS,
+        )
+        generic_launcher = self._has_generic_launcher_stem(exe_stems | script_stems)
+
+        score = 0
+        reasons = []
+        if paired_stems:
+            score += 2
+            reasons.append("paired exe/script launcher")
+        if suspicious_location:
+            score += 1
+            reasons.append("user-writable bundle location")
+        if lure_context:
+            score += 1
+            reasons.append("lure/distribution context")
+        if generic_launcher:
+            score += 1
+            reasons.append("generic launcher naming")
+
+        return {
+            "score": score,
+            "paired_stems": paired_stems,
+            "suspicious_location": suspicious_location,
+            "lure_context": lure_context,
+            "generic_launcher": generic_launcher,
+            "reasons": reasons,
+        }
+
+    def _evaluate_renpy_bundle(self, dirpath, dir_names_lower, filenames):
+        profile = self._profile_renpy_bundle(dirpath, dir_names_lower, filenames)
+        if not profile:
+            return None
+
+        blob = " ".join([dirpath] + list(filenames))
+        if self._has_strong_campaign_context(blob):
+            return (
+                "CRITICAL",
+                "RenEngine Bundle",
+                f"Ren'Py loader bundle with campaign markers at: {dirpath}",
+            )
+
+        if profile["score"] >= 4:
+            reason_text = ", ".join(profile["reasons"][:3])
+            return (
+                "HIGH",
+                "Suspicious RenPy Loader Bundle",
+                f"Ren'Py loader bundle matches multiple malware-style signals ({reason_text}): {dirpath}",
+            )
+
+        return None
+
+    def _has_renloader_corroboration(self):
+        categories = {threat.category for threat in self.threats}
+        return bool(categories & (RENLOADER_CORRELATION_CATEGORIES - {"Suspicious RenPy Loader Bundle"}))
+
     def _looks_like_hijackloader_stage_dir(self, dirpath, file_names_lower):
         dir_lower = dirpath.lower()
         if (self._is_trusted_vendor_path(dirpath) or self._is_protected_system_path(dirpath)) and not self._has_strong_campaign_context(
@@ -1413,6 +2202,35 @@ class ScanEngine:
             if len(signature & file_names_lower) >= 3:
                 return True
         return False
+
+    def _looks_like_generic_loader_stage_dir(self, dirpath, file_names_lower):
+        dir_lower = dirpath.lower()
+        if (self._is_trusted_vendor_path(dirpath) or self._is_protected_system_path(dirpath)) and not self._has_strong_campaign_context(
+            dirpath, " ".join(sorted(file_names_lower))
+        ):
+            return False
+        if not (
+            self._in_temp(dirpath)
+            or "\\.temp" in dir_lower
+            or self._path_in_user_writable_exec_zone(dir_lower)
+        ):
+            return False
+
+        exe_names = [name for name in file_names_lower if name.endswith(".exe")]
+        dll_names = [name for name in file_names_lower if name.endswith(".dll")]
+        odd_data_names = [
+            name for name in file_names_lower
+            if os.path.splitext(name)[1] in {".asp", ".bin", ".dat", ".eml", ".key", ".txt"}
+        ]
+        if not exe_names or not dll_names or not odd_data_names:
+            return False
+
+        suspicious_dll = any(name in LOADER_CONTAINER_DLLS or name in SUSPICIOUS_DLL_NAMES for name in dll_names)
+        random_like = sum(
+            1 for name in exe_names + dll_names
+            if self._looks_random(os.path.splitext(name)[0])
+        )
+        return suspicious_dll or random_like >= 2
 
     def _matches_exact_ioc_hash(self, path, fname):
         fl = fname.lower()
@@ -2123,16 +2941,19 @@ class ScanEngine:
                     if visited % 40 == 0:
                         self.progress(f"Walked {visited} dirs…  {dirpath[:65]}")
 
-                    # RenEngine bundle signature
                     dir_names_lower = {d.lower() for d in dirnames}
                     file_names_lower = {f.lower() for f in filenames}
-                    if RENENGINE_FOLDER_SET.issubset(dir_names_lower):
-                        has_instaler = any(f.lower() in MALICIOUS_FILENAMES for f in filenames)
-                        sev = "CRITICAL" if has_instaler else "HIGH"
+                    bundle_hit = self._evaluate_renpy_bundle(dirpath, dir_names_lower, filenames)
+                    if bundle_hit:
+                        sev, category, description = bundle_hit
                         dp = dirpath
-                        self._add(sev, "RenEngine Bundle",
-                                  f"RenEngine folder structure at: {dp}", dp,
-                                  lambda p=dp: self._nuke_directory(p))
+                        self._add(
+                            sev,
+                            category,
+                            description,
+                            dp,
+                            lambda p=dp: self._nuke_directory(p),
+                        )
 
                     if self._contains_marker(dirpath, CAMPAIGN_DIR_MARKERS):
                         dp = dirpath
@@ -2144,6 +2965,11 @@ class ScanEngine:
                         dp = dirpath
                         self._add("CRITICAL", "HijackLoader Stage Directory",
                                   f"HijackLoader stage directory at: {dp}", dp,
+                                  lambda p=dp: self._nuke_directory(p))
+                    elif self._looks_like_generic_loader_stage_dir(dirpath, file_names_lower):
+                        dp = dirpath
+                        self._add("HIGH", "Suspicious Loader Stage Directory",
+                                  f"Loader staging directory pattern detected: {dp}", dp,
                                   lambda p=dp: self._nuke_directory(p))
 
                     for fname in filenames:
@@ -2723,6 +3549,8 @@ class ScanEngine:
             if p.is_running():
                 p.kill()
             self.killed += 1
+            if self._recovery_session:
+                self._record_recovery_note(f"killed process PID {pid} ({target})")
             self.log(f"Killed PID {pid}", "SUCCESS")
             return True
         except Exception as exc:
@@ -2781,6 +3609,8 @@ class ScanEngine:
                 pass
 
             self.killed += len(gone) + len(alive) + (1 if killed_any else 0)
+            if self._recovery_session:
+                self._record_recovery_note(f"killed process tree rooted at PID {pid} ({target})")
             self.log(f"Killed process tree rooted at PID {pid}", "SUCCESS")
             return True
         except Exception as exc:
@@ -2793,10 +3623,18 @@ class ScanEngine:
         if self._should_block_path_remediation(path):
             self._log_safety_block("delete protected or trusted file", path)
             return False
+        backup_path = self._move_path_to_recovery(path)
+        if backup_path:
+            self.removed += 1
+            self.log(f"Quarantined: {path}", "SUCCESS")
+            return True
+        if self._is_user_visible_root(path):
+            self.log(f"Cannot quarantine user-visible file safely: {path}", "WARN")
+            return False
         try:
             os.remove(path)
             self.removed += 1
-            self.log(f"Deleted: {path}", "SUCCESS")
+            self.log(f"Deleted (no recovery snapshot): {path}", "WARN")
             return True
         except PermissionError:
             try:
@@ -2804,7 +3642,7 @@ class ScanEngine:
                                capture_output=True, creationflags=0x08000000)
                 os.remove(path)
                 self.removed += 1
-                self.log(f"Deleted (forced): {path}", "SUCCESS")
+                self.log(f"Deleted (forced, no recovery snapshot): {path}", "WARN")
                 return True
             except Exception as exc:
                 self.log(f"Cannot delete {path}: {exc}", "WARN")
@@ -2818,22 +3656,33 @@ class ScanEngine:
         if self._should_block_path_remediation(path, is_dir=True):
             self._log_safety_block("remove protected or broad directory", path)
             return False
+        backup_path = self._move_path_to_recovery(path)
+        if backup_path:
+            self.removed += 1
+            self.log(f"Quarantined directory: {path}", "SUCCESS")
+            return True
+        if self._is_user_visible_root(path):
+            self.log(f"Cannot quarantine user-visible directory safely: {path}", "WARN")
+            return False
         try:
             shutil.rmtree(path, ignore_errors=True)
             self.removed += 1
-            self.log(f"Nuked directory: {path}", "SUCCESS")
+            self.log(f"Removed directory (no recovery snapshot): {path}", "WARN")
             return True
         except Exception as exc:
             self.log(f"Cannot remove dir {path}: {exc}", "WARN")
         return False
 
     def _delete_task(self, task_name):
+        backup = self._capture_task_xml(task_name)
         try:
             r = subprocess.run(
                 ["schtasks", "/delete", "/tn", task_name, "/f"],
                 capture_output=True, text=True, creationflags=0x08000000
             )
             if r.returncode == 0:
+                if backup:
+                    self._record_recovery_entry(backup)
                 self.removed += 1
                 self.log(f"Deleted scheduled task: {task_name}", "SUCCESS")
                 return True
@@ -2860,6 +3709,8 @@ class ScanEngine:
             subprocess.run(["sc", "stop", service_name], capture_output=True, text=True, timeout=15, creationflags=0x08000000)
             result = subprocess.run(["sc", "delete", service_name], capture_output=True, text=True, timeout=15, creationflags=0x08000000)
             if result.returncode == 0:
+                if self._recovery_session:
+                    self._record_recovery_note(f"deleted service {service_name}")
                 self.removed += 1
                 self.log(f"Deleted service: {service_name}", "SUCCESS")
                 return True
@@ -2871,12 +3722,15 @@ class ScanEngine:
     def _delete_firewall_rule(self, rule_name):
         if not rule_name:
             return False
+        backup = self._capture_firewall_rule(rule_name)
         escaped = rule_name.replace("'", "''")
         result = self._run_powershell(
             "try { Remove-NetFirewallRule -Name '" + escaped + "' -ErrorAction Stop } catch { exit 1 }",
             timeout=20,
         )
         if result is not None and result.returncode == 0:
+            if backup:
+                self._record_recovery_entry(backup)
             self.removed += 1
             self.log(f"Removed firewall rule: {rule_name}", "SUCCESS")
             return True
@@ -2898,6 +3752,11 @@ class ScanEngine:
 
         result = self._run_powershell(script, timeout=20)
         if result is not None and result.returncode == 0:
+            self._record_recovery_entry({
+                "kind": "defender_exclusion_remove",
+                "exclusion_kind": kind,
+                "value": value,
+            })
             self.removed += 1
             self.log(f"Removed Defender exclusion: {value}", "SUCCESS")
             return True
@@ -2915,10 +3774,13 @@ class ScanEngine:
     def _delete_reg_val(self, hive, subkey, name):
         if not WINREG_OK:
             return False
+        backup = self._capture_reg_value_entry(hive, subkey, name)
         try:
             key = winreg.OpenKey(hive, subkey, 0, winreg.KEY_SET_VALUE)
             winreg.DeleteValue(key, name)
             winreg.CloseKey(key)
+            if backup:
+                self._record_recovery_entry(backup)
             self.removed += 1
             self.log(f"Deleted registry value: {name}", "SUCCESS")
             return True
@@ -2960,6 +3822,8 @@ class ScanEngine:
 
         result = self._run_powershell("; ".join(script_lines), timeout=30)
         if result is not None and result.returncode == 0:
+            if self._recovery_session:
+                self._record_recovery_note(f"removed WMI subscription {filter_name or consumer_name}")
             self.removed += 1
             target = filter_name or consumer_name
             self.log(f"Removed WMI persistence: {target}", "SUCCESS")
@@ -2971,10 +3835,15 @@ class ScanEngine:
         if not WINREG_OK:
             return False
         changed = False
+        snapshots = []
         for hive, subkey in (
             (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"),
             (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"),
         ):
+            for value_name in ("ProxyEnable", "ProxyServer", "AutoConfigURL"):
+                snapshot = self._capture_reg_state(hive, subkey, value_name)
+                if snapshot:
+                    snapshots.append(snapshot)
             try:
                 key = winreg.OpenKey(hive, subkey, 0, winreg.KEY_SET_VALUE)
             except (FileNotFoundError, PermissionError):
@@ -2997,6 +3866,11 @@ class ScanEngine:
                 pass
 
         if changed:
+            if snapshots:
+                self._record_recovery_entry({
+                    "kind": "proxy_reset",
+                    "snapshots": snapshots,
+                })
             self.removed += 1
             self.log("Reset Internet proxy settings", "SUCCESS")
             return True
@@ -3045,48 +3919,25 @@ class ScanEngine:
         self.log(f"Confidence note   : {cleanup['detail']}", "INFO")
 
     def run_remediation(self):
+        self._recovery_session = None
+        self._recovery_manifest_path = ""
+        self._recovery_warning_emitted = False
+        self._begin_recovery_session()
+
+        file_cleanup_categories = self._active_file_remediation_categories()
         self.log("── EXECUTING REMEDIATION ──────────────────────────────", "SECTION")
 
-        for t in sorted(self.threats):
-            if t.category in ("Active C2 Connection", "Malicious Process",
-                              "Process in Temp", "Suspicious Process",
-                              "Persistence Process", "Campaign IOC Process",
-                              "Stealer Script Host", "Suspicious Userland Process",
-                              "Malicious Child Process", "Paranoid Script Host",
-                              "Paranoid Networked Process", "Paranoid Masquerade Process",
-                              "Injected/Sideloaded DLL", "Execution Trace Anomaly",
-                              "Malicious Service", "WMI Persistence"):
-                if t.action and not t.remediated:
-                    t.action()
-                    t.remediated = True
+        self._run_remediation_bucket(PROCESS_REMEDIATION_CATEGORIES)
 
         time.sleep(0.8)
 
-        for t in sorted(self.threats):
-            if t.category in ("RenEngine Bundle", "Malicious File",
-                              "Malicious Archive/Script", "Hijacked Module Init",
-                              "Payload Key File", "Dropped Executable",
-                              "Persistence Artifact", "Malicious Shortcut",
-                              "Persistence Staging Directory",
-                              "Startup Persistence Artifact", "Exact IOC Hash",
-                              "HijackLoader Stage Directory", "HijackLoader Stage Artifact",
-                              "Loader Container DLL", "IFEO Persistence",
-                              "AppInit Persistence", "Proxy Configuration Review",
-                              "Defender Exclusion", "Disabled Startup Artifact",
-                              "Firewall Rule Review"):
-                if t.action and not t.remediated:
-                    t.action()
-                    t.remediated = True
+        self._run_remediation_bucket(file_cleanup_categories)
 
-        for t in sorted(self.threats):
-            if t.category in MANUAL_REVIEW_CATEGORIES and not t.remediated:
-                self.log(f"Review manually before deleting user file: {t.path or t.description}", "WARN")
+        for threat in sorted(self.threats):
+            if threat.category in MANUAL_REVIEW_CATEGORIES and not threat.remediated:
+                self.log(f"Review manually before deleting user file: {threat.path or threat.description}", "WARN")
 
-        for t in sorted(self.threats):
-            if t.category in ("Malicious Scheduled Task", "Registry Persistence"):
-                if t.action and not t.remediated:
-                    t.action()
-                    t.remediated = True
+        self._run_remediation_bucket({"Malicious Scheduled Task", "Registry Persistence"})
 
         self.log(
             f"── REMEDIATION DONE  |  {self.killed} process(es) killed  "
@@ -3094,10 +3945,15 @@ class ScanEngine:
             "SECTION"
         )
 
+        self._log_recovery_snapshot_summary()
+
     def generate_report(self) -> str:
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         crit = sum(1 for t in self.threats if t.severity == "CRITICAL")
         high = sum(1 for t in self.threats if t.severity == "HIGH")
+        recovery = self.latest_recovery_summary()
+        summary = self.last_summary or self.summarize_threats()
+        cleanup = self.cleanup_assessment or self.assess_cleanup_state()
         lines = [
             "╔══════════════════════════════════════════════════════════════╗",
             "║          RENKILL — THREAT REPORT                             ║",
@@ -3111,11 +3967,20 @@ class ScanEngine:
             f"Threats found   : {len(self.threats)}  ({crit} CRITICAL, {high} HIGH)",
             f"Processes killed: {self.killed}",
             f"Files removed   : {self.removed}",
+            f"Recovery undo   : {'Available' if recovery['available'] else 'Not available'}",
             "",
-            f"Summary verdict : {(self.last_summary or self.summarize_threats())['label']}",
-            f"Assessment      : {(self.last_summary or self.summarize_threats())['detail']}",
-            f"Local confidence: {(self.cleanup_assessment or self.assess_cleanup_state())['score']}%  —  {(self.cleanup_assessment or self.assess_cleanup_state())['label']}",
-            f"Confidence note : {(self.cleanup_assessment or self.assess_cleanup_state())['detail']}",
+            f"Summary verdict : {summary['label']}",
+            f"Assessment      : {summary['detail']}",
+            f"Local confidence: {cleanup['score']}%  —  {cleanup['label']}",
+            f"Confidence note : {cleanup['detail']}",
+            "",
+        ]
+        if recovery["available"]:
+            lines.append(
+                f"Recovery items  : {recovery['reversible_count']} reversible change(s), "
+                f"{recovery['note_count']} non-reversible note(s)",
+            )
+        lines += [
             "",
             "Exposure notes  :",
         ]
@@ -3208,12 +4073,19 @@ class App(tk.Tk):
         self._scanner = None
         self._thread = None
         self._paranoid_var = tk.BooleanVar(value=False)
+        self._revert_available = False
         self._session_reset_available = False
         self._last_remediation_ts = 0.0
 
         self._build()
         self._check_admin()
         self._startup_msg()
+        summary = self._update_revert_button()
+        if summary["available"]:
+            self._log(
+                f"Recovery snapshot available: {summary['reversible_count']} reversible change(s) ready to restore.",
+                "INFO",
+            )
 
     def _build(self):
         # Title bar
@@ -3253,11 +4125,13 @@ class App(tk.Tk):
         brow = tk.Frame(self, bg=BG, padx=18, pady=10)
         brow.pack(fill="x")
 
-        self._btn_scan   = self._btn(brow, "⟳  SCAN SYSTEM",   BLUE,  self._do_scan)
-        self._btn_kill   = self._btn(brow, "✕  KILL & CLEAN",  RED,   self._do_kill)
+        self._btn_scan = self._btn(brow, "⟳  SCAN SYSTEM", BLUE, self._do_scan)
+        self._btn_kill = self._btn(brow, "✕  KILL & CLEAN", RED, self._do_kill)
+        self._btn_revert = self._btn(brow, "REVERT LAST CLEAN", BLUE, self._do_revert)
         self._btn_sessions = self._btn(brow, "⌁  RESET SESSION DATA", AMBER, self._do_reset_sessions)
         self._btn_report = self._btn(brow, "↓  EXPORT REPORT", GREEN, self._do_report)
-        self._btn_clear  = self._btn(brow, "⌫  CLEAR LOG",     FG3,   self._do_clear)
+        self._btn_clear = self._btn(brow, "⌫  CLEAR LOG", FG3, self._do_clear)
+
         tk.Checkbutton(
             brow,
             text="PARANOID MODE",
@@ -3276,6 +4150,7 @@ class App(tk.Tk):
         ).pack(side="right", padx=(12, 0), pady=2)
 
         self._btn_kill.configure(state="disabled")
+        self._btn_revert.configure(state="disabled")
         self._btn_sessions.configure(state="disabled")
         self._btn_report.configure(state="disabled")
 
@@ -3471,12 +4346,46 @@ class App(tk.Tk):
         self._log("Scan mode         : Standard", "INFO")
         self._log("Press SCAN SYSTEM to begin.", "DEFAULT")
 
+    def _load_recovery_summary(self):
+        scanner = ScanEngine(lambda *_: None, lambda *_: None)
+        return scanner.latest_recovery_summary()
+
+    def _update_revert_button(self):
+        summary = self._load_recovery_summary()
+        self._revert_available = bool(summary["available"])
+        if hasattr(self, "_btn_revert"):
+            self._btn_revert.configure(state="normal" if self._revert_available else "disabled")
+        return summary
+
+    @staticmethod
+    def _recovery_snapshot_blurb(summary):
+        if not summary["available"]:
+            return ""
+        return (
+            "\nRecovery snapshot:\n"
+            f"  - {summary['reversible_count']} reversible change(s) recorded\n"
+            "  - Use REVERT LAST CLEAN if a safe rollback is needed\n"
+        )
+
+    @staticmethod
+    def _kill_confirmation_text(process_count, file_count):
+        return (
+            "RenKill will:\n\n"
+            f"  Kill {process_count} process(es) / connection(s)\n"
+            f"  Delete {file_count} file(s) / task(s) / registry entry(ies)\n\n"
+            "RenKill will quarantine or back up reversible file, task, registry, firewall, "
+            "and proxy changes when possible.\n"
+            "Process kills, service removals, WMI removals, and session resets are not fully reversible.\n\n"
+            "Continue?"
+        )
+
     def _do_scan(self):
         if self._thread and self._thread.is_alive():
             return
 
         self._btn_scan.configure(state="disabled")
         self._btn_kill.configure(state="disabled")
+        self._btn_revert.configure(state="disabled")
         self._btn_sessions.configure(state="disabled")
         self._btn_report.configure(state="disabled")
         self._count_var.set("Scanning…")
@@ -3497,6 +4406,7 @@ class App(tk.Tk):
                 def _fail():
                     self._set_progress("")
                     self._btn_scan.configure(state="normal")
+                    self._update_revert_button()
                     self._btn_report.configure(state="normal")
                     self._btn_kill.configure(state="disabled")
                     self._btn_sessions.configure(state="disabled")
@@ -3513,6 +4423,7 @@ class App(tk.Tk):
                 self._set_progress("")
                 self._btn_scan.configure(state="normal")
                 self._btn_report.configure(state="normal")
+                self._update_revert_button()
                 self._session_reset_available = bool(self._scanner.exposure_notes)
                 self._btn_sessions.configure(state="normal" if self._session_reset_available else "disabled")
                 if n > 0:
@@ -3560,14 +4471,12 @@ class App(tk.Tk):
 
         if not messagebox.askyesno(
             "Confirm KILL & CLEAN",
-            f"RenKill will:\n\n"
-            f"  Kill {procs} process(es) / connection(s)\n"
-            f"  Delete {files} file(s) / task(s) / registry entry(ies)\n\n"
-            f"This cannot be undone. Continue?"
+            self._kill_confirmation_text(procs, files)
         ):
             return
 
         self._btn_kill.configure(state="disabled")
+        self._btn_revert.configure(state="disabled")
         self._set_status("Executing remediation…", AMBER)
 
         def _run():
@@ -3576,6 +4485,7 @@ class App(tk.Tk):
                 k = self._scanner.killed
                 r = self._scanner.removed
                 self._last_remediation_ts = time.time()
+                recovery = self._update_revert_button()
                 exposure_blurb = ""
                 if self._scanner.exposure_notes:
                     exposure_blurb = (
@@ -3583,6 +4493,7 @@ class App(tk.Tk):
                         "  • Browser and/or Discord data may have been exposed\n"
                         "  • Revoke sessions from a clean device immediately\n"
                     )
+                recovery_blurb = self._recovery_snapshot_blurb(recovery)
                 self._set_status(
                     f"Done — {k} process(es) killed, {r} item(s) removed. Run scan again to verify.",
                     GREEN
@@ -3602,9 +4513,63 @@ class App(tk.Tk):
                     f"  • Change ALL browser-saved passwords\n"
                     f"  • Revoke all active sessions\n"
                     f"  • Move crypto to fresh wallet addresses\n\n"
+                    f"{recovery_blurb}"
                     f"{exposure_blurb}"
                     f"Run SCAN SYSTEM again to verify clean."
                 )
+            self.after(0, _done)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _do_revert(self):
+        summary = self._update_revert_button()
+        if not summary["available"]:
+            messagebox.showinfo(
+                "Revert Last Clean",
+                "No reversible cleanup snapshot is available yet."
+            )
+            return
+
+        if not messagebox.askyesno(
+            "Confirm Revert",
+            f"RenKill will restore up to {summary['reversible_count']} quarantined or backed-up change(s) from the last cleanup.\n\n"
+            "This can restore files, tasks, registry values, firewall rules, Defender exclusions, and proxy settings.\n"
+            "It will not restart killed processes or fully undo service/WMI removals.\n\n"
+            "Continue?"
+        ):
+            return
+
+        self._btn_revert.configure(state="disabled")
+        self._btn_scan.configure(state="disabled")
+        self._btn_kill.configure(state="disabled")
+        self._set_status("Reverting last cleanup snapshot...", AMBER)
+
+        def _run():
+            scanner = ScanEngine(self._log, self._set_progress, paranoid=self._paranoid_var.get())
+            result = scanner.revert_last_remediation()
+
+            def _done():
+                self._set_progress("")
+                self._btn_scan.configure(state="normal")
+                self._btn_kill.configure(state="disabled")
+                self._update_revert_button()
+                restored = result["restored"]
+                failed = result["failed"]
+                conflicts = result["conflicts"]
+                note_count = len(result["notes"])
+                self._set_status(
+                    f"Revert complete - {restored} change(s) restored, {failed} failed.",
+                    GREEN if failed == 0 else AMBER,
+                )
+                messagebox.showinfo(
+                    "RenKill - Revert Complete",
+                    f"Restored changes    : {restored}\n"
+                    f"Failed restores     : {failed}\n"
+                    f"Conflict restores   : {conflicts}\n"
+                    f"Non-reversible notes: {note_count}\n\n"
+                    "Run SCAN SYSTEM again to confirm the current state."
+                )
+
             self.after(0, _done)
 
         threading.Thread(target=_run, daemon=True).start()

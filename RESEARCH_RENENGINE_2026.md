@@ -1,6 +1,6 @@
 # RenEngine / "RenLoader" Research Notes
 
-Last updated: 2026-04-17
+Last updated: 2026-04-18
 
 ## Bottom line
 
@@ -31,6 +31,17 @@ Kaspersky also observed later-stage files and modules including:
 - `W8CPbGQI.exe`
 
 Those names are not all globally unique on every system, so they are strongest when found in `%TEMP%`, hidden `.temp` folders, or alongside the RenEngine/HijackLoader chain.
+
+## Variant notes and filename churn
+
+- Kaspersky's February 23, 2026 update says the same loader family has been active since at least March 2025 and has shifted payloads from Lumma to ACR, with Vidar also seen in some chains.
+- Cyderes also reported new HijackLoader anti-analysis modules named `ANTIVMGPU`, `ANTIVMHYPERVISORNAMES`, and `ANTIVMMACS`.
+- AhnLab and Microsoft reporting around `Amatera` suggests defenders should expect overlapping payload naming, MaaS reuse, and quick filename rotation.
+- Practical takeaway: exact names are still useful, but RenKill should also score on structure and chain behavior:
+  - Ren'Py-style `data/lib/renpy` launcher bundles
+  - paired launcher `.exe` plus `.py` / `.pyc`
+  - user-writable staging directories with side-loading style `.exe` + `.dll` + odd data files
+  - persistence and post-launch stealer behavior
 
 ## High-confidence artifacts for RenKill to hunt
 
@@ -93,6 +104,8 @@ The payload families in this ecosystem steal browser credentials, cookies, auth 
 - Cyderes, "RenEngine Loader and HijackLoader: Dual-Stage Attack Chain Fueling Stealer Campaigns" (2026-02-04): https://www.cyderes.com/howler-cell/renengine-loader-hijackloader-attack-chain
 - Kaspersky Securelist, "The game is over: when 'free' comes at too high a price. What we know about RenEngine" (2026-02-11): https://securelist.com/renengine-campaign-with-hijackloader-lumma-and-acr-stealer/118891/
 - Kaspersky Press Release, "Kaspersky identifies RenEngine loader distributed through pirated games and software" (2026-02-23): https://me-en.kaspersky.com/about/press-releases/kaspersky-identifies-renengine-loader-distributed-through-pirated-games-and-software
+- AhnLab ASEC, "February 2026 Infostealer Trend Report" (2026-03-11): https://asec.ahnlab.com/en/92902/
+- Microsoft Security Intelligence, "Trojan:Win32/Amatera.A!AMTB" (published 2026-02-05, accessed 2026-04-18): https://www.microsoft.com/en-us/wdsi/threats/malware-encyclopedia-description?Name=Trojan%3AWin32%2FAmatera.A%21AMTB&ThreatID=2147962444
 - Malwarebytes, "Can you try a game I made? Fake game sites lead to information stealers" (2025-01-03): https://www.malwarebytes.com/it/blog/news/2025/01/can-you-try-a-game-i-made-fake-game-sites-lead-to-information-stealers
 - Malwarebytes, "Can you test my game? Fake itch.io pages spread hidden malware to gamers" (2025-10-24): https://www.malwarebytes.com/blog/threat-intel/2025/10/can-you-test-my-game-fake-itch-io-pages-spread-hidden-malware-to-gamers
 - Discord Support, "My Discord Account was Hacked or Compromised" (accessed 2026-04-17): https://support.discord.com/hc/en-us/articles/24160905919511-My-Discord-Account-was-Hacked-or-Compromised
