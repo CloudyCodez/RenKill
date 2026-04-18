@@ -2826,6 +2826,46 @@ class ScanEngine:
                 "Get-MpPreference",
             )
 
+    def _evaluate_firewall_rule(self, rule_name, display_name, direction, program):
+        normalized_program = self._normalized_path(program)
+        if not normalized_program:
+            return None
+
+        program_name = os.path.basename(normalized_program)
+        base_name = os.path.splitext(program_name)[0]
+        strong = self._has_strong_campaign_context(rule_name, display_name, program)
+        if strong:
+            return {
+                "severity": "HIGH",
+                "actionable": True,
+            }
+
+        if self._is_safe_process_context(program_name, program, display_name, allow_metadata=True):
+            return None
+        if not self._path_in_user_writable_exec_zone(normalized_program):
+            return None
+
+        suspicious_score = 0
+        if self._contains_marker(normalized_program, PROCESS_IOC_MARKERS):
+            suspicious_score += 2
+        if self._contains_marker(normalized_program, CAMPAIGN_DIR_MARKERS):
+            suspicious_score += 2
+        if self._looks_random(base_name):
+            suspicious_score += 2
+        if self._in_temp(normalized_program):
+            suspicious_score += 2
+        if self.paranoid and any(marker in normalized_program for marker in COMMON_USERLAND_EXEC_MARKERS):
+            suspicious_score += 1
+
+        threshold = 1 if self.paranoid else 2
+        if suspicious_score < threshold:
+            return None
+
+        return {
+            "severity": "HIGH" if suspicious_score >= 3 else "MEDIUM",
+            "actionable": suspicious_score >= 3 and "inbound" in direction.lower(),
+        }
+
     def scan_firewall_rules(self):
         self.log("FIREWALL RULE REVIEW", "SECTION")
         rows = self._run_powershell_json(
@@ -2859,24 +2899,16 @@ class ScanEngine:
                 if not program:
                     continue
 
-                normalized_program = self._normalized_path(program)
-                program_name = os.path.basename(normalized_program)
-                strong = self._has_strong_campaign_context(rule_name, display_name, program)
-                suspicious_path = (
-                    normalized_program
-                    and self._path_in_user_writable_exec_zone(normalized_program)
-                    and not self._is_safe_process_context(program_name, program, display_name, allow_metadata=True)
-                )
-                if not (strong or suspicious_path):
+                finding = self._evaluate_firewall_rule(rule_name, display_name, direction, program)
+                if not finding:
                     continue
 
-                severity = "HIGH" if strong else "MEDIUM"
                 action = None
-                if strong or ("inbound" in direction.lower() and suspicious_path):
+                if finding["actionable"]:
                     action = lambda name=rule_name: self._delete_firewall_rule(name)
 
                 self._add(
-                    severity,
+                    finding["severity"],
                     "Firewall Rule Review",
                     f"Allow firewall rule points at suspicious program: {display_name or rule_name} -> {program}",
                     rule_name or display_name,
