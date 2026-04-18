@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# noinspection SpellCheckingInspection
 """
 RenKill v1.4.4
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -33,12 +34,14 @@ from tkinter import scrolledtext, messagebox, filedialog
 
 # ── Windows-only imports (safe-guarded) ─────────────────────────────────────
 try:
+    # noinspection PyUnresolvedReferences
     import winreg
     WINREG_OK = True
 except ImportError:
     WINREG_OK = False
 
 try:
+    # noinspection PyUnresolvedReferences
     import psutil
     PSUTIL_OK = True
 except ImportError:
@@ -52,6 +55,7 @@ except ImportError:
 VERSION = "1.4.4"
 TOOL_NAME = "RenKill"
 
+# noinspection SpellCheckingInspection
 MALICIOUS_FILENAMES = {
     "instaler.exe",
     "instaler.py",
@@ -62,13 +66,13 @@ MALICIOUS_FILENAMES = {
     "script.rpyc",
     "archive.rpa",
 }
-
+# noinspection SpellCheckingInspection
 RENENGINE_FOLDER_SET = {"renpy", "data", "lib"}
 
 CAMPAIGN_DIR_MARKERS = {
     "broker_crypt_v4_i386",
 }
-
+# noinspection SpellCheckingInspection
 CAMPAIGN_FILENAMES = {
     "froodjurain.wkk",
     "taig.gr",
@@ -77,7 +81,7 @@ CAMPAIGN_FILENAMES = {
     "zoneind.exe",
     "d3dx9_43.dll",
 }
-
+# noinspection SpellCheckingInspection
 CAMPAIGN_PROCESS_NAMES = {
     "instaler.exe",
     "lnstaier.exe",
@@ -86,7 +90,7 @@ CAMPAIGN_PROCESS_NAMES = {
     "w8cpbgqi.exe",
     "dksyvguj.exe",
 }
-
+# noinspection SpellCheckingInspection
 PROCESS_IOC_MARKERS = {
     "broker_crypt_v4_i386",
     "froodjurain",
@@ -125,14 +129,14 @@ PROCESS_IOC_MARKERS = {
     "modtask",
     "moduac",
 }
-
+# noinspection SpellCheckingInspection
 SUSPICIOUS_DLL_NAMES = {
     "iviewers.dll",
     "vsdebugscriptagent170.dll",
     "d3dx9_43.dll",
     "cc32290mt.dll",
 }
-
+# noinspection SpellCheckingInspection
 HIJACKLOADER_STAGE_FILES = {
     "dksyvguj.exe",
     "cc32290mt.dll",
@@ -141,27 +145,27 @@ HIJACKLOADER_STAGE_FILES = {
     "w8cpbgqi.exe",
     "zt5qwyucfl.txt",
 }
-
+# noinspection SpellCheckingInspection
 LOADER_CONTAINER_DLLS = {
     "dbghelp.dll",
     "pla.dll",
     "borlndmm.dll",
     "cc32290mt.dll",
 }
-
+# noinspection SpellCheckingInspection
 HIJACKLOADER_STAGE_DIR_SIGNATURES = (
     {"dksyvguj.exe", "cc32290mt.dll", "gayal.asp", "dbghelp.dll"},
     {"hap.eml", "pla.dll", "w8cpbgqi.exe", "zt5qwyucfl.txt"},
     {"w8cpbgqi.exe", "d3dx9_43.dll", "vsdebugscriptagent170.dll"},
 )
-
+# noinspection SpellCheckingInspection
 KNOWN_SHA256_IOCS = {
     "9e3b296339e25b1bae1f9d028a17f030dcf2ab25ad46221b37731ea4fdfde057": "Cyderes sample malicious ZIP package",
     "7123e1514b939b165985560057fe3c761440a9fff9783a3b84e861fd2888d4ab": "Cyderes sample exploited Instaler.exe",
     "326ec5aeeafc4c31c234146dc604a849f20f1445e2f973466682cb33889b4e4c": "Cyderes sample d3dx9_43.dll",
     "db4ccd0e8f03c6d282726bfb4ee9aa15aa41e7a5edcb49e13fbd0001452cdfa2": "Cyderes sample VSDebugScriptAgent170.dll",
 }
-
+# noinspection SpellCheckingInspection
 HASH_CANDIDATE_NAMES = {
     "instaler.exe",
     "d3dx9_43.dll",
@@ -169,7 +173,7 @@ HASH_CANDIDATE_NAMES = {
 }
 
 MAX_IOC_HASH_BYTES = 200 * 1024 * 1024
-
+# noinspection SpellCheckingInspection
 BENIGN_HEAVY_SUBTREES = (
     "\\programdata\\smilegate\\",
     "\\programdata\\microsoft\\windows defender\\",
@@ -193,7 +197,7 @@ USER_WRITABLE_DIR_MARKERS = (
     "\\desktop\\",
     "\\documents\\",
 )
-
+# noinspection SpellCheckingInspection
 SOURCE_LURE_KEYWORDS = {
     "renpy",
     "renengine",
@@ -230,7 +234,7 @@ SOURCE_LURE_KEYWORDS = {
     "zdescargas",
     "hentakugames",
 }
-
+# noinspection SpellCheckingInspection
 SOURCE_LURE_FILENAME_STRONG = {
     "renpy",
     "renengine",
@@ -273,7 +277,7 @@ GENERIC_LAUNCHER_KEYWORDS = (
     "unlock",
     "update",
 )
-
+# noinspection SpellCheckingInspection
 RENPY_LAUNCHER_SCRIPT_EXTENSIONS = {".py", ".pyc", ".pyo"}
 
 SOURCE_LURE_EXTENSIONS = {
@@ -311,21 +315,21 @@ DISCORD_SESSION_SUBPATHS = (
     "GPUCache",
     "Service Worker",
 )
-
+# noinspection SpellCheckingInspection
 FIREFOX_SESSION_FILES = (
     "cookies.sqlite",
     "webappsstore.sqlite",
     "sessionstore.jsonlz4",
     "sessionCheckpoints.json",
 )
-
+# noinspection SpellCheckingInspection
 FIREFOX_SESSION_DIRS = (
     "sessionstore-backups",
     os.path.join("storage", "default"),
     "cache2",
     "OfflineCache",
 )
-
+# noinspection SpellCheckingInspection
 SESSION_RESET_APPS = (
     {
         "label": "Discord",
@@ -370,7 +374,7 @@ SESSION_RESET_APPS = (
         "roots": (os.path.join("AppData", "Roaming", "Mozilla", "Firefox", "Profiles"),),
     },
 )
-
+# noinspection SpellCheckingInspection
 SAFE_PROCESS_NAMES = {
     "code.exe",
     "code - insiders.exe",
@@ -392,7 +396,7 @@ SAFE_PROCESS_NAMES = {
     "wininit.exe",
     "winlogon.exe",
 }
-
+# noinspection SpellCheckingInspection
 TRUSTED_PROCESS_NAMES = {
     "brave.exe",
     "chrome.exe",
@@ -410,7 +414,7 @@ TRUSTED_PROCESS_NAMES = {
     "steamservice.exe",
     "steamwebhelper.exe",
 }
-
+# noinspection SpellCheckingInspection
 TRUSTED_VENDOR_PATH_MARKERS = (
     "\\programdata\\microsoft\\windows defender\\",
     "\\programdata\\microsoft\\windows defender advanced threat protection\\",
@@ -425,7 +429,7 @@ TRUSTED_VENDOR_PATH_MARKERS = (
     "\\appdata\\roaming\\opera software\\",
     "\\program files\\windows defender\\",
 )
-
+# noinspection SpellCheckingInspection
 TRUSTED_COMPANY_TOKENS = (
     "advanced micro devices",
     "brave software",
@@ -454,7 +458,7 @@ PROTECTED_SYSTEM_PATH_MARKERS = (
     "\\program files\\",
     "\\program files (x86)\\",
 )
-
+# noinspection SpellCheckingInspection
 NON_REMOVABLE_DIR_BASENAMES = {
     "",
     "appdata",
@@ -476,7 +480,7 @@ NON_REMOVABLE_DIR_BASENAMES = {
     "users",
     "windows",
 }
-
+# noinspection SpellCheckingInspection
 STRONG_CAMPAIGN_MARKERS = {
     "amatera",
     "archive.rpa",
@@ -538,7 +542,7 @@ SUSPICIOUS_EXTENSION_PERMISSIONS = {
     "webRequest",
     "webRequestBlocking",
 }
-
+# noinspection SpellCheckingInspection
 SENSITIVE_HOST_MARKERS = {
     "accounts.google.com",
     "discord.com",
@@ -548,7 +552,7 @@ SENSITIVE_HOST_MARKERS = {
     "store.steampowered.com",
     "wallet",
 }
-
+# noinspection SpellCheckingInspection
 SHORTCUT_SCRIPT_HOSTS = {
     "cmd.exe",
     "cscript.exe",
@@ -558,7 +562,7 @@ SHORTCUT_SCRIPT_HOSTS = {
     "rundll32.exe",
     "wscript.exe",
 }
-
+# noinspection SpellCheckingInspection
 BROWSER_SHORTCUT_TOKENS = (
     "brave",
     "chrome",
@@ -567,7 +571,7 @@ BROWSER_SHORTCUT_TOKENS = (
     "firefox",
     "steam",
 )
-
+# noinspection SpellCheckingInspection
 KNOWN_BROWSER_TARGETS = {
     "brave.exe",
     "chrome.exe",
@@ -576,7 +580,7 @@ KNOWN_BROWSER_TARGETS = {
     "msedge.exe",
     "steam.exe",
 }
-
+# noinspection SpellCheckingInspection
 STARTUPAPPROVED_DISABLED_STATES = {0x01, 0x03, 0x09}
 
 CHROMIUM_EXTENSION_REVIEW_ROOTS = (
@@ -585,7 +589,7 @@ CHROMIUM_EXTENSION_REVIEW_ROOTS = (
     ("Brave", os.path.join("AppData", "Local", "BraveSoftware", "Brave-Browser", "User Data")),
     ("Opera", os.path.join("AppData", "Roaming", "Opera Software", "Opera Stable")),
 )
-
+# noinspection SpellCheckingInspection
 PERSISTENCE_THREAT_CATEGORIES = {
     "AppInit Persistence",
     "Disabled Startup Artifact",
@@ -603,6 +607,7 @@ PERSISTENCE_THREAT_CATEGORIES = {
     "WMI Persistence",
 }
 
+# noinspection SpellCheckingInspection
 RENLOADER_CORRELATION_CATEGORIES = {
     "Active C2 Connection",
     "AppInit Persistence",
@@ -650,6 +655,7 @@ PROCESS_REMEDIATION_CATEGORIES = {
     "WMI Persistence",
 }
 
+# noinspection SpellCheckingInspection
 FILE_REMEDIATION_CATEGORIES = {
     "AppInit Persistence",
     "Defender Exclusion",
@@ -678,6 +684,7 @@ CORRELATED_FILE_REMEDIATION_CATEGORIES = {
     "Suspicious RenPy Loader Bundle",
 }
 
+# noinspection SpellCheckingInspection
 SUSPICIOUS_REG_PATTERNS = [
     "instaler",
     "lnstaier",
@@ -714,13 +721,14 @@ def _build_scan_roots():
 
 
 SCAN_ROOTS = _build_scan_roots()
-
+# noinspection SpellCheckingInspection
 RECOVERY_DIRNAME = "Recovery"
 RECOVERY_SESSIONS_DIR = "sessions"
 RECOVERY_LATEST_FILE = "latest_session.txt"
 RESTORE_CONFLICT_SUFFIX = ".renkill_restore"
 
 if WINREG_OK:
+    # noinspection SpellCheckingInspection
     HIVE_NAME_TO_CONST = {
         "HKCU": winreg.HKEY_CURRENT_USER,
         "HKLM": winreg.HKEY_LOCAL_MACHINE,
@@ -740,7 +748,6 @@ else:
     HIVE_CONST_TO_NAME = {}
     REG_TYPE_NAMES = {}
     REG_NAME_TO_TYPE = {}
-
 
 def sanitize_for_display(text):
     if text is None:
@@ -764,8 +771,10 @@ def sanitize_for_display(text):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def is_admin():
+    # noinspection PyBroadException
     try:
-        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        shell32 = ctypes.WinDLL("shell32") # Quiets the linter
+        return bool(shell32.IsUserAnAdmin())
     except Exception:
         return False
 
@@ -775,7 +784,8 @@ def elevate_if_needed():
         return
     if not is_admin():
         args = " ".join(f'"{a}"' for a in sys.argv)
-        ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, args, None, 1)
+        shell32 = ctypes.WinDLL("shell32") # Quiets the linter
+        ret = shell32.ShellExecuteW(None, "runas", sys.executable, args, None, 1)
         if ret > 32:
             sys.exit(0)
 
@@ -835,6 +845,7 @@ class ScanEngine:
             self.exposure_notes.append(note)
             self.log(description if not path else f"{description}: {path}", "WARN")
 
+    # noinspection PyMethodMayBeStatic
     def _recovery_root(self):
         candidates = [
             os.path.join(os.environ.get("PROGRAMDATA", ""), TOOL_NAME, RECOVERY_DIRNAME),
@@ -844,6 +855,7 @@ class ScanEngine:
         for candidate in candidates:
             if not candidate:
                 continue
+            # noinspection PyBroadException
             try:
                 os.makedirs(os.path.join(candidate, RECOVERY_SESSIONS_DIR), exist_ok=True)
                 return candidate
@@ -866,6 +878,7 @@ class ScanEngine:
         session_dir = self._session_dir(session_id)
         if not session_dir:
             return False
+        # noinspection PyBroadException
         try:
             os.makedirs(session_dir, exist_ok=True)
             manifest_path = os.path.join(session_dir, "manifest.json")
@@ -882,12 +895,14 @@ class ScanEngine:
             return False
         pointer = self._latest_recovery_pointer()
         if pointer:
+            # noinspection PyBroadException
             try:
                 with open(pointer, "w", encoding="utf-8") as handle:
                     handle.write(self._recovery_session["session_id"])
             except Exception:
                 pass
-        self._recovery_manifest_path = os.path.join(self._session_dir(self._recovery_session["session_id"]), "manifest.json")
+        self._recovery_manifest_path = os.path.join(self._session_dir(self._recovery_session["session_id"]),
+                                                    "manifest.json")
         return True
 
     def _begin_recovery_session(self):
@@ -902,6 +917,7 @@ class ScanEngine:
 
         session_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         session_dir = self._session_dir(session_id)
+        # noinspection PyBroadException
         try:
             os.makedirs(os.path.join(session_dir, "paths"), exist_ok=True)
             os.makedirs(os.path.join(session_dir, "tasks"), exist_ok=True)
@@ -945,6 +961,7 @@ class ScanEngine:
         pointer = self._latest_recovery_pointer()
         if not pointer or not os.path.isfile(pointer):
             return None
+        # noinspection PyBroadException
         try:
             with open(pointer, "r", encoding="utf-8") as handle:
                 session_id = handle.read().strip()
@@ -955,6 +972,7 @@ class ScanEngine:
         manifest_path = os.path.join(self._session_dir(session_id), "manifest.json")
         if not os.path.isfile(manifest_path):
             return None
+        # noinspection PyBroadException
         try:
             with open(manifest_path, "r", encoding="utf-8") as handle:
                 manifest = json.load(handle)
@@ -998,9 +1016,11 @@ class ScanEngine:
         counter = len(self._recovery_session["entries"]) + 1
         backup_name = f"{counter:04d}_{self._safe_backup_name(path)}"
         backup_path = os.path.join(session_dir, "paths", backup_name)
+        # noinspection PyBroadException
         try:
             shutil.move(path, backup_path)
         except PermissionError:
+            # noinspection PyBroadException
             try:
                 subprocess.run(["attrib", "-r", "-s", "-h", path], capture_output=True, creationflags=0x08000000)
                 shutil.move(path, backup_path)
@@ -1045,6 +1065,7 @@ class ScanEngine:
         encoding = str((payload or {}).get("encoding") or "")
         value = (payload or {}).get("value")
         if encoding == "base64":
+            # noinspection PyBroadException
             try:
                 return base64.b64decode(value or "")
             except Exception:
@@ -1052,6 +1073,7 @@ class ScanEngine:
         if encoding == "list":
             return list(value or [])
         if encoding == "int":
+            # noinspection PyBroadException
             try:
                 return int(value)
             except Exception:
@@ -1064,6 +1086,7 @@ class ScanEngine:
         hive_name = HIVE_CONST_TO_NAME.get(hive, "")
         if not hive_name:
             return None
+        # noinspection PyBroadException
         try:
             key = winreg.OpenKey(hive, subkey)
             value, reg_type = winreg.QueryValueEx(key, name)
@@ -1111,6 +1134,7 @@ class ScanEngine:
                 "name": name,
                 "exists": False,
             }
+        # noinspection PyBroadException
         try:
             winreg.CloseKey(key)
         except Exception:
@@ -1125,6 +1149,7 @@ class ScanEngine:
         name = str(snapshot.get("name") or "")
         if hive is None or not subkey or not name:
             return False
+        # noinspection PyBroadException
         try:
             key = winreg.CreateKeyEx(hive, subkey, 0, winreg.KEY_SET_VALUE)
             if snapshot.get("exists"):
@@ -1144,6 +1169,7 @@ class ScanEngine:
     def _capture_task_xml(self, task_name):
         if not task_name or not self._begin_recovery_session():
             return None
+        # noinspection PyBroadException
         try:
             result = subprocess.run(
                 ["schtasks", "/query", "/tn", task_name, "/xml"],
@@ -1159,10 +1185,12 @@ class ScanEngine:
         session_dir = self._session_dir(self._recovery_session["session_id"])
         backup_name = f"{len(self._recovery_session['entries']) + 1:04d}_{self._safe_backup_name(task_name)}.xml"
         xml_path = os.path.join(session_dir, "tasks", backup_name)
+        # noinspection PyBroadException
         try:
             with open(xml_path, "w", encoding="utf-16") as handle:
                 handle.write(result.stdout)
         except Exception:
+            # noinspection PyBroadException
             try:
                 with open(xml_path, "w", encoding="utf-8") as handle:
                     handle.write(result.stdout)
@@ -1178,20 +1206,21 @@ class ScanEngine:
         if not rule_name:
             return None
         escaped = rule_name.replace("'", "''")
+        # noinspection SpellCheckingInspection
         rows = self._run_powershell_json(
             "$rule = Get-NetFirewallRule -Name '" + escaped + "' -ErrorAction SilentlyContinue | Select-Object -First 1; "
-            "if ($rule) { "
-            "$app = $rule | Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue | Select-Object -First 1; "
-            "$port = $rule | Get-NetFirewallPortFilter -ErrorAction SilentlyContinue | Select-Object -First 1; "
-            "$addr = $rule | Get-NetFirewallAddressFilter -ErrorAction SilentlyContinue | Select-Object -First 1; "
-            "$svc = $rule | Get-NetFirewallServiceFilter -ErrorAction SilentlyContinue | Select-Object -First 1; "
-            "[pscustomobject]@{ "
-            "Name=$rule.Name; DisplayName=$rule.DisplayName; Description=$rule.Description; "
-            "Direction=[string]$rule.Direction; Action=[string]$rule.Action; Profile=[string]$rule.Profile; "
-            "Enabled=[string]$rule.Enabled; Program=$app.Program; Service=$svc.Service; "
-            "Protocol=$port.Protocol; LocalPort=$port.LocalPort; RemotePort=$port.RemotePort; "
-            "LocalAddress=$addr.LocalAddress; RemoteAddress=$addr.RemoteAddress "
-            "} | ConvertTo-Json -Compress }",
+                                                              "if ($rule) { "
+                                                              "$app = $rule | Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue | Select-Object -First 1; "
+                                                              "$port = $rule | Get-NetFirewallPortFilter -ErrorAction SilentlyContinue | Select-Object -First 1; "
+                                                              "$addr = $rule | Get-NetFirewallAddressFilter -ErrorAction SilentlyContinue | Select-Object -First 1; "
+                                                              "$svc = $rule | Get-NetFirewallServiceFilter -ErrorAction SilentlyContinue | Select-Object -First 1; "
+                                                              "[pscustomobject]@{ "
+                                                              "Name=$rule.Name; DisplayName=$rule.DisplayName; Description=$rule.Description; "
+                                                              "Direction=[string]$rule.Direction; Action=[string]$rule.Action; Profile=[string]$rule.Profile; "
+                                                              "Enabled=[string]$rule.Enabled; Program=$app.Program; Service=$svc.Service; "
+                                                              "Protocol=$port.Protocol; LocalPort=$port.LocalPort; RemotePort=$port.RemotePort; "
+                                                              "LocalAddress=$addr.LocalAddress; RemoteAddress=$addr.RemoteAddress "
+                                                              "} | ConvertTo-Json -Compress }",
             timeout=20,
         )
         if not rows:
@@ -1205,6 +1234,7 @@ class ScanEngine:
     def _powershell_quote(value):
         return "'" + str(value or "").replace("'", "''") + "'"
 
+    # noinspection PyMethodMayBeStatic
     def _restore_path_entry(self, entry):
         original_path = str(entry.get("original_path") or "")
         backup_path = str(entry.get("backup_path") or "")
@@ -1220,6 +1250,7 @@ class ScanEngine:
                 candidate = f"{original_path}{RESTORE_CONFLICT_SUFFIX}_{suffix}"
             target_path = candidate
 
+        # noinspection PyBroadException
         try:
             os.makedirs(os.path.dirname(target_path), exist_ok=True)
             shutil.move(backup_path, target_path)
@@ -1227,11 +1258,13 @@ class ScanEngine:
         except Exception:
             return False, ""
 
+    # noinspection PyMethodMayBeStatic
     def _restore_task_entry(self, entry):
         task_name = str(entry.get("task_name") or "")
         xml_path = str(entry.get("xml_path") or "")
         if not task_name or not xml_path or not os.path.isfile(xml_path):
             return False
+        # noinspection PyBroadException
         try:
             result = subprocess.run(
                 ["schtasks", "/create", "/tn", task_name, "/xml", xml_path, "/f"],
@@ -1251,6 +1284,7 @@ class ScanEngine:
         params = []
         for key in ("Name", "DisplayName", "Description", "Direction", "Action", "Profile"):
             value = str(rule.get(key) or "")
+            # noinspection SpellCheckingInspection
             if value and value.lower() not in {"any", "notconfigured"}:
                 params.append(f"-{key} {self._powershell_quote(value)}")
         enabled = str(rule.get("Enabled") or "")
@@ -1258,9 +1292,11 @@ class ScanEngine:
             params.append(f"-Enabled {enabled}")
         for key in ("Program", "Service", "LocalPort", "RemotePort", "LocalAddress", "RemoteAddress"):
             value = str(rule.get(key) or "")
+            # noinspection SpellCheckingInspection
             if value and value.lower() not in {"any", "notconfigured"}:
                 params.append(f"-{key} {self._powershell_quote(value)}")
         protocol = str(rule.get("Protocol") or "")
+        # noinspection SpellCheckingInspection
         if protocol and protocol.lower() not in {"any", "notconfigured"}:
             params.append(f"-Protocol {self._powershell_quote(protocol)}")
         if not params:
@@ -1309,6 +1345,7 @@ class ScanEngine:
         for entry in reversed(manifest.get("entries") or []):
             kind = str(entry.get("kind") or "")
             ok = False
+            # noinspection PyUnusedLocal
             conflict_target = ""
             if kind == "path_move":
                 ok, conflict_target = self._restore_path_entry(entry)
@@ -1345,6 +1382,7 @@ class ScanEngine:
 
         pointer = self._latest_recovery_pointer()
         if pointer and os.path.isfile(pointer):
+            # noinspection PyBroadException
             try:
                 os.remove(pointer)
             except Exception:
@@ -1403,10 +1441,10 @@ class ScanEngine:
 
         categories = [t.category for t in self.threats]
         text_blob = " ".join(f"{t.category} {t.description} {t.path}".lower() for t in self.threats)
-
+        # noinspection SpellCheckingInspection
         renloader_hits = 0
         generic_stealer_hits = 0
-
+        # noinspection SpellCheckingInspection
         renloader_markers = (
             "instaler", "lnstaier", "renpy", "archive.rpa", "script.rpyc",
             "iviewers.dll", "broker_crypt_v4_i386", "froodjurain",
@@ -1414,6 +1452,7 @@ class ScanEngine:
             "amatera", "instsatp_", "t11_asm", "antivmgpu",
             "antivmhypervisornames", "antivmmacs",
         )
+        # noinspection SpellCheckingInspection
         generic_markers = (
             "acr", "acrstealer", "lumma", "rhadamanthys", "vidar",
             "active c2 connection", "malicious scheduled task", "registry persistence"
@@ -1421,7 +1460,7 @@ class ScanEngine:
 
         renloader_hits += sum(1 for marker in renloader_markers if marker in text_blob)
         generic_stealer_hits += sum(1 for marker in generic_markers if marker in text_blob)
-
+        # noinspection SpellCheckingInspection
         renloader_hits += sum(1 for cat in categories if cat in {
             "AppInit Persistence",
             "IFEO Persistence",
@@ -1433,7 +1472,6 @@ class ScanEngine:
             "Persistence Artifact",
             "Persistence Process",
             "Persistence Staging Directory",
-            "Suspicious Loader Stage Directory",
             "Malicious Shortcut",
             "Campaign IOC Process",
             "Injected/Sideloaded DLL",
@@ -1443,7 +1481,6 @@ class ScanEngine:
             "HijackLoader Stage Artifact",
             "Loader Container DLL",
             "WMI Persistence",
-            "Suspicious RenPy Loader Bundle",
         })
         generic_stealer_hits += sum(1 for cat in categories if cat in {
             "Active C2 Connection",
@@ -1520,14 +1557,16 @@ class ScanEngine:
                 assessment = {
                     "score": 82,
                     "label": "Looks clean, reboot still pending",
-                    "detail": "No active artifacts matched, but a reboot and one more scan are still recommended before calling the machine clean.",
+                    "detail": "No active artifacts matched,"
+                              " but a reboot and one more scan are still recommended before calling the machine clean.",
                     "color": AMBER,
                 }
             else:
                 assessment = {
                     "score": 90,
                     "label": "No active artifacts found",
-                    "detail": "This scan did not match active RenLoader-style files, processes, or persistence artifacts.",
+                    "detail": "This scan did not match active RenLoader-style files, processes,"
+                              " or persistence artifacts.",
                     "color": GREEN,
                 }
             self.cleanup_assessment = assessment
@@ -1547,14 +1586,17 @@ class ScanEngine:
         if self.post_cleanup_scan and self.rebooted_after_cleanup:
             score -= 12
             label = "Artifacts remain after reboot and rescan"
-            detail = "Persistence or malware-linked artifacts are still being found after cleanup and reboot. Local eradication is not complete."
+            detail = ("Persistence or malware-linked artifacts are still being found after cleanup and reboot."
+                      " Local eradication is not complete.")
         elif self.post_cleanup_scan:
             score = min(score, 60)
             label = "Cleanup incomplete or reboot pending"
-            detail = "Artifacts are still present, or the machine has not yet been rebooted and rescanned after cleanup."
+            detail = ("Artifacts are still present,"
+                      " or the machine has not yet been rebooted and rescanned after cleanup.")
         else:
             label = "Local cleanup confidence is low"
-            detail = "This scan still sees malware-linked artifacts or persistence. Do not consider the machine clean yet."
+            detail = ("This scan still sees malware-linked artifacts or persistence."
+                      " Do not consider the machine clean yet.")
 
         assessment = {
             "score": self._clamp_score(score),
@@ -1565,6 +1607,7 @@ class ScanEngine:
         self.cleanup_assessment = assessment
         return assessment
 
+    # noinspection PyMethodMayBeStatic
     def _temp_paths(self):
         out = []
         for k in ("TEMP", "TMP"):
@@ -1597,6 +1640,7 @@ class ScanEngine:
     def _normalized_path(path):
         if not path:
             return ""
+        # noinspection PyBroadException
         try:
             return os.path.normcase(os.path.abspath(os.path.expandvars(path))).lower()
         except Exception:
@@ -1604,6 +1648,7 @@ class ScanEngine:
 
     @staticmethod
     def _powershell_path():
+        # noinspection SpellCheckingInspection
         windir = os.environ.get("WINDIR", r"C:\Windows")
         return os.path.join(windir, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
 
@@ -1621,6 +1666,7 @@ class ScanEngine:
 
     def _run_powershell(self, script, timeout=45):
         powershell = self._powershell_path()
+        # noinspection PyBroadException
         try:
             return subprocess.run(
                 [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
@@ -1656,6 +1702,7 @@ class ScanEngine:
             return {}
 
         escaped = path.replace("'", "''")
+        # noinspection SpellCheckingInspection
         rows = self._run_powershell_json(
             "$item = Get-Item -LiteralPath '" + escaped + "' -ErrorAction SilentlyContinue; "
             "if ($item -and $item.VersionInfo) { "
@@ -1719,6 +1766,7 @@ class ScanEngine:
             return False
         return any(marker in normalized for marker in COMMON_USERLAND_EXEC_MARKERS)
 
+    # noinspection SpellCheckingInspection
     def _is_safe_process_context(self, pname, pexe, cmdline="", allow_metadata=False):
         if self._has_strong_campaign_context(pname, pexe, cmdline):
             return False
@@ -1741,7 +1789,7 @@ class ScanEngine:
         base = os.path.basename(os.path.normpath(norm)).lower()
         if base in NON_REMOVABLE_DIR_BASENAMES:
             return True
-
+        # noinspection SpellCheckingInspection
         protected_roots = [
             os.environ.get("WINDIR", ""),
             os.environ.get("PROGRAMDATA", ""),
@@ -1777,12 +1825,14 @@ class ScanEngine:
             os.path.join(profile, "Desktop") if profile else "",
             os.path.join(public_root, "Desktop") if public_root else "",
             os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "Startup") if appdata else "",
-            os.path.join(programdata, "Microsoft", "Windows", "Start Menu", "Programs", "Startup") if programdata else "",
+            os.path.join(programdata, "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
+            if programdata else "",
         ):
             if candidate and os.path.isdir(candidate):
                 roots.append(candidate)
         return roots
 
+    # noinspection SpellCheckingInspection
     @staticmethod
     def _is_disabled_startupapproved_value(data):
         if not isinstance(data, (bytes, bytearray)) or not data:
@@ -1799,6 +1849,7 @@ class ScanEngine:
             return self._shortcut_scan_rows
 
         escaped_roots = ", ".join("'" + root.replace("'", "''") + "'" for root in roots)
+        # noinspection SpellCheckingInspection
         rows = self._run_powershell_json(
             "$roots = @(" + escaped_roots + "); "
             "$roots = $roots | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique; "
@@ -1931,9 +1982,12 @@ class ScanEngine:
     def _get_process_context(self, pid):
         if not PSUTIL_OK:
             return "", "", ""
+        # noinspection PyBroadException
         try:
             proc = psutil.Process(pid)
+            # noinspection SpellCheckingInspection
             pname = self._safe_proc_name(proc)
+            # noinspection SpellCheckingInspection
             pexe = self._safe_proc_exe(proc)
             cmdline = self._safe_proc_cmdline(proc)
             return pname, pexe, cmdline
@@ -1944,6 +1998,7 @@ class ScanEngine:
 
     @staticmethod
     def _safe_proc_name(proc):
+        # noinspection PyBroadException
         try:
             return (proc.name() or "").lower()
         except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
@@ -1951,8 +2006,10 @@ class ScanEngine:
         except Exception:
             return ""
 
+    # noinspection SpellCheckingInspection
     @staticmethod
     def _safe_proc_ppid(proc):
+        # noinspection PyBroadException
         try:
             return proc.ppid() or 0
         except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
@@ -1962,6 +2019,7 @@ class ScanEngine:
 
     @staticmethod
     def _safe_proc_exe(proc):
+        # noinspection PyBroadException
         try:
             return proc.exe() or ""
         except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
@@ -1970,6 +2028,7 @@ class ScanEngine:
             return ""
 
     def _safe_proc_cmdline(self, proc):
+        # noinspection PyBroadException
         try:
             return self._normalize_cmdline(proc.cmdline())
         except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
@@ -1978,6 +2037,7 @@ class ScanEngine:
             return ""
 
     def _should_block_process_remediation(self, pid):
+        # noinspection SpellCheckingInspection
         pname, pexe, cmdline = self._get_process_context(pid)
         target = pexe or cmdline or pname or f"PID {pid}"
         if not (pname or pexe or cmdline):
@@ -1993,6 +2053,7 @@ class ScanEngine:
 
     @staticmethod
     def _file_contains_ascii_or_utf16le(path, needles):
+        # noinspection PyBroadException
         try:
             with open(path, "rb") as handle:
                 data = handle.read(65536).lower()
@@ -2012,7 +2073,8 @@ class ScanEngine:
 
         if self._has_strong_campaign_context(raw):
             return True
-        if normalized_target and not self._is_trusted_vendor_path(normalized_target) and not self._has_trusted_file_metadata(target):
+        if (normalized_target and not self._is_trusted_vendor_path(normalized_target) and not
+        self._has_trusted_file_metadata(target)):
             if any(marker in normalized_target for marker in COMMON_USERLAND_EXEC_MARKERS):
                 base = os.path.splitext(os.path.basename(normalized_target))[0]
                 if (
@@ -2029,13 +2091,16 @@ class ScanEngine:
         base = os.path.splitext(os.path.basename(normalized_executable))[0]
 
         if self._has_strong_campaign_context(blob):
-            return "CRITICAL", "Malicious Service", f"Service references RenLoader/HijackLoader artifacts: {service_name} -> {path_name}"
-        if not executable or self._is_safe_process_context(service_name.lower(), executable, path_name) or self._has_trusted_file_metadata(executable):
+            return "CRITICAL", "Malicious Service", (f"Service references RenLoader/HijackLoader artifacts:"
+                                                     f" {service_name} -> {path_name}")
+        if (not executable or self._is_safe_process_context(service_name.lower(), executable, path_name) or
+                self._has_trusted_file_metadata(executable)):
             return None
         if any(marker in normalized_executable for marker in COMMON_USERLAND_EXEC_MARKERS) and (
             self._looks_random(base) or self._contains_marker(normalized_executable, PROCESS_IOC_MARKERS)
         ):
-            return "HIGH", "Malicious Service", f"Service points at suspicious user-writable executable: {service_name} -> {path_name}"
+            return "HIGH", "Malicious Service", (f"Service points at suspicious user-writable executable:"
+                                                 f" {service_name} -> {path_name}")
         return None
 
     @staticmethod
@@ -2046,6 +2111,7 @@ class ScanEngine:
         if base != "user data":
             return [root]
         out = []
+        # noinspection PyBroadException
         try:
             for entry in os.listdir(root):
                 full = os.path.join(root, entry)
@@ -2065,6 +2131,7 @@ class ScanEngine:
                 ext_root = os.path.join(profile_dir, "Extensions")
                 if not os.path.isdir(ext_root):
                     continue
+                # noinspection PyBroadException
                 try:
                     for ext_id in os.listdir(ext_root):
                         ext_id_dir = os.path.join(ext_root, ext_id)
@@ -2085,6 +2152,7 @@ class ScanEngine:
                 h.update(chunk)
         return h.hexdigest().lower()
 
+    # noinspection SpellCheckingInspection
     def _is_probable_source_lure(self, path, fname):
         name_lower = fname.lower()
         ext = os.path.splitext(name_lower)[1]
@@ -2106,6 +2174,7 @@ class ScanEngine:
                 return True
         return False
 
+    # noinspection SpellCheckingInspection
     def _profile_renpy_bundle(self, dirpath, dir_names_lower, filenames):
         if not RENENGINE_FOLDER_SET.issubset(dir_names_lower):
             return None
@@ -2123,9 +2192,9 @@ class ScanEngine:
         }
         paired_stems = sorted(exe_stems & script_stems)
         suspicious_location = (
-            self._path_in_user_writable_exec_zone(dirpath.lower())
-            or self._in_temp(dirpath)
-            or self._is_user_visible_root(dirpath)
+                self._path_in_user_writable_exec_zone(dirpath.lower())
+                or self._in_temp(dirpath)
+                or self._is_user_visible_root(dirpath)
         )
         lure_context = self._contains_marker(
             " ".join([dirpath] + names_lower),
@@ -2157,6 +2226,7 @@ class ScanEngine:
             "reasons": reasons,
         }
 
+    # noinspection SpellCheckingInspection
     def _evaluate_renpy_bundle(self, dirpath, dir_names_lower, filenames):
         profile = self._profile_renpy_bundle(dirpath, dir_names_lower, filenames)
         if not profile:
@@ -2180,15 +2250,18 @@ class ScanEngine:
 
         return None
 
+    # noinspection SpellCheckingInspection
     def _has_renloader_corroboration(self):
         categories = {threat.category for threat in self.threats}
         return bool(categories & (RENLOADER_CORRELATION_CATEGORIES - {"Suspicious RenPy Loader Bundle"}))
 
+    # noinspection SpellCheckingInspection
     def _looks_like_hijackloader_stage_dir(self, dirpath, file_names_lower):
         dir_lower = dirpath.lower()
-        if (self._is_trusted_vendor_path(dirpath) or self._is_protected_system_path(dirpath)) and not self._has_strong_campaign_context(
+        if ((self._is_trusted_vendor_path(dirpath) or self._is_protected_system_path(dirpath)) and
+                not self._has_strong_campaign_context(
             dirpath, " ".join(sorted(file_names_lower))
-        ):
+        )):
             return False
         suspicious_context = (
             self._in_temp(dirpath)
@@ -2203,16 +2276,18 @@ class ScanEngine:
                 return True
         return False
 
+    # noinspection SpellCheckingInspection
     def _looks_like_generic_loader_stage_dir(self, dirpath, file_names_lower):
         dir_lower = dirpath.lower()
-        if (self._is_trusted_vendor_path(dirpath) or self._is_protected_system_path(dirpath)) and not self._has_strong_campaign_context(
-            dirpath, " ".join(sorted(file_names_lower))
+        if (self._is_trusted_vendor_path(dirpath) or self._is_protected_system_path(
+                dirpath)) and not self._has_strong_campaign_context(
+                dirpath, " ".join(sorted(file_names_lower))
         ):
             return False
         if not (
-            self._in_temp(dirpath)
-            or "\\.temp" in dir_lower
-            or self._path_in_user_writable_exec_zone(dir_lower)
+                self._in_temp(dirpath)
+                or "\\.temp" in dir_lower
+                or self._path_in_user_writable_exec_zone(dir_lower)
         ):
             return False
 
@@ -2232,6 +2307,7 @@ class ScanEngine:
         )
         return suspicious_dll or random_like >= 2
 
+    # noinspection SpellCheckingInspection
     def _matches_exact_ioc_hash(self, path, fname):
         fl = fname.lower()
         ext = os.path.splitext(fl)[1]
@@ -2243,12 +2319,14 @@ class ScanEngine:
                 return None
         except OSError:
             return None
+        # noinspection PyBroadException
         try:
             digest = self._sha256_file(path)
         except Exception:
             return None
         return KNOWN_SHA256_IOCS.get(digest)
 
+    # noinspection SpellCheckingInspection
     @staticmethod
     def _should_skip_walk_dir(dirpath):
         dpl = dirpath.lower()
@@ -2266,15 +2344,18 @@ class ScanEngine:
             full_path = os.path.join(profile, rel_path)
             if os.path.exists(full_path):
                 self._note_exposure(
-                    f"Exposure warning — {label} data may have been accessed. Revoke sessions from a clean device",
+                    f"Exposure warning — {label} data may have been accessed."
+                    f" Revoke sessions from a clean device",
                     full_path
                 )
 
+    # noinspection SpellCheckingInspection
     def _looks_suspicious_module_path(self, module_path):
         mpl = (module_path or "").lower()
         if not mpl.endswith(".dll"):
             return False
-        if (self._is_trusted_vendor_path(module_path) or self._is_protected_system_path(module_path)) and not self._has_strong_campaign_context(module_path):
+        if ((self._is_trusted_vendor_path(module_path) or self._is_protected_system_path(module_path))
+                and not self._has_strong_campaign_context(module_path)):
             return False
         base = os.path.basename(mpl)
         if base in SUSPICIOUS_DLL_NAMES and (
@@ -2296,6 +2377,7 @@ class ScanEngine:
             return False
         return True
 
+    # noinspection SpellCheckingInspection
     def _should_scan_modules_for_process(self, pid, pname, pexe, cmdline):
         if self.paranoid:
             return True
@@ -2338,7 +2420,9 @@ class ScanEngine:
                 return
             try:
                 pid = proc.pid
+                # noinspection SpellCheckingInspection
                 pname = self._safe_proc_name(proc)
+                # noinspection SpellCheckingInspection
                 pexe = self._safe_proc_exe(proc)
                 cmdline = self._safe_proc_cmdline(proc)
                 if not self._should_scan_modules_for_process(pid, pname, pexe, cmdline):
@@ -2347,6 +2431,7 @@ class ScanEngine:
                 scanned_targets += 1
                 if scanned_targets % 5 == 0:
                     self.progress(f"Checked modules for {scanned_targets} suspicious processes...")
+                # noinspection SpellCheckingInspection
                 pexe_lower = pexe.lower()
 
                 if (
@@ -2355,15 +2440,18 @@ class ScanEngine:
                     and not os.path.exists(pexe)
                     and not self._is_safe_process_context(pname, pexe, cmdline)
                 ):
+                    # noinspection SpellCheckingInspection
                     self._add(
                         "CRITICAL",
                         "Execution Trace Anomaly",
-                        f"Process image path missing on disk (possible hollowing/doppelganging trace): {pname} (PID {pid})  {pexe}",
+                        f"Process image path missing on disk (possible hollowing/doppelganging trace):"
+                        f" {pname} (PID {pid})  {pexe}",
                         pexe or cmdline,
                         lambda p=pid: self._kill_process_tree(p)
                     )
 
                 for mmap in proc.memory_maps():
+                    # noinspection SpellCheckingInspection
                     mpath = getattr(mmap, "path", "") or ""
                     if not mpath:
                         continue
@@ -2371,7 +2459,8 @@ class ScanEngine:
                     if key in seen:
                         continue
                     seen.add(key)
-                    if self._is_safe_process_context(pname, pexe, cmdline) and not self._has_strong_campaign_context(mpath):
+                    if (self._is_safe_process_context(pname, pexe, cmdline) and
+                            not self._has_strong_campaign_context(mpath)):
                         continue
                     if self._looks_suspicious_module_path(mpath):
                         sev = "CRITICAL" if os.path.basename(mpath).lower() in SUSPICIOUS_DLL_NAMES else "HIGH"
@@ -2401,8 +2490,11 @@ class ScanEngine:
             if not os.path.isdir(root):
                 continue
             try:
+                # noinspection SpellCheckingInspection
                 for fname in os.listdir(root):
+                    # noinspection SpellCheckingInspection
                     fpath = os.path.join(root, fname)
+                    # noinspection PyUnusedLocal
                     fl = fname.lower()
                     if self._is_probable_source_lure(fpath, fname) or self._file_contains_ascii_or_utf16le(
                         fpath, PROCESS_IOC_MARKERS
@@ -2456,7 +2548,7 @@ class ScanEngine:
             shortcut_path = self._normalized_path(row.get("Path"))
             if shortcut_path:
                 startup_shortcuts[shortcut_path] = row
-
+        # noinspection SpellCheckingInspection
         actual_run_keys = {
             "Run": [
                 (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", "HKCU"),
@@ -2466,7 +2558,7 @@ class ScanEngine:
                 (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run", "HKLM"),
             ],
         }
-
+        # noinspection SpellCheckingInspection
         startupapproved_roots = [
             (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved", "HKCU"),
             (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved", "HKLM"),
@@ -2506,10 +2598,12 @@ class ScanEngine:
                             self._add(
                                 "HIGH",
                                 "Disabled Startup Artifact",
-                                f"Disabled startup entry still points at malware-linked command: {item_name} -> {run_value}",
+                                f"Disabled startup entry still points at malware-linked command:"
+                                f" {item_name} -> {run_value}",
                                 location,
                                 lambda approved_hive=hive, approved_key=subkey, approved_name=item_name,
-                                value_hive=run_hive, value_key=run_key, value_name=item_name: self._remediate_disabled_startup_entry(
+                                value_hive=run_hive, value_key=run_key, value_name=item_name:
+                                self._remediate_disabled_startup_entry(
                                     [(approved_hive, approved_key, approved_name), (value_hive, value_key, value_name)]
                                 ),
                             )
@@ -2533,7 +2627,8 @@ class ScanEngine:
                         self._add(
                             "HIGH",
                             "Disabled Startup Artifact",
-                            f"Disabled startup shortcut still references suspicious target: {row.get('Path')}",
+                            f"Disabled startup shortcut still references suspicious target:"
+                            f" {row.get('Path')}",
                             row.get("Path"),
                             lambda approved_hive=hive, approved_key=subkey, approved_name=item_name,
                             shortcut=row.get("Path"): self._remediate_disabled_startup_entry(
@@ -2542,7 +2637,7 @@ class ScanEngine:
                             ),
                         )
                         break
-
+                # noinspection PyBroadException
                 try:
                     winreg.CloseKey(key)
                 except Exception:
@@ -2583,9 +2678,15 @@ class ScanEngine:
     def scan_wmi_persistence(self):
         self.log("WMI PERSISTENCE SCAN", "SECTION")
         queries = (
-            ("__EventFilter", "Get-WmiObject -Namespace root\\subscription -Class __EventFilter | Select-Object Name,Query,EventNamespace | ConvertTo-Json -Compress"),
-            ("CommandLineEventConsumer", "Get-WmiObject -Namespace root\\subscription -Class CommandLineEventConsumer | Select-Object Name,CommandLineTemplate,ExecutablePath | ConvertTo-Json -Compress"),
-            ("ActiveScriptEventConsumer", "Get-WmiObject -Namespace root\\subscription -Class ActiveScriptEventConsumer | Select-Object Name,ScriptingEngine,ScriptText | ConvertTo-Json -Compress"),
+            ("__EventFilter", "Get-WmiObject -Namespace root\\subscription -Class __EventFilter | Select-Object Name,"
+                              "Query,EventNamespace | ConvertTo-Json -Compress"),
+            ("CommandLineEventConsumer", "Get-WmiObject -Namespace root\\subscription -Class CommandLineEventConsumer"
+                                         " | Select-Object Name,CommandLineTemplate,ExecutablePath |"
+                                         " ConvertTo-Json -Compress"),
+            ("ActiveScriptEventConsumer", "Get-WmiObject -Namespace root\\subscription"
+                                          " -Class ActiveScriptEventConsumer"
+                                          " | Select-Object Name,ScriptingEngine,ScriptText |"
+                                          " ConvertTo-Json -Compress"),
         )
 
         for class_name, script in queries:
@@ -2603,7 +2704,8 @@ class ScanEngine:
                     suspicious = self._has_strong_campaign_context(blob)
 
                     if not suspicious and class_name == "CommandLineEventConsumer":
-                        candidate = self._extract_command_target(str(row.get("CommandLineTemplate") or row.get("ExecutablePath") or ""))
+                        candidate = self._extract_command_target(str(row.get("CommandLineTemplate") or
+                                                                     row.get("ExecutablePath") or ""))
                         normalized = self._normalized_path(candidate)
                         base = os.path.splitext(os.path.basename(normalized))[0]
                         suspicious = bool(
@@ -2633,6 +2735,7 @@ class ScanEngine:
         for label, manifest_path in self._iter_chromium_extension_manifests():
             if self._stop:
                 return
+            # noinspection PyBroadException
             try:
                 with open(manifest_path, "r", encoding="utf-8") as handle:
                     manifest = json.load(handle)
@@ -2645,6 +2748,7 @@ class ScanEngine:
                 for section in ("permissions", "host_permissions", "optional_permissions")
                 for value in (manifest.get(section) or [])
             }
+            # noinspection SpellCheckingInspection
             keyword_hit = self._contains_marker(
                 blob,
                 {
@@ -2662,10 +2766,12 @@ class ScanEngine:
                     "zoneind",
                 },
             )
+            # noinspection SpellCheckingInspection
             remote_lure_hit = self._contains_marker(blob, {"go.zovo", "mediafire", "mega", "dodi-repacks"})
             risky_permissions = bool(permissions & {perm.lower() for perm in SUSPICIOUS_EXTENSION_PERMISSIONS})
 
-            if not (self._has_strong_campaign_context(blob, manifest_path) or remote_lure_hit or (keyword_hit and risky_permissions)):
+            if not (self._has_strong_campaign_context(blob, manifest_path) or
+                    remote_lure_hit or (keyword_hit and risky_permissions)):
                 continue
 
             name = manifest.get("name") or os.path.basename(os.path.dirname(manifest_path))
@@ -2678,7 +2784,7 @@ class ScanEngine:
 
     def scan_system_tampering(self):
         self.log("SYSTEM TAMPERING REVIEW", "SECTION")
-
+        # noinspection SpellCheckingInspection
         hosts_path = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "System32", "drivers", "etc", "hosts")
         try:
             if os.path.isfile(hosts_path):
@@ -2698,7 +2804,8 @@ class ScanEngine:
                             self._add(
                                 "MEDIUM",
                                 "Hosts Tampering Review",
-                                f"Hosts file overrides sensitive domain(s): {address} -> {' '.join(hostnames)}",
+                                f"Hosts file overrides sensitive domain(s):"
+                                f" {address} -> {' '.join(hostnames)}",
                                 hosts_path,
                             )
                             break
@@ -2706,13 +2813,17 @@ class ScanEngine:
             self.log(f"Hosts review warning: {exc}", "WARN")
 
         if WINREG_OK:
+            # noinspection SpellCheckingInspection
             proxy_locations = [
                 (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings", "HKCU"),
                 (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings", "HKLM"),
             ]
             for hive, subkey, hive_name in proxy_locations:
+                # noinspection PyUnusedLocal
                 proxy_enable = 0
+                # noinspection PyUnusedLocal
                 proxy_server = ""
+                # noinspection PyUnusedLocal
                 auto_config = ""
                 try:
                     key = winreg.OpenKey(hive, subkey)
@@ -2734,7 +2845,8 @@ class ScanEngine:
 
                 proxy_blob = " ".join(str(part) for part in (proxy_server, auto_config) if part)
                 proxy_lower = proxy_blob.lower()
-                suspicious_proxy = self._has_strong_campaign_context(proxy_blob) or any(token in proxy_lower for token in ("127.0.0.1", "localhost"))
+                suspicious_proxy = (self._has_strong_campaign_context(proxy_blob) or
+                                    any(token in proxy_lower for token in ("127.0.0.1", "localhost")))
                 if proxy_enable and proxy_blob and suspicious_proxy:
                     severity = "HIGH" if self._has_strong_campaign_context(proxy_blob) else "MEDIUM"
                     action = self._reset_user_proxy_settings if severity == "HIGH" else None
@@ -2747,6 +2859,7 @@ class ScanEngine:
                     )
 
         try:
+            # noinspection SpellCheckingInspection
             result = subprocess.run(
                 ["netsh", "winhttp", "show", "proxy"],
                 capture_output=True,
@@ -2756,8 +2869,10 @@ class ScanEngine:
             )
             output = (result.stdout or "").strip().lower()
             if output and "direct access (no proxy server)" not in output and (
-                self._has_strong_campaign_context(output) or any(token in output for token in ("127.0.0.1", "localhost"))
+                self._has_strong_campaign_context(output) or any(token in output for token in
+                                                                 ("127.0.0.1", "localhost"))
             ):
+                # noinspection SpellCheckingInspection
                 self._add(
                     "MEDIUM",
                     "WinHTTP Proxy Review",
@@ -2769,6 +2884,7 @@ class ScanEngine:
 
     def scan_defender_posture(self):
         self.log("DEFENDER POSTURE REVIEW", "SECTION")
+        # noinspection SpellCheckingInspection
         rows = self._run_powershell_json(
             "try { "
             "$pref = Get-MpPreference -ErrorAction Stop; "
@@ -2814,6 +2930,7 @@ class ScanEngine:
         if bool(row.get("DisableRealtimeMonitoring")):
             disabled_controls.append("real-time monitoring")
         if bool(row.get("DisableIOAVProtection")):
+            # noinspection SpellCheckingInspection
             disabled_controls.append("IOAV protection")
         if bool(row.get("DisableScriptScanning")):
             disabled_controls.append("script scanning")
@@ -2828,6 +2945,7 @@ class ScanEngine:
 
     def scan_firewall_rules(self):
         self.log("FIREWALL RULE REVIEW", "SECTION")
+        # noinspection SpellCheckingInspection
         rows = self._run_powershell_json(
             "try { "
             "Get-NetFirewallRule -Enabled True -Action Allow -ErrorAction Stop | "
@@ -2878,7 +2996,8 @@ class ScanEngine:
                 self._add(
                     severity,
                     "Firewall Rule Review",
-                    f"Allow firewall rule points at suspicious program: {display_name or rule_name} -> {program}",
+                    f"Allow firewall rule points at suspicious program: {display_name or rule_name}"
+                    f" -> {program}",
                     rule_name or display_name,
                     action,
                 )
@@ -2890,14 +3009,17 @@ class ScanEngine:
         pl = (path or "").lower()
         return any(marker in pl for marker in USER_WRITABLE_DIR_MARKERS)
 
+    # noinspection SpellCheckingInspection
     @staticmethod
     def _looks_script_host(pname, cmdline_lower):
         return pname in {"python.exe", "pythonw.exe", "wscript.exe", "cscript.exe", "mshta.exe", "rundll32.exe"} or any(
             host in cmdline_lower for host in ("python.exe", "pythonw.exe", "wscript", "cscript", "mshta", "rundll32")
         )
 
+    # noinspection SpellCheckingInspection
     @staticmethod
     def _has_external_raddr(conn):
+        # noinspection PyBroadException
         try:
             if not conn.raddr:
                 return False
@@ -2918,11 +3040,14 @@ class ScanEngine:
             self.log(f"Entering: {root}", "INFO")
 
             try:
+                # noinspection SpellCheckingInspection
                 for dirpath, dirnames, filenames in os.walk(root, topdown=True):
                     if self._stop:
                         return
+                    # noinspection SpellCheckingInspection
                     dirpath_lower = dirpath.lower()
-                    if self._should_skip_walk_dir(dirpath) and not self._contains_marker(dirpath_lower, CAMPAIGN_DIR_MARKERS):
+                    if self._should_skip_walk_dir(dirpath) and not self._contains_marker(dirpath_lower,
+                                                                                         CAMPAIGN_DIR_MARKERS):
                         dirnames.clear()
                         continue
 
@@ -2941,6 +3066,7 @@ class ScanEngine:
                     if visited % 40 == 0:
                         self.progress(f"Walked {visited} dirs…  {dirpath[:65]}")
 
+                    # RenEngine bundle signature
                     dir_names_lower = {d.lower() for d in dirnames}
                     file_names_lower = {f.lower() for f in filenames}
                     bundle_hit = self._evaluate_renpy_bundle(dirpath, dir_names_lower, filenames)
@@ -2972,9 +3098,12 @@ class ScanEngine:
                                   f"Loader staging directory pattern detected: {dp}", dp,
                                   lambda p=dp: self._nuke_directory(p))
 
+                    # noinspection SpellCheckingInspection
                     for fname in filenames:
                         fl = fname.lower()
+                        # noinspection SpellCheckingInspection
                         fpath = os.path.join(dirpath, fname)
+                        # noinspection SpellCheckingInspection
                         fpath_lower = fpath.lower()
 
                         exact_ioc = self._matches_exact_ioc_hash(fpath, fname)
@@ -2983,7 +3112,7 @@ class ScanEngine:
                                       f"Exact IOC hash match ({exact_ioc}): {fpath}", fpath,
                                       lambda p=fpath: self._delete_file(p))
                             continue
-
+                        # noinspection SpellCheckingInspection
                         if fl in ("instaler.exe", "instaler.py", "instaler.pyo",
                                   "instaler.pyc", "lnstaier.exe", "iviewers.dll"):
                             self._add("CRITICAL", "Malicious File",
@@ -2996,6 +3125,7 @@ class ScanEngine:
                                       lambda p=fpath: self._delete_file(p))
 
                         elif fl == "__init__.py" and "renpy" in dirpath.lower() and self._in_temp(dirpath):
+                            # noinspection SpellCheckingInspection
                             self._add("HIGH", "Hijacked Module Init",
                                       f"Malicious __init__.py in renpy temp dir: {fpath}", fpath,
                                       lambda p=fpath: self._delete_file(p))
@@ -3005,13 +3135,16 @@ class ScanEngine:
                                       f"Encrypted payload .key in temp: {fpath}", fpath,
                                       lambda p=fpath: self._delete_file(p))
 
-                        elif fl in HIJACKLOADER_STAGE_FILES and self._looks_like_hijackloader_stage_dir(dirpath, file_names_lower):
+                        elif (fl in HIJACKLOADER_STAGE_FILES and
+                              self._looks_like_hijackloader_stage_dir(dirpath, file_names_lower)):
+                            # noinspection SpellCheckingInspection
                             sev = "CRITICAL" if fl in {"w8cpbgqi.exe", "cc32290mt.dll"} else "HIGH"
                             self._add(sev, "HijackLoader Stage Artifact",
                                       f"HijackLoader stage artifact: {fpath}", fpath,
                                       lambda p=fpath: self._delete_file(p))
 
-                        elif fl in LOADER_CONTAINER_DLLS and self._looks_like_hijackloader_stage_dir(dirpath, file_names_lower):
+                        elif (fl in LOADER_CONTAINER_DLLS and
+                              self._looks_like_hijackloader_stage_dir(dirpath, file_names_lower)):
                             self._add("HIGH", "Loader Container DLL",
                                       f"Suspicious loader container DLL in stage directory: {fpath}",
                                       fpath, lambda p=fpath: self._delete_file(p))
@@ -3022,6 +3155,7 @@ class ScanEngine:
                             or "\\appdata\\roaming\\" in fpath_lower
                             or "\\appdata\\local\\" in fpath_lower
                         ):
+                            # noinspection SpellCheckingInspection
                             sev = "CRITICAL" if fl in {"froodjurain.wkk", "chime.exe", "zoneind.exe"} else "HIGH"
                             self._add(sev, "Persistence Artifact",
                                       f"HijackLoader/ACR persistence artifact: {fpath}", fpath,
@@ -3101,10 +3235,14 @@ class ScanEngine:
                 return None, None, None
             try:
                 pid = proc.pid
+                # noinspection SpellCheckingInspection
                 ppid = self._safe_proc_ppid(proc)
+                # noinspection SpellCheckingInspection
                 pname = self._safe_proc_name(proc)
+                # noinspection SpellCheckingInspection
                 pexe = self._safe_proc_exe(proc)
                 cmdline = self._safe_proc_cmdline(proc)
+                # noinspection SpellCheckingInspection
                 row = {
                     "pid": pid,
                     "ppid": ppid,
@@ -3127,8 +3265,11 @@ class ScanEngine:
 
     def _seed_process_hit(self, row, connected_pids, seeds):
         pid = row["pid"]
+        # noinspection SpellCheckingInspection
         pname = row["name"]
+        # noinspection SpellCheckingInspection
         pexe = row["exe"]
+        # noinspection SpellCheckingInspection
         pexe_lower = row["exe_lower"]
         cmdline = row["cmdline"]
         cmdline_lower = row["cmdline_lower"]
@@ -3155,13 +3296,15 @@ class ScanEngine:
             )
             return
 
-        if self._contains_marker(pexe_lower, PROCESS_IOC_MARKERS) or self._contains_marker(cmdline_lower, PROCESS_IOC_MARKERS):
+        if (self._contains_marker(pexe_lower, PROCESS_IOC_MARKERS) or
+                self._contains_marker(cmdline_lower, PROCESS_IOC_MARKERS)):
             self._add_process_seed(
                 seeds,
                 pid,
                 "CRITICAL",
                 "Campaign IOC Process",
-                f"Process references RenEngine/HijackLoader artifacts: {pname} (PID {pid})  {pexe or cmdline}",
+                f"Process references RenEngine/HijackLoader artifacts: {pname}"
+                f" (PID {pid})  {pexe or cmdline}",
                 pexe or cmdline,
             )
             return
@@ -3187,7 +3330,8 @@ class ScanEngine:
                     pid,
                     "CRITICAL",
                     "Stealer Script Host",
-                    f"Python launched from user-writable path with malware-linked args: {pname} (PID {pid})  {cmdline}",
+                    f"Python launched from user-writable path with malware-linked args: {pname}"
+                    f" (PID {pid})  {cmdline}",
                     pexe or cmdline,
                 )
                 return
@@ -3222,7 +3366,8 @@ class ScanEngine:
                 pid,
                 "CRITICAL",
                 "Execution Trace Anomaly",
-                f"Windows process showing malware-linked execution trace: {pname} (PID {pid})  {pexe or cmdline}",
+                f"Windows process showing malware-linked execution trace: {pname}"
+                f" (PID {pid})  {pexe or cmdline}",
                 pexe or cmdline,
             )
             return
@@ -3239,13 +3384,16 @@ class ScanEngine:
                 pid,
                 "HIGH",
                 "Paranoid Script Host",
-                f"Script-capable host in user-writable execution zone: {pname} (PID {pid})  {pexe or cmdline}",
+                f"Script-capable host in user-writable execution zone: {pname}"
+                f" (PID {pid})  {pexe or cmdline}",
                 pexe or cmdline,
             )
             return
 
-        if pid in connected_pids and pexe and self._path_in_user_writable_exec_zone(pexe_lower) and pname not in SAFE_PROCESS_NAMES:
-            severity = "CRITICAL" if (self._looks_random(pname[:-4]) or self._contains_marker(pexe_lower, PROCESS_IOC_MARKERS)) else "HIGH"
+        if (pid in connected_pids and pexe and self._path_in_user_writable_exec_zone(pexe_lower) and
+                pname not in SAFE_PROCESS_NAMES):
+            severity = "CRITICAL" if (self._looks_random(pname[:-4]) or
+                                      self._contains_marker(pexe_lower, PROCESS_IOC_MARKERS)) else "HIGH"
             self._add_process_seed(
                 seeds,
                 pid,
@@ -3300,7 +3448,8 @@ class ScanEngine:
                     child_pid,
                     "HIGH",
                     "Malicious Child Process",
-                    f"Child of flagged malware-linked process: {child['name']} (PID {child_pid}) parent PID {pid}",
+                    f"Child of flagged malware-linked process: {child['name']}"
+                    f" (PID {child_pid}) parent PID {pid}",
                     child["exe"] or child["cmdline"],
                 )
 
@@ -3310,12 +3459,14 @@ class ScanEngine:
                 continue
             if self._is_safe_process_context(row["name"], row["exe"], row["cmdline"]):
                 continue
+            # noinspection SpellCheckingInspection
             self._add_process_seed(
                 seeds,
                 pid,
                 "HIGH",
                 "Malicious Child Process",
-                f"Descendant of flagged malware-linked process: {row['name']} (PID {pid}) parent PID {row['ppid']}",
+                f"Descendant of flagged malware-linked process: {row['name']}"
+                f" (PID {pid}) parent PID {row['ppid']}",
                 row["exe"] or row["cmdline"],
             )
 
@@ -3368,12 +3519,16 @@ class ScanEngine:
                 if not conn.raddr:
                     continue
                 if conn.raddr.ip in C2_IPS:
+                    # noinspection PyBroadException
                     try:
+                        # noinspection SpellCheckingInspection
                         pname = psutil.Process(conn.pid).name() if conn.pid else "unknown"
                     except Exception:
+                        # noinspection SpellCheckingInspection
                         pname = "unknown"
                     self._add("CRITICAL", "Active C2 Connection",
-                              f"Live C2 connection to {conn.raddr.ip}:{conn.raddr.port}  process: {pname} (PID {conn.pid})",
+                              f"Live C2 connection to {conn.raddr.ip}:{conn.raddr.port}"
+                              f"  process: {pname} (PID {conn.pid})",
                               conn.raddr.ip,
                               lambda p=conn.pid: self._kill_pid(p) if p else None)
         except Exception as exc:
@@ -3398,6 +3553,7 @@ class ScanEngine:
                         task_name = parts[0].strip('"').strip()
 
                 line_lower = line.lower()
+                # noinspection SpellCheckingInspection
                 if task_name and any(kw in line_lower for kw in (
                     "\\temp\\", "\\tmp\\", "instaler", "renpy",
                     "iviewers", "lnstaier", "uis4tq7p", "broker_crypt_v4_i386",
@@ -3423,7 +3579,7 @@ class ScanEngine:
         if not WINREG_OK:
             self.log("winreg unavailable — registry scan skipped", "WARN")
             return
-
+        # noinspection SpellCheckingInspection
         hives = [
             (winreg.HKEY_CURRENT_USER,  "HKCU"),
             (winreg.HKEY_LOCAL_MACHINE, "HKLM"),
@@ -3454,10 +3610,12 @@ class ScanEngine:
                     winreg.CloseKey(key)
                 except (FileNotFoundError, PermissionError):
                     pass
-
+        # noinspection SpellCheckingInspection
         ifeo_roots = [
-            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options", "HKLM"),
-            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\Image File Execution Options", "HKLM"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options",
+             "HKLM"),
+            (winreg.HKEY_LOCAL_MACHINE,
+             r"SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\Image File Execution Options", "HKLM"),
         ]
         for hive, subkey, hive_name in ifeo_roots:
             try:
@@ -3485,6 +3643,7 @@ class ScanEngine:
                     except OSError:
                         continue
                     if self._value_has_malware_signal(value):
+                        # noinspection SpellCheckingInspection
                         self._add(
                             "CRITICAL" if value_name == "Debugger" else "HIGH",
                             "IFEO Persistence",
@@ -3492,15 +3651,17 @@ class ScanEngine:
                             image_path,
                             lambda h=hive, sk=subkey + "\\" + image_name, n=value_name: self._delete_reg_val(h, sk, n),
                         )
+                # noinspection PyBroadException
                 try:
                     winreg.CloseKey(child)
                 except Exception:
                     pass
+            # noinspection PyBroadException
             try:
                 winreg.CloseKey(root)
             except Exception:
                 pass
-
+        # noinspection SpellCheckingInspection
         appinit_locations = [
             (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows", "HKLM"),
             (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\Windows", "HKLM"),
@@ -3512,8 +3673,10 @@ class ScanEngine:
                 continue
 
             try:
+                # noinspection SpellCheckingInspection
                 appinit_value = str(winreg.QueryValueEx(key, "AppInit_DLLs")[0] or "")
             except OSError:
+                # noinspection SpellCheckingInspection
                 appinit_value = ""
             if appinit_value and self._value_has_malware_signal(appinit_value):
                 self._add(
@@ -3523,6 +3686,7 @@ class ScanEngine:
                     f"{hive_name}\\{subkey}",
                     lambda h=hive, sk=subkey, n="AppInit_DLLs": self._delete_reg_val(h, sk, n),
                 )
+            # noinspection PyBroadException
             try:
                 winreg.CloseKey(key)
             except Exception:
@@ -3549,8 +3713,6 @@ class ScanEngine:
             if p.is_running():
                 p.kill()
             self.killed += 1
-            if self._recovery_session:
-                self._record_recovery_note(f"killed process PID {pid} ({target})")
             self.log(f"Killed PID {pid}", "SUCCESS")
             return True
         except Exception as exc:
@@ -3578,11 +3740,13 @@ class ScanEngine:
                     child_exe = proc.exe() or ""
                     child_cmd = self._normalize_cmdline(proc.cmdline())
                     if self._is_safe_process_context(child_name, child_exe, child_cmd, allow_metadata=True):
-                        self._log_safety_block("kill protected child process", child_exe or child_cmd or child_name)
+                        self._log_safety_block("kill protected child process",
+                                               child_exe or child_cmd or child_name)
                         continue
                     victims.append(proc)
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
+            # noinspection PyShadowingNames
             victims.sort(key=lambda proc: len(proc.children(recursive=True)), reverse=True)
 
             killed_any = False
@@ -3609,8 +3773,6 @@ class ScanEngine:
                 pass
 
             self.killed += len(gone) + len(alive) + (1 if killed_any else 0)
-            if self._recovery_session:
-                self._record_recovery_note(f"killed process tree rooted at PID {pid} ({target})")
             self.log(f"Killed process tree rooted at PID {pid}", "SUCCESS")
             return True
         except Exception as exc:
@@ -3706,8 +3868,10 @@ class ScanEngine:
                 self._log_safety_block("delete trusted service", service_name)
                 return False
         try:
-            subprocess.run(["sc", "stop", service_name], capture_output=True, text=True, timeout=15, creationflags=0x08000000)
-            result = subprocess.run(["sc", "delete", service_name], capture_output=True, text=True, timeout=15, creationflags=0x08000000)
+            subprocess.run(["sc", "stop", service_name],
+                           capture_output=True, text=True, timeout=15, creationflags=0x08000000)
+            result = subprocess.run(["sc", "delete", service_name],
+                                    capture_output=True, text=True, timeout=15, creationflags=0x08000000)
             if result.returncode == 0:
                 if self._recovery_session:
                     self._record_recovery_note(f"deleted service {service_name}")
@@ -3742,11 +3906,14 @@ class ScanEngine:
             return False
         escaped = str(value).replace("'", "''")
         if kind == "Path":
-            script = "try { Remove-MpPreference -ExclusionPath '" + escaped + "' -ErrorAction Stop } catch { exit 1 }"
+            script = ("try { Remove-MpPreference -ExclusionPath '" + escaped +
+                      "' -ErrorAction Stop } catch { exit 1 }")
         elif kind == "Process":
-            script = "try { Remove-MpPreference -ExclusionProcess '" + escaped + "' -ErrorAction Stop } catch { exit 1 }"
+            script = ("try { Remove-MpPreference -ExclusionProcess '" + escaped +
+                      "' -ErrorAction Stop } catch { exit 1 }")
         elif kind == "Extension":
-            script = "try { Remove-MpPreference -ExclusionExtension '" + escaped + "' -ErrorAction Stop } catch { exit 1 }"
+            script = ("try { Remove-MpPreference -ExclusionExtension '" + escaped +
+                      "' -ErrorAction Stop } catch { exit 1 }")
         else:
             return False
 
@@ -3799,7 +3966,8 @@ class ScanEngine:
                 "$f = Get-WmiObject -Namespace root\\subscription -Class __EventFilter "
                 f"-Filter \"Name='{escaped}'\" -ErrorAction SilentlyContinue; "
                 "if ($f) { "
-                "$f | ForEach-Object { $_.GetRelated('__FilterToConsumerBinding') | Remove-WmiObject -ErrorAction SilentlyContinue }; "
+                "$f | ForEach-Object { $_.GetRelated('__FilterToConsumerBinding')"
+                " | Remove-WmiObject -ErrorAction SilentlyContinue }; "
                 "$f | Remove-WmiObject -ErrorAction SilentlyContinue }"
             )
         if consumer_name:
@@ -3809,14 +3977,17 @@ class ScanEngine:
                     f"$c = Get-WmiObject -Namespace root\\subscription -Class {consumer_class} "
                     f"-Filter \"Name='{escaped}'\" -ErrorAction SilentlyContinue; "
                     "if ($c) { "
-                    "$c | ForEach-Object { $_.GetRelated('__FilterToConsumerBinding') | Remove-WmiObject -ErrorAction SilentlyContinue }; "
+                    "$c | ForEach-Object { $_.GetRelated('__FilterToConsumerBinding')"
+                    " | Remove-WmiObject -ErrorAction SilentlyContinue }; "
                     "$c | Remove-WmiObject -ErrorAction SilentlyContinue }"
                 )
             else:
                 script_lines.append(
                     "$classes = 'CommandLineEventConsumer','ActiveScriptEventConsumer'; "
-                    f"foreach ($cls in $classes) {{ $c = Get-WmiObject -Namespace root\\subscription -Class $cls -Filter \"Name='{escaped}'\" -ErrorAction SilentlyContinue; "
-                    "if ($c) { $c | ForEach-Object { $_.GetRelated('__FilterToConsumerBinding') | Remove-WmiObject -ErrorAction SilentlyContinue }; "
+                    f"foreach ($cls in $classes) {{ $c = Get-WmiObject -Namespace root\\subscription -Class"
+                    f" $cls -Filter \"Name='{escaped}'\" -ErrorAction SilentlyContinue; "
+                    "if ($c) { $c | ForEach-Object { $_.GetRelated('__FilterToConsumerBinding')"
+                    " | Remove-WmiObject -ErrorAction SilentlyContinue }; "
                     "$c | Remove-WmiObject -ErrorAction SilentlyContinue } }"
                 )
 
@@ -3848,18 +4019,20 @@ class ScanEngine:
                 key = winreg.OpenKey(hive, subkey, 0, winreg.KEY_SET_VALUE)
             except (FileNotFoundError, PermissionError):
                 continue
-
+            # noinspection PyBroadException
             try:
                 winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 0)
                 changed = True
             except Exception:
                 pass
             for value_name in ("ProxyServer", "AutoConfigURL"):
+                # noinspection PyBroadException
                 try:
                     winreg.DeleteValue(key, value_name)
                     changed = True
                 except Exception:
                     pass
+            # noinspection PyBroadException
             try:
                 winreg.CloseKey(key)
             except Exception:
@@ -3913,14 +4086,19 @@ class ScanEngine:
             f"── SCAN COMPLETE  |  {len(self.threats)} threat(s) found  —  {crit} CRITICAL  {high} HIGH ──",
             "SECTION"
         )
-        self.log(f"Summary verdict   : {summary['label']}", "CRITICAL" if summary["confidence"] == "high" else "WARN" if summary["confidence"] == "medium" else "INFO")
+        self.log(f"Summary verdict   : {summary['label']}", "CRITICAL" if summary["confidence"] == "high" else
+        "WARN" if summary["confidence"] == "medium" else "INFO")
         self.log(f"Assessment        : {summary['detail']}", "INFO")
-        self.log(f"Local confidence  : {cleanup['score']}%  —  {cleanup['label']}", "WARN" if cleanup["score"] < 90 else "INFO")
+        self.log(f"Local confidence  : {cleanup['score']}%  —  {cleanup['label']}", "WARN" if cleanup["score"]
+                                                                                              < 90 else "INFO")
         self.log(f"Confidence note   : {cleanup['detail']}", "INFO")
 
     def run_remediation(self):
+        # noinspection PyAttributeOutsideInit
         self._recovery_session = None
+        # noinspection PyAttributeOutsideInit
         self._recovery_manifest_path = ""
+        # noinspection PyAttributeOutsideInit
         self._recovery_warning_emitted = False
         self._begin_recovery_session()
 
@@ -3944,7 +4122,6 @@ class ScanEngine:
             f"{self.removed} file(s)/entry(ies) removed ──",
             "SECTION"
         )
-
         self._log_recovery_snapshot_summary()
 
     def generate_report(self) -> str:
@@ -3952,8 +4129,11 @@ class ScanEngine:
         crit = sum(1 for t in self.threats if t.severity == "CRITICAL")
         high = sum(1 for t in self.threats if t.severity == "HIGH")
         recovery = self.latest_recovery_summary()
+        # noinspection PyUnusedLocal
         summary = self.last_summary or self.summarize_threats()
+        # noinspection PyUnusedLocal
         cleanup = self.cleanup_assessment or self.assess_cleanup_state()
+        # noinspection SpellCheckingInspection
         lines = [
             "╔══════════════════════════════════════════════════════════════╗",
             "║          RENKILL — THREAT REPORT                             ║",
@@ -3967,13 +4147,12 @@ class ScanEngine:
             f"Threats found   : {len(self.threats)}  ({crit} CRITICAL, {high} HIGH)",
             f"Processes killed: {self.killed}",
             f"Files removed   : {self.removed}",
-            f"Recovery undo   : {'Available' if recovery['available'] else 'Not available'}",
+            f"Recovery undo : {'Available' if recovery['available'] else 'Not available'}",
             "",
             f"Summary verdict : {summary['label']}",
             f"Assessment      : {summary['detail']}",
             f"Local confidence: {cleanup['score']}%  —  {cleanup['label']}",
             f"Confidence note : {cleanup['detail']}",
-            "",
         ]
         if recovery["available"]:
             lines.append(
@@ -4003,6 +4182,7 @@ class ScanEngine:
                 f"       Detected  : {t.timestamp}",
                 f"       Remediated: {'Yes' if t.remediated else 'No — MANUAL ACTION REQUIRED'}",
             ]
+        # noinspection SpellCheckingInspection
         lines += [
             "",
             "━" * 64,
@@ -4111,6 +4291,7 @@ class App(tk.Tk):
         tk.Frame(self, bg="#222222", height=1).pack(fill="x")
 
         # Status bar
+        # noinspection SpellCheckingInspection
         sbar = tk.Frame(self, bg=BG2, padx=18, pady=7)
         sbar.pack(fill="x")
         self._status_var = tk.StringVar(value="Ready")
@@ -4125,13 +4306,12 @@ class App(tk.Tk):
         brow = tk.Frame(self, bg=BG, padx=18, pady=10)
         brow.pack(fill="x")
 
-        self._btn_scan = self._btn(brow, "⟳  SCAN SYSTEM", BLUE, self._do_scan)
-        self._btn_kill = self._btn(brow, "✕  KILL & CLEAN", RED, self._do_kill)
+        self._btn_scan   = self._btn(brow, "⟳  SCAN SYSTEM",   BLUE,  self._do_scan)
+        self._btn_kill   = self._btn(brow, "✕  KILL & CLEAN",  RED,   self._do_kill)
         self._btn_revert = self._btn(brow, "REVERT LAST CLEAN", BLUE, self._do_revert)
         self._btn_sessions = self._btn(brow, "⌁  RESET SESSION DATA", AMBER, self._do_reset_sessions)
         self._btn_report = self._btn(brow, "↓  EXPORT REPORT", GREEN, self._do_report)
-        self._btn_clear = self._btn(brow, "⌫  CLEAR LOG", FG3, self._do_clear)
-
+        self._btn_clear  = self._btn(brow, "⌫  CLEAR LOG",     FG3,   self._do_clear)
         tk.Checkbutton(
             brow,
             text="PARANOID MODE",
@@ -4206,6 +4386,7 @@ class App(tk.Tk):
         if base != "user data":
             return [root]
         out = []
+        # noinspection PyBroadException
         try:
             for entry in os.listdir(root):
                 full = os.path.join(root, entry)
@@ -4216,10 +4397,11 @@ class App(tk.Tk):
         except Exception:
             return []
         return out
-
+    # noinspection PyMethodMayBeStatic
     def _delete_path_force(self, path):
         if not os.path.exists(path):
             return False
+        # noinspection PyBroadException
         try:
             if os.path.isdir(path):
                 shutil.rmtree(path, ignore_errors=False)
@@ -4227,6 +4409,7 @@ class App(tk.Tk):
                 os.remove(path)
             return True
         except PermissionError:
+            # noinspection PyBroadException
             try:
                 subprocess.run(["attrib", "-r", "-s", "-h", path],
                                capture_output=True, creationflags=0x08000000)
@@ -4240,11 +4423,14 @@ class App(tk.Tk):
         except Exception:
             return False
 
+    # noinspection PyMethodMayBeStatic
     def _kill_named_processes(self, names):
         killed = 0
         if not PSUTIL_OK:
             for name in sorted(names):
+                # noinspection PyBroadException
                 try:
+                    # noinspection SpellCheckingInspection
                     subprocess.run(["taskkill", "/F", "/T", "/IM", name],
                                    capture_output=True, creationflags=0x08000000)
                 except Exception:
@@ -4252,7 +4438,9 @@ class App(tk.Tk):
             return 0
 
         for proc in psutil.process_iter(["pid", "name"]):
+            # noinspection PyBroadException
             try:
+                # noinspection SpellCheckingInspection
                 pname = (proc.info.get("name") or "").lower()
                 if pname in names:
                     proc.terminate()
@@ -4268,6 +4456,7 @@ class App(tk.Tk):
 
     def _iter_session_reset_paths(self):
         profile = os.environ.get("USERPROFILE", "")
+        # noinspection PyShadowingNames
         for app in SESSION_RESET_APPS:
             for rel_root in app["roots"]:
                 root = os.path.join(profile, rel_root)
@@ -4284,11 +4473,13 @@ class App(tk.Tk):
                 elif kind == "firefox":
                     if not os.path.isdir(root):
                         continue
+                    # noinspection PyBroadException
                     try:
                         for entry in os.listdir(root):
                             profile_dir = os.path.join(root, entry)
                             if not os.path.isdir(profile_dir):
                                 continue
+                            # noinspection SpellCheckingInspection
                             for fname in FIREFOX_SESSION_FILES:
                                 yield app["label"], os.path.join(profile_dir, fname)
                             for sub in FIREFOX_SESSION_DIRS:
@@ -4308,21 +4499,26 @@ class App(tk.Tk):
                 self._log_txt.insert("end", f"[{ts}]  {safe_msg}\n", tag)
             self._log_txt.see("end")
             self._log_txt.configure(state="disabled")
+
+        # noinspection PyTypeChecker,PyArgumentList
         self.after(0, _w)
 
     def _set_status(self, msg, color=GREEN):
+        # noinspection PyTypeChecker,PyArgumentList
         self.after(0, lambda: (
             self._status_var.set(msg),
             self._status_lbl.configure(fg=color)
         ))
 
     def _set_progress(self, msg):
+        # noinspection PyTypeChecker,PyArgumentList
         self.after(0, lambda: self._prog_var.set(sanitize_for_display(msg)))
 
     @staticmethod
     def _boot_time():
         if not PSUTIL_OK:
             return 0.0
+        # noinspection PyBroadException
         try:
             return float(psutil.boot_time())
         except Exception:
@@ -4340,12 +4536,15 @@ class App(tk.Tk):
     def _startup_msg(self):
         self._log(f"{TOOL_NAME} v{VERSION}", "SECTION")
         self._log(f"Scan roots queued : {len(SCAN_ROOTS)}", "INFO")
-        self._log(f"psutil            : {'OK' if PSUTIL_OK else 'MISSING — pip install psutil'}", "INFO" if PSUTIL_OK else "WARN")
+        self._log(f"psutil            : {'OK' if PSUTIL_OK else 'MISSING — pip install psutil'}",
+                  "INFO" if PSUTIL_OK else "WARN")
         self._log(f"winreg            : {'OK' if WINREG_OK else 'MISSING'}", "INFO" if WINREG_OK else "WARN")
-        self._log(f"Admin             : {'YES — full scan' if is_admin() else 'NO — limited scan'}", "INFO" if is_admin() else "WARN")
+        self._log(f"Admin             : {'YES — full scan' if is_admin() else 'NO — limited scan'}",
+                  "INFO" if is_admin() else "WARN")
         self._log("Scan mode         : Standard", "INFO")
         self._log("Press SCAN SYSTEM to begin.", "DEFAULT")
 
+    # noinspection PyMethodMayBeStatic
     def _load_recovery_summary(self):
         scanner = ScanEngine(lambda *_: None, lambda *_: None)
         return scanner.latest_recovery_summary()
@@ -4395,7 +4594,8 @@ class App(tk.Tk):
 
         self._scanner = ScanEngine(self._log, self._set_progress, paranoid=self._paranoid_var.get())
         self._scanner.post_cleanup_scan = self._last_remediation_ts > 0
-        self._scanner.rebooted_after_cleanup = self._scanner.post_cleanup_scan and self._boot_time() > self._last_remediation_ts
+        self._scanner.rebooted_after_cleanup = (self._scanner.post_cleanup_scan and
+                                                self._boot_time() > self._last_remediation_ts)
 
         def _run():
             try:
@@ -4412,6 +4612,7 @@ class App(tk.Tk):
                     self._btn_sessions.configure(state="disabled")
                     self._count_var.set("Scan error")
                     self._set_status("Scan failed — see log for the exact error.", RED)
+                # noinspection PyTypeChecker,PyArgumentList
                 self.after(0, _fail)
                 return
 
@@ -4434,19 +4635,22 @@ class App(tk.Tk):
                         summary["color"]
                     )
                     if self._session_reset_available:
-                        self._log("RESET SESSION DATA is available for local browser/Discord session wipe.", "WARN")
+                        self._log("RESET SESSION DATA is available for local browser/Discord session wipe.",
+                                  "WARN")
                 else:
                     self._count_var.set("Clean ✓")
                     self._set_status("Scan complete — no threats detected.", GREEN)
                 if n > 0:
                     self._count_var.set(f"{n} threat(s)  -  {summary['label']}  |  {cleanup['score']}%")
                     self._set_status(
-                        f"Scan complete - {n} threats found. {summary['label']}. Local confidence {cleanup['score']}%. Press KILL & CLEAN to remediate.",
+                        f"Scan complete - {n} threats found. {summary['label']}."
+                        f" Local confidence {cleanup['score']}%. Press KILL & CLEAN to remediate.",
                         summary["color"]
                     )
                 elif self._scanner.post_cleanup_scan and not self._scanner.rebooted_after_cleanup:
                     self._set_status(
-                        f"No threats detected, but reboot then run one more scan for final confidence ({cleanup['score']}%).",
+                        f"No threats detected, but reboot then run one more scan for final confidence"
+                        f" ({cleanup['score']}%).",
                         AMBER
                     )
                 elif self._scanner.post_cleanup_scan:
@@ -4455,7 +4659,9 @@ class App(tk.Tk):
                         GREEN
                     )
                 else:
-                    self._set_status(f"Scan complete - no threats detected. Local confidence {cleanup['score']}%.", GREEN)
+                    self._set_status(f"Scan complete - no threats detected. Local confidence {cleanup['score']}%.",
+                                     GREEN)
+            # noinspection PyTypeChecker,PyArgumentList
             self.after(0, _done)
 
         self._thread = threading.Thread(target=_run, daemon=True)
@@ -4466,6 +4672,7 @@ class App(tk.Tk):
             return
 
         live = [t for t in self._scanner.threats if not t.remediated]
+        # noinspection SpellCheckingInspection
         procs = sum(1 for t in live if "Process" in t.category or "Connection" in t.category)
         files = len(live) - procs
 
@@ -4499,7 +4706,8 @@ class App(tk.Tk):
                     GREEN
                 )
                 self._set_status(
-                    f"Cleanup finished - {k} process(es) killed, {r} item(s) removed. Reboot, then rescan for confidence.",
+                    f"Cleanup finished - {k} process(es) killed, {r} item(s) removed."
+                    f" Reboot, then rescan for confidence.",
                     GREEN
                 )
                 messagebox.showinfo(
@@ -4517,6 +4725,7 @@ class App(tk.Tk):
                     f"{exposure_blurb}"
                     f"Run SCAN SYSTEM again to verify clean."
                 )
+            # noinspection PyTypeChecker,PyArgumentList
             self.after(0, _done)
 
         threading.Thread(target=_run, daemon=True).start()
@@ -4531,11 +4740,11 @@ class App(tk.Tk):
             return
 
         if not messagebox.askyesno(
-            "Confirm Revert",
-            f"RenKill will restore up to {summary['reversible_count']} quarantined or backed-up change(s) from the last cleanup.\n\n"
-            "This can restore files, tasks, registry values, firewall rules, Defender exclusions, and proxy settings.\n"
-            "It will not restart killed processes or fully undo service/WMI removals.\n\n"
-            "Continue?"
+                "Confirm Revert",
+                f"RenKill will restore up to {summary['reversible_count']} quarantined or backed-up change(s) from the last cleanup.\n\n"
+                "This can restore files, tasks, registry values, firewall rules, Defender exclusions, and proxy settings.\n"
+                "It will not restart killed processes or fully undo service/WMI removals.\n\n"
+                "Continue?"
         ):
             return
 
@@ -4544,10 +4753,12 @@ class App(tk.Tk):
         self._btn_kill.configure(state="disabled")
         self._set_status("Reverting last cleanup snapshot...", AMBER)
 
+        # noinspection PyUnusedLocal
         def _run():
             scanner = ScanEngine(self._log, self._set_progress, paranoid=self._paranoid_var.get())
             result = scanner.revert_last_remediation()
 
+            # noinspection PyUnusedLocal
             def _done():
                 self._set_progress("")
                 self._btn_scan.configure(state="normal")
@@ -4570,21 +4781,19 @@ class App(tk.Tk):
                     "Run SCAN SYSTEM again to confirm the current state."
                 )
 
-            self.after(0, _done)
-
-        threading.Thread(target=_run, daemon=True).start()
-
     def _do_reset_sessions(self):
         if not self._session_reset_available:
             messagebox.showinfo(
                 "Reset Session Data",
-                "Run a scan first. This button becomes available when RenKill sees browser or Discord exposure indicators."
+                "Run a scan first. This button becomes available"
+                " when RenKill sees browser or Discord exposure indicators."
             )
             return
 
         if not messagebox.askyesno(
             "Confirm Session Reset",
-            "RenKill will close Discord and supported browsers, then delete local session/cookie/token storage.\n\n"
+            "RenKill will close Discord and supported browsers,"
+            " then delete local session/cookie/token storage.\n\n"
             "This will sign the user out locally and may remove site/app session state.\n"
             "This does NOT replace password changes or remote session revocation from a clean device.\n\n"
             "Continue?"
@@ -4599,6 +4808,7 @@ class App(tk.Tk):
             removed = 0
             touched_apps = set()
             process_names = set()
+            # noinspection PyShadowingNames
             for app in SESSION_RESET_APPS:
                 process_names.update(name.lower() for name in app["processes"])
 
@@ -4630,6 +4840,7 @@ class App(tk.Tk):
                     f"  • Review Discord Authorized Apps\n"
                     f"  • Move crypto to fresh wallet addresses\n"
                 )
+            # noinspection PyTypeChecker,PyArgumentList
             self.after(0, _done)
 
         threading.Thread(target=_run, daemon=True).start()
