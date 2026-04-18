@@ -1,0 +1,3702 @@
+#!/usr/bin/env python3
+"""
+RenKill v1.4.3
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Detects, kills, and removes RenEngine Loader /
+HijackLoader infostealer artifacts from Windows systems.
+
+Targets:
+  - RenEngine Loader (Trojan.Python.Agent.nb)
+  - HijackLoader (Trojan.Win32.Penguish)
+  - ACR Stealer, Lumma Stealer, Rhadamanthys, Vidar payloads
+  - Associated scheduled task persistence
+  - Associated registry autorun entries
+  - Active C2 network connections
+
+Defensive Security Tool
+"""
+
+import os
+import sys
+import time
+import shutil
+import threading
+import datetime
+import subprocess
+import ctypes
+import hashlib
+import json
+import re
+import tkinter as tk
+from tkinter import scrolledtext, messagebox, filedialog
+
+# ── Windows-only imports (safe-guarded) ─────────────────────────────────────
+try:
+    import winreg
+    WINREG_OK = True
+except ImportError:
+    WINREG_OK = False
+
+try:
+    import psutil
+    PSUTIL_OK = True
+except ImportError:
+    PSUTIL_OK = False
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  IOC DATABASE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+VERSION = "1.4.3"
+TOOL_NAME = "RenKill"
+
+MALICIOUS_FILENAMES = {
+    "instaler.exe",
+    "instaler.py",
+    "instaler.pyo",
+    "instaler.pyc",
+    "lnstaier.exe",
+    "iviewers.dll",
+    "script.rpyc",
+    "archive.rpa",
+}
+
+RENENGINE_FOLDER_SET = {"renpy", "data", "lib"}
+
+CAMPAIGN_DIR_MARKERS = {
+    "broker_crypt_v4_i386",
+}
+
+CAMPAIGN_FILENAMES = {
+    "froodjurain.wkk",
+    "taig.gr",
+    "vsdebugscriptagent170.dll",
+    "chime.exe",
+    "zoneind.exe",
+    "d3dx9_43.dll",
+}
+
+CAMPAIGN_PROCESS_NAMES = {
+    "instaler.exe",
+    "lnstaier.exe",
+    "chime.exe",
+    "zoneind.exe",
+    "w8cpbgqi.exe",
+    "dksyvguj.exe",
+}
+
+PROCESS_IOC_MARKERS = {
+    "broker_crypt_v4_i386",
+    "froodjurain",
+    "taig.gr",
+    "vsdebugscriptagent170",
+    "iviewers.dll",
+    "archive.rpa",
+    "script.rpyc",
+    "instaler",
+    "lnstaier",
+    "renpy",
+    "acr",
+    "acrstealer",
+    "lumma",
+    "rhadamanthys",
+    "vidar",
+    "doppelgang",
+    "doppelganging",
+    "cc32290mt.dll",
+    "gayal.asp",
+    "hap.eml",
+    "w8cpbgqi.exe",
+    "zt5qwyucfl.txt",
+    "dksyvguj.exe",
+    "dbghelp.dll",
+    "pla.dll",
+    "rshell",
+    "esal",
+    "modtask",
+    "moduac",
+}
+
+SUSPICIOUS_DLL_NAMES = {
+    "iviewers.dll",
+    "vsdebugscriptagent170.dll",
+    "d3dx9_43.dll",
+    "cc32290mt.dll",
+}
+
+HIJACKLOADER_STAGE_FILES = {
+    "dksyvguj.exe",
+    "cc32290mt.dll",
+    "gayal.asp",
+    "hap.eml",
+    "w8cpbgqi.exe",
+    "zt5qwyucfl.txt",
+}
+
+LOADER_CONTAINER_DLLS = {
+    "dbghelp.dll",
+    "pla.dll",
+    "borlndmm.dll",
+    "cc32290mt.dll",
+}
+
+HIJACKLOADER_STAGE_DIR_SIGNATURES = (
+    {"dksyvguj.exe", "cc32290mt.dll", "gayal.asp", "dbghelp.dll"},
+    {"hap.eml", "pla.dll", "w8cpbgqi.exe", "zt5qwyucfl.txt"},
+    {"w8cpbgqi.exe", "d3dx9_43.dll", "vsdebugscriptagent170.dll"},
+)
+
+KNOWN_SHA256_IOCS = {
+    "9e3b296339e25b1bae1f9d028a17f030dcf2ab25ad46221b37731ea4fdfde057": "Cyderes sample malicious ZIP package",
+    "7123e1514b939b165985560057fe3c761440a9fff9783a3b84e861fd2888d4ab": "Cyderes sample exploited Instaler.exe",
+    "326ec5aeeafc4c31c234146dc604a849f20f1445e2f973466682cb33889b4e4c": "Cyderes sample d3dx9_43.dll",
+    "db4ccd0e8f03c6d282726bfb4ee9aa15aa41e7a5edcb49e13fbd0001452cdfa2": "Cyderes sample VSDebugScriptAgent170.dll",
+}
+
+HASH_CANDIDATE_NAMES = {
+    "instaler.exe",
+    "d3dx9_43.dll",
+    "vsdebugscriptagent170.dll",
+}
+
+MAX_IOC_HASH_BYTES = 200 * 1024 * 1024
+
+BENIGN_HEAVY_SUBTREES = (
+    "\\programdata\\smilegate\\",
+    "\\programdata\\microsoft\\windows defender\\",
+    "\\programdata\\package cache\\",
+    "\\appdata\\local\\microsoft\\onedrive\\",
+    "\\appdata\\local\\discord\\",
+    "\\appdata\\local\\google\\chrome\\user data\\",
+    "\\appdata\\local\\microsoft\\edge\\user data\\",
+    "\\appdata\\local\\bravesoftware\\brave-browser\\user data\\",
+    "\\appdata\\roaming\\mozilla\\firefox\\profiles\\",
+)
+
+USER_WRITABLE_DIR_MARKERS = (
+    "\\appdata\\local\\temp\\",
+    "\\temp\\",
+    "\\tmp\\",
+    "\\appdata\\roaming\\",
+    "\\appdata\\local\\",
+    "\\programdata\\",
+    "\\downloads\\",
+    "\\desktop\\",
+    "\\documents\\",
+)
+
+SOURCE_LURE_KEYWORDS = {
+    "renpy",
+    "renengine",
+    "renloader",
+    "instaler",
+    "lnstaier",
+    "broker_crypt",
+    "froodjurain",
+    "zoneind",
+    "chime",
+    "iviewers",
+    "acr",
+    "acrstealer",
+    "lumma",
+    "rhadamanthys",
+    "vidar",
+    "crack",
+    "cracked",
+    "keygen",
+    "repack",
+    "mrbeast",
+    "crypto",
+    "dodi-repacks",
+    "mediafire",
+    "mega",
+    "go.zovo",
+    "coreldraw",
+}
+
+SOURCE_LURE_FILENAME_STRONG = {
+    "renpy",
+    "renengine",
+    "renloader",
+    "instaler",
+    "lnstaier",
+    "broker_crypt",
+    "froodjurain",
+    "zoneind",
+    "chime",
+    "iviewers",
+    "acrstealer",
+    "lumma",
+    "rhadamanthys",
+    "vidar",
+    "crack",
+    "cracked",
+    "keygen",
+    "repack",
+    "mrbeast",
+    "crypto",
+    "dodi-repacks",
+    "mediafire",
+    "mega",
+    "go.zovo",
+    "coreldraw",
+}
+
+SOURCE_LURE_EXTENSIONS = {
+    ".zip", ".rar", ".7z", ".iso", ".lnk", ".url", ".html", ".htm",
+    ".bat", ".cmd", ".ps1", ".vbs", ".js", ".exe",
+}
+
+EXPOSURE_DIRS = (
+    ("Discord", os.path.join("AppData", "Roaming", "Discord")),
+    ("Chrome", os.path.join("AppData", "Local", "Google", "Chrome", "User Data")),
+    ("Edge", os.path.join("AppData", "Local", "Microsoft", "Edge", "User Data")),
+    ("Brave", os.path.join("AppData", "Local", "BraveSoftware", "Brave-Browser", "User Data")),
+    ("Opera", os.path.join("AppData", "Roaming", "Opera Software", "Opera Stable")),
+    ("Firefox", os.path.join("AppData", "Roaming", "Mozilla", "Firefox", "Profiles")),
+)
+
+CHROMIUM_SESSION_SUBPATHS = (
+    os.path.join("Network", "Cookies"),
+    "Cookies",
+    "Sessions",
+    "Session Storage",
+    "Local Storage",
+    "IndexedDB",
+    "Service Worker",
+    "WebStorage",
+)
+
+DISCORD_SESSION_SUBPATHS = (
+    os.path.join("Network", "Cookies"),
+    "Cookies",
+    "Local Storage",
+    "Session Storage",
+    "Cache",
+    "Code Cache",
+    "GPUCache",
+    "Service Worker",
+)
+
+FIREFOX_SESSION_FILES = (
+    "cookies.sqlite",
+    "webappsstore.sqlite",
+    "sessionstore.jsonlz4",
+    "sessionCheckpoints.json",
+)
+
+FIREFOX_SESSION_DIRS = (
+    "sessionstore-backups",
+    os.path.join("storage", "default"),
+    "cache2",
+    "OfflineCache",
+)
+
+SESSION_RESET_APPS = (
+    {
+        "label": "Discord",
+        "kind": "flat",
+        "processes": {"discord.exe", "discordcanary.exe", "discordptb.exe"},
+        "roots": (
+            os.path.join("AppData", "Roaming", "Discord"),
+            os.path.join("AppData", "Roaming", "discordcanary"),
+            os.path.join("AppData", "Roaming", "discordptb"),
+        ),
+        "subpaths": DISCORD_SESSION_SUBPATHS,
+    },
+    {
+        "label": "Chrome",
+        "kind": "chromium",
+        "processes": {"chrome.exe"},
+        "roots": (os.path.join("AppData", "Local", "Google", "Chrome", "User Data"),),
+    },
+    {
+        "label": "Edge",
+        "kind": "chromium",
+        "processes": {"msedge.exe"},
+        "roots": (os.path.join("AppData", "Local", "Microsoft", "Edge", "User Data"),),
+    },
+    {
+        "label": "Brave",
+        "kind": "chromium",
+        "processes": {"brave.exe"},
+        "roots": (os.path.join("AppData", "Local", "BraveSoftware", "Brave-Browser", "User Data"),),
+    },
+    {
+        "label": "Opera",
+        "kind": "flat",
+        "processes": {"opera.exe"},
+        "roots": (os.path.join("AppData", "Roaming", "Opera Software", "Opera Stable"),),
+        "subpaths": CHROMIUM_SESSION_SUBPATHS,
+    },
+    {
+        "label": "Firefox",
+        "kind": "firefox",
+        "processes": {"firefox.exe"},
+        "roots": (os.path.join("AppData", "Roaming", "Mozilla", "Firefox", "Profiles"),),
+    },
+)
+
+SAFE_PROCESS_NAMES = {
+    "code.exe",
+    "code - insiders.exe",
+    "cmd.exe",
+    "conhost.exe",
+    "discord.exe",
+    "explorer.exe",
+    "firefox.exe",
+    "git.exe",
+    "msedge.exe",
+    "notepad.exe",
+    "opera.exe",
+    "powershell.exe",
+    "pwsh.exe",
+    "python.exe",
+    "pythonw.exe",
+    "steam.exe",
+    "taskmgr.exe",
+    "wininit.exe",
+    "winlogon.exe",
+}
+
+TRUSTED_PROCESS_NAMES = {
+    "brave.exe",
+    "chrome.exe",
+    "crashpad_handler.exe",
+    "discordsystemhelper.exe",
+    "launcherservice.exe",
+    "mpcmdrun.exe",
+    "mpdefendercoreservice.exe",
+    "msmpeng.exe",
+    "nissrv.exe",
+    "onedrive.exe",
+    "securityhealthservice.exe",
+    "securityhealthsystray.exe",
+    "smartscreen.exe",
+    "steamservice.exe",
+    "steamwebhelper.exe",
+}
+
+TRUSTED_VENDOR_PATH_MARKERS = (
+    "\\programdata\\microsoft\\windows defender\\",
+    "\\programdata\\microsoft\\windows defender advanced threat protection\\",
+    "\\programdata\\smilegate\\",
+    "\\appdata\\local\\microsoft\\onedrive\\",
+    "\\program files\\microsoft onedrive\\",
+    "\\appdata\\local\\discord\\",
+    "\\appdata\\roaming\\discord\\",
+    "\\appdata\\local\\google\\chrome\\application\\",
+    "\\appdata\\local\\microsoft\\edge\\application\\",
+    "\\appdata\\local\\bravesoftware\\brave-browser\\application\\",
+    "\\appdata\\roaming\\opera software\\",
+    "\\program files\\windows defender\\",
+)
+
+TRUSTED_COMPANY_TOKENS = (
+    "advanced micro devices",
+    "brave software",
+    "discord",
+    "google",
+    "intel",
+    "microsoft",
+    "mozilla",
+    "nvidia",
+    "opera",
+    "smilegate",
+    "valve",
+)
+
+TRUSTED_FILE_DESCRIPTION_TOKENS = (
+    "discord",
+    "microsoft defender",
+    "microsoft edge",
+    "onedrive",
+    "steam",
+    "windows security",
+)
+
+PROTECTED_SYSTEM_PATH_MARKERS = (
+    "\\windows\\",
+    "\\program files\\",
+    "\\program files (x86)\\",
+)
+
+NON_REMOVABLE_DIR_BASENAMES = {
+    "",
+    "appdata",
+    "desktop",
+    "documents",
+    "downloads",
+    "local",
+    "program files",
+    "program files (x86)",
+    "programdata",
+    "profiles",
+    "roaming",
+    "startup",
+    "system32",
+    "syswow64",
+    "temp",
+    "tmp",
+    "user data",
+    "users",
+    "windows",
+}
+
+STRONG_CAMPAIGN_MARKERS = {
+    "archive.rpa",
+    "broker_crypt_v4_i386",
+    "cc32290mt.dll",
+    "chime.exe",
+    "d3dx9_43.dll",
+    "dksyvguj.exe",
+    "froodjurain",
+    "gayal.asp",
+    "hap.eml",
+    "instaler",
+    "iviewers.dll",
+    "lnstaier",
+    "renengine",
+    "renloader",
+    "renpy",
+    "script.rpyc",
+    "taig.gr",
+    "vsdebugscriptagent170",
+    "w8cpbgqi.exe",
+    "zoneind.exe",
+    "zt5qwyucfl.txt",
+}
+
+MANUAL_REVIEW_CATEGORIES = {
+    "Browser Extension Review",
+    "Defender Protection Review",
+    "Firewall Rule Review",
+    "Hosts Tampering Review",
+    "Proxy Configuration Review",
+    "Source Lure Artifact",
+    "WinHTTP Proxy Review",
+}
+
+C2_IPS = {"78.40.193.126"}
+
+PARANOID_NAME_TOKENS = ("update", "helper", "service", "runtime", "host")
+COMMON_USERLAND_EXEC_MARKERS = (
+    "\\programdata\\",
+    "\\appdata\\roaming\\",
+    "\\appdata\\local\\temp\\",
+    "\\temp\\",
+    "\\downloads\\",
+)
+SUSPICIOUS_EXTENSION_PERMISSIONS = {
+    "cookies",
+    "downloads",
+    "management",
+    "nativeMessaging",
+    "proxy",
+    "webRequest",
+    "webRequestBlocking",
+}
+
+SENSITIVE_HOST_MARKERS = {
+    "accounts.google.com",
+    "discord.com",
+    "login.live.com",
+    "login.microsoftonline.com",
+    "steamcommunity.com",
+    "store.steampowered.com",
+    "wallet",
+}
+
+SHORTCUT_SCRIPT_HOSTS = {
+    "cmd.exe",
+    "cscript.exe",
+    "mshta.exe",
+    "powershell.exe",
+    "pwsh.exe",
+    "rundll32.exe",
+    "wscript.exe",
+}
+
+BROWSER_SHORTCUT_TOKENS = (
+    "brave",
+    "chrome",
+    "discord",
+    "edge",
+    "firefox",
+    "steam",
+)
+
+KNOWN_BROWSER_TARGETS = {
+    "brave.exe",
+    "chrome.exe",
+    "discord.exe",
+    "firefox.exe",
+    "msedge.exe",
+    "steam.exe",
+}
+
+STARTUPAPPROVED_DISABLED_STATES = {0x01, 0x03, 0x09}
+
+CHROMIUM_EXTENSION_REVIEW_ROOTS = (
+    ("Chrome", os.path.join("AppData", "Local", "Google", "Chrome", "User Data")),
+    ("Edge", os.path.join("AppData", "Local", "Microsoft", "Edge", "User Data")),
+    ("Brave", os.path.join("AppData", "Local", "BraveSoftware", "Brave-Browser", "User Data")),
+    ("Opera", os.path.join("AppData", "Roaming", "Opera Software", "Opera Stable")),
+)
+
+PERSISTENCE_THREAT_CATEGORIES = {
+    "AppInit Persistence",
+    "Disabled Startup Artifact",
+    "HijackLoader Stage Directory",
+    "IFEO Persistence",
+    "Injected/Sideloaded DLL",
+    "Loader Container DLL",
+    "Malicious Scheduled Task",
+    "Malicious Service",
+    "Persistence Artifact",
+    "Persistence Staging Directory",
+    "Registry Persistence",
+    "Startup Persistence Artifact",
+    "WMI Persistence",
+}
+
+SUSPICIOUS_REG_PATTERNS = [
+    "instaler",
+    "lnstaier",
+    r"\renpy\\",
+    "iviewers",
+    "uis4tq7p",
+    "hijackloader",
+    "broker_crypt_v4_i386",
+    "froodjurain",
+    "vsdebugscriptagent170",
+    "zoneind",
+    "chime.exe",
+    "taig.gr",
+    "cc32290mt.dll",
+    "gayal.asp",
+    "hap.eml",
+    "w8cpbgqi.exe",
+    "zt5qwyucfl.txt",
+]
+
+
+def _build_scan_roots():
+    roots = []
+    for key in ("TEMP", "TMP", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA"):
+        val = os.environ.get(key, "")
+        if val and os.path.exists(val):
+            roots.append(val)
+    profile = os.environ.get("USERPROFILE", "")
+    for sub in ("Downloads", "Desktop", "Documents", "AppData\\Local\\Programs"):
+        p = os.path.join(profile, sub)
+        if os.path.exists(p):
+            roots.append(p)
+    return list(dict.fromkeys(roots))
+
+
+SCAN_ROOTS = _build_scan_roots()
+
+
+def sanitize_for_display(text):
+    if text is None:
+        return ""
+    out = str(text)
+    profile = os.environ.get("USERPROFILE", "")
+    username = os.environ.get("USERNAME", "")
+
+    if profile:
+        sanitized_profile = os.path.join(os.path.dirname(profile), "USERNAME")
+        out = re.sub(re.escape(profile), lambda _: sanitized_profile, out, flags=re.IGNORECASE)
+
+    if username:
+        out = re.sub(r"(?i)(\\users\\)" + re.escape(username) + r"(?=\\|$)", lambda m: f"{m.group(1)}USERNAME", out)
+
+    return out
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  ADMIN ELEVATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def is_admin():
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+def elevate_if_needed():
+    if sys.platform != "win32":
+        return
+    if not is_admin():
+        args = " ".join(f'"{a}"' for a in sys.argv)
+        ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, args, None, 1)
+        if ret > 32:
+            sys.exit(0)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  THREAT MODEL
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class Threat:
+    SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "INFO": 3}
+
+    def __init__(self, severity, category, description, path=None, action=None):
+        self.severity = severity
+        self.category = category
+        self.description = description
+        self.path = path or ""
+        self.action = action
+        self.remediated = False
+        self.timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    def __lt__(self, other):
+        return self.SEVERITY_ORDER.get(self.severity, 99) < self.SEVERITY_ORDER.get(other.severity, 99)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  SCANNER ENGINE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ScanEngine:
+    def __init__(self, log_cb, progress_cb, paranoid=False):
+        self.log = log_cb
+        self.progress = progress_cb
+        self.paranoid = paranoid
+        self.threats: list = []
+        self.killed = 0
+        self.removed = 0
+        self._stop = False
+        self.last_summary = None
+        self.cleanup_assessment = None
+        self.exposure_notes = []
+        self.post_cleanup_scan = False
+        self.rebooted_after_cleanup = False
+        self._file_meta_cache = {}
+        self._module_scan_pid_targets = set()
+        self._shortcut_scan_rows = None
+
+    def _add(self, severity, category, description, path=None, action=None):
+        t = Threat(severity, category, description, path, action)
+        self.threats.append(t)
+        self.log(f"{description}", severity)
+        return t
+
+    def _note_exposure(self, description, path=None):
+        note = (description, path or "")
+        if note not in self.exposure_notes:
+            self.exposure_notes.append(note)
+            self.log(description if not path else f"{description}: {path}", "WARN")
+
+    @staticmethod
+    def _clamp_score(value, lower=5, upper=98):
+        return max(lower, min(upper, int(value)))
+
+    def summarize_threats(self):
+        if not self.threats:
+            self.last_summary = {
+                "label": "No threats detected",
+                "detail": "No malware-like artifacts matched the current RenKill rules.",
+                "confidence": "clean",
+                "color": GREEN,
+            }
+            return self.last_summary
+
+        categories = [t.category for t in self.threats]
+        text_blob = " ".join(f"{t.category} {t.description} {t.path}".lower() for t in self.threats)
+
+        renloader_hits = 0
+        generic_stealer_hits = 0
+
+        renloader_markers = (
+            "instaler", "lnstaier", "renpy", "archive.rpa", "script.rpyc",
+            "iviewers.dll", "broker_crypt_v4_i386", "froodjurain",
+            "vsdebugscriptagent170", "zoneind.exe", "chime.exe"
+        )
+        generic_markers = (
+            "acr", "acrstealer", "lumma", "rhadamanthys", "vidar",
+            "active c2 connection", "malicious scheduled task", "registry persistence"
+        )
+
+        renloader_hits += sum(1 for marker in renloader_markers if marker in text_blob)
+        generic_stealer_hits += sum(1 for marker in generic_markers if marker in text_blob)
+
+        renloader_hits += sum(1 for cat in categories if cat in {
+            "AppInit Persistence",
+            "IFEO Persistence",
+            "RenEngine Bundle",
+            "Malicious File",
+            "Malicious Archive/Script",
+            "Malicious Service",
+            "Hijacked Module Init",
+            "Persistence Artifact",
+            "Persistence Process",
+            "Persistence Staging Directory",
+            "Malicious Shortcut",
+            "Campaign IOC Process",
+            "Injected/Sideloaded DLL",
+            "Execution Trace Anomaly",
+            "Exact IOC Hash",
+            "HijackLoader Stage Directory",
+            "HijackLoader Stage Artifact",
+            "Loader Container DLL",
+            "WMI Persistence",
+        })
+        generic_stealer_hits += sum(1 for cat in categories if cat in {
+            "Active C2 Connection",
+            "Defender Exclusion",
+            "Disabled Startup Artifact",
+            "Firewall Rule Review",
+            "Malicious Scheduled Task",
+            "Registry Persistence",
+            "Stealer Script Host",
+            "Paranoid Networked Process",
+            "Startup Persistence Artifact",
+        })
+
+        suspicious_only = all(cat in {
+            "Suspicious Userland Process",
+            "Paranoid Masquerade Process",
+            "Paranoid Script Host",
+            "Suspicious Process",
+            "Malicious Child Process",
+            "Process in Temp",
+        } for cat in categories)
+
+        if renloader_hits >= 4:
+            label = "Probably RenLoader / RenEngine"
+            detail = "Multiple campaign-specific artifacts matched the RenEngine/HijackLoader chain."
+            confidence = "high"
+            color = RED
+        elif renloader_hits >= 2:
+            label = "Possible RenLoader / RenEngine"
+            detail = "Some campaign-specific artifacts matched, but the chain is not fully confirmed."
+            confidence = "medium"
+            color = AMBER
+        elif generic_stealer_hits >= 2:
+            label = "Possible infostealer activity"
+            detail = "Behavior looks malicious, but it does not clearly fingerprint RenLoader."
+            confidence = "medium"
+            color = AMBER
+        elif suspicious_only:
+            label = "Suspicious activity, not clearly RenLoader"
+            detail = "Only generic suspicious-process heuristics fired. Review before deleting everything."
+            confidence = "low"
+            color = YELLOW
+        else:
+            label = "Something else suspicious"
+            detail = "Threats were found, but they do not strongly match the RenLoader profile."
+            confidence = "low"
+            color = YELLOW
+
+        self.last_summary = {
+            "label": label,
+            "detail": detail,
+            "confidence": confidence,
+            "color": color,
+        }
+        return self.last_summary
+
+    def assess_cleanup_state(self):
+        categories = {t.category for t in self.threats}
+        critical = sum(1 for t in self.threats if t.severity == "CRITICAL")
+        high = sum(1 for t in self.threats if t.severity == "HIGH")
+
+        if not self.threats:
+            if self.post_cleanup_scan and self.rebooted_after_cleanup:
+                assessment = {
+                    "score": 96,
+                    "label": "Post-clean rescan passed",
+                    "detail": "No active RenLoader-style artifacts matched after cleanup, reboot, and rescan.",
+                    "color": GREEN,
+                }
+            elif self.post_cleanup_scan:
+                assessment = {
+                    "score": 82,
+                    "label": "Looks clean, reboot still pending",
+                    "detail": "No active artifacts matched, but a reboot and one more scan are still recommended before calling the machine clean.",
+                    "color": AMBER,
+                }
+            else:
+                assessment = {
+                    "score": 90,
+                    "label": "No active artifacts found",
+                    "detail": "This scan did not match active RenLoader-style files, processes, or persistence artifacts.",
+                    "color": GREEN,
+                }
+            self.cleanup_assessment = assessment
+            return assessment
+
+        score = 100
+        score -= min(48, critical * 12)
+        score -= min(24, high * 4)
+        score -= min(20, len(self.threats) * 2)
+
+        if categories & PERSISTENCE_THREAT_CATEGORIES:
+            score -= 24
+        if categories & MANUAL_REVIEW_CATEGORIES:
+            score -= 8
+        if {"Active C2 Connection", "Defender Exclusion", "Malicious Service", "WMI Persistence"} & categories:
+            score -= 14
+        if self.post_cleanup_scan and self.rebooted_after_cleanup:
+            score -= 12
+            label = "Artifacts remain after reboot and rescan"
+            detail = "Persistence or malware-linked artifacts are still being found after cleanup and reboot. Local eradication is not complete."
+        elif self.post_cleanup_scan:
+            score = min(score, 60)
+            label = "Cleanup incomplete or reboot pending"
+            detail = "Artifacts are still present, or the machine has not yet been rebooted and rescanned after cleanup."
+        else:
+            label = "Local cleanup confidence is low"
+            detail = "This scan still sees malware-linked artifacts or persistence. Do not consider the machine clean yet."
+
+        assessment = {
+            "score": self._clamp_score(score),
+            "label": label,
+            "detail": detail,
+            "color": RED if score < 50 else AMBER,
+        }
+        self.cleanup_assessment = assessment
+        return assessment
+
+    def _temp_paths(self):
+        out = []
+        for k in ("TEMP", "TMP"):
+            v = os.environ.get(k, "")
+            if v:
+                out.append(v.lower())
+        lapp = os.environ.get("LOCALAPPDATA", "")
+        if lapp:
+            out.append(os.path.join(lapp, "Temp").lower())
+        return out
+
+    def _in_temp(self, path):
+        pl = path.lower()
+        return any(t in pl for t in self._temp_paths() if t)
+
+    @staticmethod
+    def _normalize_cmdline(cmdline):
+        if not cmdline:
+            return ""
+        if isinstance(cmdline, (list, tuple)):
+            return " ".join(str(part) for part in cmdline if part)
+        return str(cmdline)
+
+    @staticmethod
+    def _contains_marker(path, markers):
+        pl = path.lower()
+        return any(marker in pl for marker in markers)
+
+    @staticmethod
+    def _normalized_path(path):
+        if not path:
+            return ""
+        try:
+            return os.path.normcase(os.path.abspath(os.path.expandvars(path))).lower()
+        except Exception:
+            return str(path).lower()
+
+    @staticmethod
+    def _powershell_path():
+        windir = os.environ.get("WINDIR", r"C:\Windows")
+        return os.path.join(windir, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+
+    @staticmethod
+    def _extract_command_target(command_text):
+        raw = (command_text or "").strip()
+        if not raw:
+            return ""
+        if raw.startswith('"'):
+            parts = raw.split('"')
+            if len(parts) > 1:
+                return parts[1]
+        match = re.match(r"([A-Za-z]:\\[^ ]+\.(?:exe|dll|bat|cmd|ps1|vbs|js))", raw, re.IGNORECASE)
+        return match.group(1) if match else raw.split()[0]
+
+    def _run_powershell(self, script, timeout=45):
+        powershell = self._powershell_path()
+        try:
+            return subprocess.run(
+                [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                creationflags=0x08000000,
+            )
+        except FileNotFoundError:
+            return None
+        except Exception:
+            return None
+
+    def _run_powershell_json(self, script, timeout=45):
+        result = self._run_powershell(script, timeout=timeout)
+        if result is None:
+            return None
+        payload = (result.stdout or "").strip()
+        if not payload:
+            return []
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            return []
+        return data if isinstance(data, list) else [data]
+
+    def _file_metadata(self, path):
+        normalized = self._normalized_path(path)
+        if not normalized or normalized in self._file_meta_cache:
+            return self._file_meta_cache.get(normalized, {})
+        if not os.path.isfile(path):
+            self._file_meta_cache[normalized] = {}
+            return {}
+
+        escaped = path.replace("'", "''")
+        rows = self._run_powershell_json(
+            "$item = Get-Item -LiteralPath '" + escaped + "' -ErrorAction SilentlyContinue; "
+            "if ($item -and $item.VersionInfo) { "
+            "[pscustomobject]@{ "
+            "CompanyName=$item.VersionInfo.CompanyName; "
+            "FileDescription=$item.VersionInfo.FileDescription; "
+            "ProductName=$item.VersionInfo.ProductName; "
+            "OriginalFilename=$item.VersionInfo.OriginalFilename "
+            "} | ConvertTo-Json -Compress }",
+            timeout=15,
+        )
+        meta = rows[0] if rows else {}
+        cleaned = {
+            "company": str(meta.get("CompanyName") or "").strip().lower(),
+            "description": str(meta.get("FileDescription") or "").strip().lower(),
+            "product": str(meta.get("ProductName") or "").strip().lower(),
+            "original": str(meta.get("OriginalFilename") or "").strip().lower(),
+        }
+        self._file_meta_cache[normalized] = cleaned
+        return cleaned
+
+    def _has_trusted_file_metadata(self, path):
+        if not path or self._has_strong_campaign_context(path):
+            return False
+        meta = self._file_metadata(path)
+        if not meta:
+            return False
+
+        company_blob = " ".join(filter(None, (meta["company"], meta["product"])))
+        if any(token in company_blob for token in TRUSTED_COMPANY_TOKENS):
+            return True
+
+        descriptor_blob = " ".join(filter(None, (meta["description"], meta["original"])))
+        return any(token in descriptor_blob for token in TRUSTED_FILE_DESCRIPTION_TOKENS)
+
+    def _has_strong_campaign_context(self, *values):
+        blob = " ".join(str(value).lower() for value in values if value)
+        if not blob:
+            return False
+        if self._contains_marker(blob, STRONG_CAMPAIGN_MARKERS):
+            return True
+        for token in re.split(r"[\\/\s\"']+", blob):
+            base = os.path.basename(token).lower()
+            if base in MALICIOUS_FILENAMES or base in CAMPAIGN_FILENAMES or base in HIJACKLOADER_STAGE_FILES:
+                return True
+        return False
+
+    def _is_trusted_vendor_path(self, path):
+        pl = self._normalized_path(path)
+        return bool(pl) and any(marker in pl for marker in TRUSTED_VENDOR_PATH_MARKERS)
+
+    def _is_protected_system_path(self, path):
+        pl = self._normalized_path(path)
+        return bool(pl) and any(marker in pl for marker in PROTECTED_SYSTEM_PATH_MARKERS)
+
+    def _should_consider_metadata_trust(self, path):
+        normalized = self._normalized_path(path)
+        if not normalized or self._has_strong_campaign_context(normalized):
+            return False
+        if self._is_trusted_vendor_path(normalized) or self._is_protected_system_path(normalized):
+            return False
+        return any(marker in normalized for marker in COMMON_USERLAND_EXEC_MARKERS)
+
+    def _is_safe_process_context(self, pname, pexe, cmdline="", allow_metadata=False):
+        if self._has_strong_campaign_context(pname, pexe, cmdline):
+            return False
+        if pname in TRUSTED_PROCESS_NAMES:
+            return True
+        if self._is_trusted_vendor_path(pexe) or self._is_protected_system_path(pexe):
+            return True
+        if pname in SAFE_PROCESS_NAMES:
+            if not pexe:
+                return True
+            return not self._path_in_user_writable_exec_zone(self._normalized_path(pexe))
+        if allow_metadata and self._should_consider_metadata_trust(pexe):
+            return self._has_trusted_file_metadata(pexe)
+        return False
+
+    def _is_broad_directory_target(self, path):
+        norm = self._normalized_path(path)
+        if not norm:
+            return True
+        base = os.path.basename(os.path.normpath(norm)).lower()
+        if base in NON_REMOVABLE_DIR_BASENAMES:
+            return True
+
+        protected_roots = [
+            os.environ.get("WINDIR", ""),
+            os.environ.get("PROGRAMDATA", ""),
+            os.environ.get("APPDATA", ""),
+            os.environ.get("LOCALAPPDATA", ""),
+            os.environ.get("USERPROFILE", ""),
+            os.environ.get("TEMP", ""),
+            os.environ.get("TMP", ""),
+        ]
+        return any(root and norm == self._normalized_path(root) for root in protected_roots)
+
+    def _should_block_path_remediation(self, path, *, is_dir=False):
+        if not path:
+            return True
+        if is_dir and self._is_broad_directory_target(path):
+            return True
+        if self._has_strong_campaign_context(path):
+            return False
+        return self._is_trusted_vendor_path(path) or self._is_protected_system_path(path)
+
+    def _log_safety_block(self, action, target):
+        self.log(f"Safety block: refusing to {action}: {target}", "WARN")
+
+    @staticmethod
+    def _startup_shortcut_roots():
+        roots = []
+        profile = os.environ.get("USERPROFILE", "")
+        appdata = os.environ.get("APPDATA", "")
+        programdata = os.environ.get("PROGRAMDATA", "")
+        public_root = os.environ.get("PUBLIC", "")
+
+        for candidate in (
+            os.path.join(profile, "Desktop") if profile else "",
+            os.path.join(public_root, "Desktop") if public_root else "",
+            os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "Startup") if appdata else "",
+            os.path.join(programdata, "Microsoft", "Windows", "Start Menu", "Programs", "Startup") if programdata else "",
+        ):
+            if candidate and os.path.isdir(candidate):
+                roots.append(candidate)
+        return roots
+
+    @staticmethod
+    def _is_disabled_startupapproved_value(data):
+        if not isinstance(data, (bytes, bytearray)) or not data:
+            return False
+        return data[0] in STARTUPAPPROVED_DISABLED_STATES
+
+    def _collect_shortcut_rows(self):
+        if self._shortcut_scan_rows is not None:
+            return self._shortcut_scan_rows
+
+        roots = self._startup_shortcut_roots()
+        if not roots:
+            self._shortcut_scan_rows = []
+            return self._shortcut_scan_rows
+
+        escaped_roots = ", ".join("'" + root.replace("'", "''") + "'" for root in roots)
+        rows = self._run_powershell_json(
+            "$roots = @(" + escaped_roots + "); "
+            "$roots = $roots | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique; "
+            "if (-not $roots) { return }; "
+            "$shell = New-Object -ComObject WScript.Shell; "
+            "$items = foreach ($root in $roots) { "
+            "Get-ChildItem -LiteralPath $root -Filter *.lnk -File -ErrorAction SilentlyContinue | ForEach-Object { "
+            "try { "
+            "$shortcut = $shell.CreateShortcut($_.FullName); "
+            "[pscustomobject]@{ "
+            "Path=$_.FullName; "
+            "Name=$_.Name; "
+            "TargetPath=$shortcut.TargetPath; "
+            "Arguments=$shortcut.Arguments; "
+            "WorkingDirectory=$shortcut.WorkingDirectory "
+            "} "
+            "} catch { } "
+            "} "
+            "}; "
+            "$items | ConvertTo-Json -Compress",
+            timeout=45,
+        )
+        self._shortcut_scan_rows = rows or []
+        return self._shortcut_scan_rows
+
+    def _evaluate_shortcut_entry(self, path, name, target_path, arguments="", working_directory=""):
+        path = str(path or "")
+        name = str(name or "")
+        target_path = str(target_path or "")
+        arguments = str(arguments or "")
+        working_directory = str(working_directory or "")
+        blob = " ".join(part for part in (path, name, target_path, arguments, working_directory) if part)
+        if not blob:
+            return None
+
+        if self._has_strong_campaign_context(blob):
+            return (
+                "CRITICAL",
+                "Malicious Shortcut",
+                f"Shortcut references RenEngine/HijackLoader artifacts: {path}",
+            )
+
+        target_exe = os.path.basename(target_path).lower()
+        normalized_target = self._normalized_path(target_path)
+        args_lower = arguments.lower()
+        name_lower = name.lower()
+        base_name = os.path.splitext(target_exe)[0]
+
+        if target_exe in SHORTCUT_SCRIPT_HOSTS and (
+            self._has_strong_campaign_context(arguments)
+            or any(marker in args_lower for marker in COMMON_USERLAND_EXEC_MARKERS)
+            or any(ext in args_lower for ext in (".bat", ".cmd", ".hta", ".js", ".ps1", ".vbs"))
+        ):
+            return (
+                "HIGH",
+                "Malicious Shortcut",
+                f"Shortcut launches a script host with suspicious arguments: {path}",
+            )
+
+        risky_target = (
+            target_path
+            and self._path_in_user_writable_exec_zone(normalized_target)
+            and (
+                self._contains_marker(normalized_target, PROCESS_IOC_MARKERS)
+                or self._in_temp(normalized_target)
+                or self._looks_random(base_name)
+            )
+        )
+        if risky_target:
+            if not self._is_safe_process_context(target_exe, target_path, arguments, allow_metadata=True):
+                return (
+                    "HIGH",
+                    "Malicious Shortcut",
+                    f"Shortcut target points to suspicious user-writable executable: {path} -> {target_path}",
+                )
+
+        if any(token in name_lower for token in BROWSER_SHORTCUT_TOKENS) and target_exe in SHORTCUT_SCRIPT_HOSTS:
+            return (
+                "HIGH",
+                "Malicious Shortcut",
+                f"Browser-style shortcut is routed through a script host: {path}",
+            )
+
+        if any(token in name_lower for token in BROWSER_SHORTCUT_TOKENS):
+            if target_exe not in KNOWN_BROWSER_TARGETS and risky_target:
+                return (
+                    "HIGH",
+                    "Malicious Shortcut",
+                    f"Browser-style shortcut target is redirected to suspicious executable: {path}",
+                )
+
+        return None
+
+    def _is_risky_defender_exclusion(self, kind, value):
+        raw = str(value or "").strip()
+        if not raw:
+            return False
+        if self._has_strong_campaign_context(raw):
+            return True
+
+        normalized = self._normalized_path(raw)
+        risky_roots = {
+            self._normalized_path(os.environ.get("PROGRAMDATA", "")),
+            self._normalized_path(os.environ.get("APPDATA", "")),
+            self._normalized_path(os.environ.get("LOCALAPPDATA", "")),
+            self._normalized_path(os.environ.get("TEMP", "")),
+            self._normalized_path(os.environ.get("TMP", "")),
+            self._normalized_path(os.environ.get("USERPROFILE", "")),
+        }
+        risky_roots.discard("")
+
+        if kind == "Extension":
+            return raw.lower() in {".bat", ".cmd", ".dll", ".exe", ".hta", ".js", ".ps1", ".vbs"}
+
+        target = self._extract_command_target(raw)
+        normalized_target = self._normalized_path(target)
+        if normalized_target in risky_roots:
+            return True
+
+        if kind == "Process":
+            target_name = os.path.basename(normalized_target)
+            return bool(
+                normalized_target
+                and self._path_in_user_writable_exec_zone(normalized_target)
+                and not self._is_safe_process_context(target_name, target, raw, allow_metadata=True)
+            )
+
+        return bool(normalized and normalized in risky_roots)
+
+    def _get_process_context(self, pid):
+        if not PSUTIL_OK:
+            return "", "", ""
+        try:
+            proc = psutil.Process(pid)
+            pname = self._safe_proc_name(proc)
+            pexe = self._safe_proc_exe(proc)
+            cmdline = self._safe_proc_cmdline(proc)
+            return pname, pexe, cmdline
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return "", "", ""
+        except Exception:
+            return "", "", ""
+
+    @staticmethod
+    def _safe_proc_name(proc):
+        try:
+            return (proc.name() or "").lower()
+        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+            return ""
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _safe_proc_ppid(proc):
+        try:
+            return proc.ppid() or 0
+        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+            return 0
+        except Exception:
+            return 0
+
+    @staticmethod
+    def _safe_proc_exe(proc):
+        try:
+            return proc.exe() or ""
+        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+            return ""
+        except Exception:
+            return ""
+
+    def _safe_proc_cmdline(self, proc):
+        try:
+            return self._normalize_cmdline(proc.cmdline())
+        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+            return ""
+        except Exception:
+            return ""
+
+    def _should_block_process_remediation(self, pid):
+        pname, pexe, cmdline = self._get_process_context(pid)
+        target = pexe or cmdline or pname or f"PID {pid}"
+        if not (pname or pexe or cmdline):
+            return False, target
+        if self._has_strong_campaign_context(pname, pexe, cmdline):
+            return False, target
+        return self._is_safe_process_context(pname, pexe, cmdline, allow_metadata=True), target
+
+    @staticmethod
+    def _is_user_visible_root(root):
+        rl = root.lower()
+        return any(token in rl for token in ("\\downloads", "\\desktop", "\\documents"))
+
+    @staticmethod
+    def _file_contains_ascii_or_utf16le(path, needles):
+        try:
+            with open(path, "rb") as handle:
+                data = handle.read(65536).lower()
+            for needle in needles:
+                raw = needle.lower().encode("ascii", "ignore")
+                if raw and (raw in data or raw.decode("ascii").encode("utf-16le") in data):
+                    return True
+        except Exception:
+            return False
+        return False
+
+    def _value_has_malware_signal(self, value):
+        raw = self._normalize_cmdline(value)
+        lowered = raw.lower()
+        target = self._extract_command_target(raw)
+        normalized_target = self._normalized_path(target)
+
+        if self._has_strong_campaign_context(raw):
+            return True
+        if normalized_target and not self._is_trusted_vendor_path(normalized_target) and not self._has_trusted_file_metadata(target):
+            if any(marker in normalized_target for marker in COMMON_USERLAND_EXEC_MARKERS):
+                base = os.path.splitext(os.path.basename(normalized_target))[0]
+                if (
+                    self._looks_random(base)
+                    and any(ext in normalized_target for ext in (".exe", ".dll", ".cmd", ".bat", ".ps1", ".vbs", ".js"))
+                ) or self._contains_marker(normalized_target, PROCESS_IOC_MARKERS):
+                    return True
+        return any(pattern in lowered for pattern in SUSPICIOUS_REG_PATTERNS)
+
+    def _looks_suspicious_service(self, service_name, display_name, path_name):
+        blob = " ".join(part for part in (service_name, display_name, path_name) if part)
+        executable = self._extract_command_target(path_name)
+        normalized_executable = self._normalized_path(executable)
+        base = os.path.splitext(os.path.basename(normalized_executable))[0]
+
+        if self._has_strong_campaign_context(blob):
+            return "CRITICAL", "Malicious Service", f"Service references RenLoader/HijackLoader artifacts: {service_name} -> {path_name}"
+        if not executable or self._is_safe_process_context(service_name.lower(), executable, path_name) or self._has_trusted_file_metadata(executable):
+            return None
+        if any(marker in normalized_executable for marker in COMMON_USERLAND_EXEC_MARKERS) and (
+            self._looks_random(base) or self._contains_marker(normalized_executable, PROCESS_IOC_MARKERS)
+        ):
+            return "HIGH", "Malicious Service", f"Service points at suspicious user-writable executable: {service_name} -> {path_name}"
+        return None
+
+    @staticmethod
+    def _chromium_profile_dirs(root):
+        if not os.path.isdir(root):
+            return []
+        base = os.path.basename(root).lower()
+        if base != "user data":
+            return [root]
+        out = []
+        try:
+            for entry in os.listdir(root):
+                full = os.path.join(root, entry)
+                if not os.path.isdir(full):
+                    continue
+                if entry == "Default" or entry.startswith("Profile ") or entry in {"Guest Profile", "System Profile"}:
+                    out.append(full)
+        except Exception:
+            return []
+        return out
+
+    def _iter_chromium_extension_manifests(self):
+        profile = os.environ.get("USERPROFILE", "")
+        for label, rel_root in CHROMIUM_EXTENSION_REVIEW_ROOTS:
+            root = os.path.join(profile, rel_root)
+            for profile_dir in self._chromium_profile_dirs(root):
+                ext_root = os.path.join(profile_dir, "Extensions")
+                if not os.path.isdir(ext_root):
+                    continue
+                try:
+                    for ext_id in os.listdir(ext_root):
+                        ext_id_dir = os.path.join(ext_root, ext_id)
+                        if not os.path.isdir(ext_id_dir):
+                            continue
+                        for version in os.listdir(ext_id_dir):
+                            manifest_path = os.path.join(ext_id_dir, version, "manifest.json")
+                            if os.path.isfile(manifest_path):
+                                yield label, manifest_path
+                except Exception:
+                    continue
+
+    @staticmethod
+    def _sha256_file(path):
+        h = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                h.update(chunk)
+        return h.hexdigest().lower()
+
+    def _is_probable_source_lure(self, path, fname):
+        name_lower = fname.lower()
+        ext = os.path.splitext(name_lower)[1]
+        if ext not in SOURCE_LURE_EXTENSIONS:
+            return False
+        if ext == ".exe":
+            return self._contains_marker(name_lower, SOURCE_LURE_FILENAME_STRONG)
+        if self._contains_marker(name_lower, SOURCE_LURE_KEYWORDS):
+            return True
+        if ext in {".url", ".lnk", ".html", ".htm", ".bat", ".cmd", ".ps1", ".vbs", ".js"}:
+            return self._file_contains_ascii_or_utf16le(path, SOURCE_LURE_KEYWORDS)
+        return False
+
+    def _looks_like_hijackloader_stage_dir(self, dirpath, file_names_lower):
+        dir_lower = dirpath.lower()
+        if (self._is_trusted_vendor_path(dirpath) or self._is_protected_system_path(dirpath)) and not self._has_strong_campaign_context(
+            dirpath, " ".join(sorted(file_names_lower))
+        ):
+            return False
+        suspicious_context = (
+            self._in_temp(dirpath)
+            or "\\.temp" in dir_lower
+            or self._contains_marker(dir_lower, CAMPAIGN_DIR_MARKERS)
+            or self._path_in_user_writable_exec_zone(dir_lower)
+        )
+        if not suspicious_context:
+            return False
+        for signature in HIJACKLOADER_STAGE_DIR_SIGNATURES:
+            if len(signature & file_names_lower) >= 3:
+                return True
+        return False
+
+    def _matches_exact_ioc_hash(self, path, fname):
+        fl = fname.lower()
+        ext = os.path.splitext(fl)[1]
+        should_hash = fl in HASH_CANDIDATE_NAMES or ext in {".zip", ".rar", ".7z"}
+        if not should_hash:
+            return None
+        try:
+            if os.path.getsize(path) > MAX_IOC_HASH_BYTES:
+                return None
+        except OSError:
+            return None
+        try:
+            digest = self._sha256_file(path)
+        except Exception:
+            return None
+        return KNOWN_SHA256_IOCS.get(digest)
+
+    @staticmethod
+    def _should_skip_walk_dir(dirpath):
+        dpl = dirpath.lower()
+        return any(marker in dpl for marker in BENIGN_HEAVY_SUBTREES)
+
+    def scan_exposure_surface(self):
+        if not self.threats:
+            return
+        summary = self.last_summary or self.summarize_threats()
+        if summary["confidence"] not in {"high", "medium"}:
+            return
+
+        profile = os.environ.get("USERPROFILE", "")
+        for label, rel_path in EXPOSURE_DIRS:
+            full_path = os.path.join(profile, rel_path)
+            if os.path.exists(full_path):
+                self._note_exposure(
+                    f"Exposure warning — {label} data may have been accessed. Revoke sessions from a clean device",
+                    full_path
+                )
+
+    def _looks_suspicious_module_path(self, module_path):
+        mpl = (module_path or "").lower()
+        if not mpl.endswith(".dll"):
+            return False
+        if (self._is_trusted_vendor_path(module_path) or self._is_protected_system_path(module_path)) and not self._has_strong_campaign_context(module_path):
+            return False
+        base = os.path.basename(mpl)
+        if base in SUSPICIOUS_DLL_NAMES and (
+            self._contains_marker(mpl, CAMPAIGN_DIR_MARKERS)
+            or self._path_in_user_writable_exec_zone(mpl)
+        ):
+            suspicious = True
+        elif base in LOADER_CONTAINER_DLLS and (
+            "\\.temp" in mpl
+            or self._contains_marker(mpl, {"broker_crypt_v4_i386", "dksyvguj", "w8cpbgqi", "gayal", "hap.eml"})
+        ):
+            suspicious = True
+        else:
+            suspicious = self._contains_marker(mpl, PROCESS_IOC_MARKERS) and self._path_in_user_writable_exec_zone(mpl)
+
+        if not suspicious:
+            return False
+        if self._should_consider_metadata_trust(module_path) and self._has_trusted_file_metadata(module_path):
+            return False
+        return True
+
+    def _should_scan_modules_for_process(self, pid, pname, pexe, cmdline):
+        if self.paranoid:
+            return True
+
+        normalized_exe = self._normalized_path(pexe)
+        if self._has_strong_campaign_context(pname, pexe, cmdline):
+            return True
+        if self._is_safe_process_context(pname, pexe, cmdline):
+            return False
+        if pexe and not os.path.exists(pexe) and self._path_in_user_writable_exec_zone(normalized_exe):
+            return True
+        if pexe and self._path_in_user_writable_exec_zone(normalized_exe):
+            return True
+        return pid in self._module_scan_pid_targets
+
+    def scan_process_modules(self):
+        self.log("── MODULE SCAN ────────────────────────────────────────", "SECTION")
+        if not PSUTIL_OK or not hasattr(psutil.Process, "memory_maps"):
+            self.log("psutil memory map support unavailable — module scan skipped", "WARN")
+            return
+
+        if not self.paranoid and not self._module_scan_pid_targets:
+            self.log("No suspicious process targets surfaced in standard mode â€” deep module walk skipped", "INFO")
+            return
+
+        seen = set()
+        scanned_targets = 0
+        if self.paranoid:
+            module_targets = psutil.process_iter()
+        else:
+            module_targets = []
+            for pid in sorted(self._module_scan_pid_targets):
+                try:
+                    module_targets.append(psutil.Process(pid))
+                except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+                    continue
+
+        for proc in module_targets:
+            if self._stop:
+                return
+            try:
+                pid = proc.pid
+                pname = self._safe_proc_name(proc)
+                pexe = self._safe_proc_exe(proc)
+                cmdline = self._safe_proc_cmdline(proc)
+                if not self._should_scan_modules_for_process(pid, pname, pexe, cmdline):
+                    continue
+
+                scanned_targets += 1
+                if scanned_targets % 5 == 0:
+                    self.progress(f"Checked modules for {scanned_targets} suspicious processes...")
+                pexe_lower = pexe.lower()
+
+                if (
+                    pexe
+                    and self._path_in_user_writable_exec_zone(pexe_lower)
+                    and not os.path.exists(pexe)
+                    and not self._is_safe_process_context(pname, pexe, cmdline)
+                ):
+                    self._add(
+                        "CRITICAL",
+                        "Execution Trace Anomaly",
+                        f"Process image path missing on disk (possible hollowing/doppelganging trace): {pname} (PID {pid})  {pexe}",
+                        pexe or cmdline,
+                        lambda p=pid: self._kill_process_tree(p)
+                    )
+
+                for mmap in proc.memory_maps():
+                    mpath = getattr(mmap, "path", "") or ""
+                    if not mpath:
+                        continue
+                    key = (pid, mpath.lower())
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    if self._is_safe_process_context(pname, pexe, cmdline) and not self._has_strong_campaign_context(mpath):
+                        continue
+                    if self._looks_suspicious_module_path(mpath):
+                        sev = "CRITICAL" if os.path.basename(mpath).lower() in SUSPICIOUS_DLL_NAMES else "HIGH"
+                        self._add(
+                            sev,
+                            "Injected/Sideloaded DLL",
+                            f"Suspicious DLL loaded by {pname} (PID {pid}): {mpath}",
+                            mpath,
+                            lambda p=pid: self._kill_process_tree(p)
+                        )
+            except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+                pass
+            except Exception as exc:
+                self.log(f"Module scan warning: {exc}", "WARN")
+
+    def scan_startup_persistence(self):
+        self.log("── STARTUP ARTIFACT SCAN ─────────────────────────────", "SECTION")
+        appdata = os.environ.get("APPDATA", "")
+        programdata = os.environ.get("PROGRAMDATA", "")
+        startup_roots = []
+        if appdata:
+            startup_roots.append(os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "Startup"))
+        if programdata:
+            startup_roots.append(os.path.join(programdata, "Microsoft", "Windows", "Start Menu", "Programs", "Startup"))
+
+        for root in startup_roots:
+            if not os.path.isdir(root):
+                continue
+            try:
+                for fname in os.listdir(root):
+                    fpath = os.path.join(root, fname)
+                    fl = fname.lower()
+                    if self._is_probable_source_lure(fpath, fname) or self._file_contains_ascii_or_utf16le(
+                        fpath, PROCESS_IOC_MARKERS
+                    ):
+                        self._add(
+                            "HIGH",
+                            "Startup Persistence Artifact",
+                            f"Suspicious startup entry or shortcut: {fpath}",
+                            fpath,
+                            lambda p=fpath: self._delete_file(p)
+                        )
+            except Exception as exc:
+                self.log(f"Startup scan warning: {exc}", "WARN")
+
+    def scan_shortcut_targets(self):
+        self.log("SHORTCUT REVIEW", "SECTION")
+        try:
+            for row in self._collect_shortcut_rows():
+                if self._stop:
+                    return
+                finding = self._evaluate_shortcut_entry(
+                    row.get("Path"),
+                    row.get("Name"),
+                    row.get("TargetPath"),
+                    row.get("Arguments"),
+                    row.get("WorkingDirectory"),
+                )
+                if not finding:
+                    continue
+                severity, category, description = finding
+                shortcut_path = str(row.get("Path") or "")
+                self._add(
+                    severity,
+                    category,
+                    description,
+                    shortcut_path,
+                    lambda p=shortcut_path: self._delete_file(p),
+                )
+        except Exception as exc:
+            self.log(f"Shortcut review warning: {exc}", "WARN")
+
+    def scan_disabled_startup_items(self):
+        self.log("DISABLED STARTUP REVIEW", "SECTION")
+        if not WINREG_OK:
+            self.log("winreg unavailable â€” disabled startup review skipped", "WARN")
+            return
+
+        shortcut_rows = self._collect_shortcut_rows()
+        startup_shortcuts = {}
+        for row in shortcut_rows:
+            shortcut_path = self._normalized_path(row.get("Path"))
+            if shortcut_path:
+                startup_shortcuts[shortcut_path] = row
+
+        actual_run_keys = {
+            "Run": [
+                (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", "HKCU"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", "HKLM"),
+            ],
+            "Run32": [
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run", "HKLM"),
+            ],
+        }
+
+        startupapproved_roots = [
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved", "HKCU"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved", "HKLM"),
+        ]
+
+        for hive, root, _hive_name in startupapproved_roots:
+            for child_name in ("Run", "Run32", "StartupFolder"):
+                subkey = root + "\\" + child_name
+                try:
+                    key = winreg.OpenKey(hive, subkey)
+                except (FileNotFoundError, PermissionError):
+                    continue
+
+                index = 0
+                while True:
+                    try:
+                        item_name, binary_value, _ = winreg.EnumValue(key, index)
+                    except OSError:
+                        break
+                    index += 1
+
+                    if not self._is_disabled_startupapproved_value(binary_value):
+                        continue
+
+                    if child_name in actual_run_keys:
+                        for run_hive, run_key, run_hive_name in actual_run_keys[child_name]:
+                            try:
+                                run_handle = winreg.OpenKey(run_hive, run_key)
+                                run_value = str(winreg.QueryValueEx(run_handle, item_name)[0] or "")
+                                winreg.CloseKey(run_handle)
+                            except (FileNotFoundError, PermissionError, OSError):
+                                continue
+
+                            if not self._value_has_malware_signal(run_value):
+                                continue
+                            location = f"{run_hive_name}\\{run_key}"
+                            self._add(
+                                "HIGH",
+                                "Disabled Startup Artifact",
+                                f"Disabled startup entry still points at malware-linked command: {item_name} -> {run_value}",
+                                location,
+                                lambda approved_hive=hive, approved_key=subkey, approved_name=item_name,
+                                value_hive=run_hive, value_key=run_key, value_name=item_name: self._remediate_disabled_startup_entry(
+                                    [(approved_hive, approved_key, approved_name), (value_hive, value_key, value_name)]
+                                ),
+                            )
+                            break
+                        continue
+
+                    for startup_root in self._startup_shortcut_roots():
+                        shortcut_path = self._normalized_path(os.path.join(startup_root, item_name))
+                        row = startup_shortcuts.get(shortcut_path)
+                        if not row:
+                            continue
+                        finding = self._evaluate_shortcut_entry(
+                            row.get("Path"),
+                            row.get("Name"),
+                            row.get("TargetPath"),
+                            row.get("Arguments"),
+                            row.get("WorkingDirectory"),
+                        )
+                        if not finding:
+                            continue
+                        self._add(
+                            "HIGH",
+                            "Disabled Startup Artifact",
+                            f"Disabled startup shortcut still references suspicious target: {row.get('Path')}",
+                            row.get("Path"),
+                            lambda approved_hive=hive, approved_key=subkey, approved_name=item_name,
+                            shortcut=row.get("Path"): self._remediate_disabled_startup_entry(
+                                [(approved_hive, approved_key, approved_name)],
+                                shortcut,
+                            ),
+                        )
+                        break
+
+                try:
+                    winreg.CloseKey(key)
+                except Exception:
+                    pass
+
+    def scan_services(self):
+        self.log("SERVICE SCAN", "SECTION")
+        rows = self._run_powershell_json(
+            "Get-CimInstance Win32_Service | "
+            "Select-Object Name,DisplayName,PathName,StartMode,State | ConvertTo-Json -Compress",
+            timeout=60,
+        )
+        if rows is None:
+            self.log("PowerShell unavailable — service scan skipped", "WARN")
+            return
+
+        for row in rows:
+            if self._stop:
+                return
+            try:
+                name = str(row.get("Name") or "")
+                display_name = str(row.get("DisplayName") or "")
+                path_name = str(row.get("PathName") or "")
+                finding = self._looks_suspicious_service(name, display_name, path_name)
+                if not finding:
+                    continue
+                severity, category, description = finding
+                self._add(
+                    severity,
+                    category,
+                    description,
+                    path_name or name,
+                    lambda service_name=name: self._delete_service(service_name),
+                )
+            except Exception as exc:
+                self.log(f"Service scan warning: {exc}", "WARN")
+
+    def scan_wmi_persistence(self):
+        self.log("WMI PERSISTENCE SCAN", "SECTION")
+        queries = (
+            ("__EventFilter", "Get-WmiObject -Namespace root\\subscription -Class __EventFilter | Select-Object Name,Query,EventNamespace | ConvertTo-Json -Compress"),
+            ("CommandLineEventConsumer", "Get-WmiObject -Namespace root\\subscription -Class CommandLineEventConsumer | Select-Object Name,CommandLineTemplate,ExecutablePath | ConvertTo-Json -Compress"),
+            ("ActiveScriptEventConsumer", "Get-WmiObject -Namespace root\\subscription -Class ActiveScriptEventConsumer | Select-Object Name,ScriptingEngine,ScriptText | ConvertTo-Json -Compress"),
+        )
+
+        for class_name, script in queries:
+            rows = self._run_powershell_json(script, timeout=45)
+            if rows is None:
+                self.log("PowerShell unavailable — WMI scan skipped", "WARN")
+                return
+
+            for row in rows:
+                if self._stop:
+                    return
+                try:
+                    name = str(row.get("Name") or "")
+                    blob = " ".join(str(value or "") for value in row.values())
+                    suspicious = self._has_strong_campaign_context(blob)
+
+                    if not suspicious and class_name == "CommandLineEventConsumer":
+                        candidate = self._extract_command_target(str(row.get("CommandLineTemplate") or row.get("ExecutablePath") or ""))
+                        normalized = self._normalized_path(candidate)
+                        base = os.path.splitext(os.path.basename(normalized))[0]
+                        suspicious = bool(
+                            candidate
+                            and self._path_in_user_writable_exec_zone(normalized)
+                            and self._looks_random(base)
+                        )
+
+                    if not suspicious:
+                        continue
+
+                    self._add(
+                        "CRITICAL",
+                        "WMI Persistence",
+                        f"Suspicious WMI subscription object ({class_name}): {name or '[unnamed]'}",
+                        name or class_name,
+                        lambda filter_name=name if class_name == "__EventFilter" else "",
+                               consumer_name=name if class_name != "__EventFilter" else "",
+                               consumer_class=class_name if class_name != "__EventFilter" else "":
+                            self._delete_wmi_subscription(filter_name, consumer_name, consumer_class),
+                    )
+                except Exception as exc:
+                    self.log(f"WMI scan warning: {exc}", "WARN")
+
+    def scan_browser_extensions(self):
+        self.log("BROWSER EXTENSION REVIEW", "SECTION")
+        for label, manifest_path in self._iter_chromium_extension_manifests():
+            if self._stop:
+                return
+            try:
+                with open(manifest_path, "r", encoding="utf-8") as handle:
+                    manifest = json.load(handle)
+            except Exception:
+                continue
+
+            blob = json.dumps(manifest, ensure_ascii=True).lower()
+            permissions = {
+                str(value).lower()
+                for section in ("permissions", "host_permissions", "optional_permissions")
+                for value in (manifest.get(section) or [])
+            }
+            keyword_hit = self._contains_marker(
+                blob,
+                {
+                    "acrstealer",
+                    "broker_crypt",
+                    "chime",
+                    "froodjurain",
+                    "instaler",
+                    "lumma",
+                    "renengine",
+                    "renloader",
+                    "rhadamanthys",
+                    "vidar",
+                    "vsdebugscriptagent170",
+                    "zoneind",
+                },
+            )
+            remote_lure_hit = self._contains_marker(blob, {"go.zovo", "mediafire", "mega", "dodi-repacks"})
+            risky_permissions = bool(permissions & {perm.lower() for perm in SUSPICIOUS_EXTENSION_PERMISSIONS})
+
+            if not (self._has_strong_campaign_context(blob, manifest_path) or remote_lure_hit or (keyword_hit and risky_permissions)):
+                continue
+
+            name = manifest.get("name") or os.path.basename(os.path.dirname(manifest_path))
+            self._add(
+                "MEDIUM",
+                "Browser Extension Review",
+                f"{label} extension needs review: {name}",
+                manifest_path,
+            )
+
+    def scan_system_tampering(self):
+        self.log("SYSTEM TAMPERING REVIEW", "SECTION")
+
+        hosts_path = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "System32", "drivers", "etc", "hosts")
+        try:
+            if os.path.isfile(hosts_path):
+                with open(hosts_path, "r", encoding="utf-8", errors="ignore") as handle:
+                    for raw_line in handle:
+                        line = raw_line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        tokens = line.split()
+                        if len(tokens) < 2:
+                            continue
+                        address = tokens[0]
+                        hostnames = tokens[1:]
+                        if address in {"127.0.0.1", "0.0.0.0", "::1"}:
+                            continue
+                        if any(marker in host.lower() for host in hostnames for marker in SENSITIVE_HOST_MARKERS):
+                            self._add(
+                                "MEDIUM",
+                                "Hosts Tampering Review",
+                                f"Hosts file overrides sensitive domain(s): {address} -> {' '.join(hostnames)}",
+                                hosts_path,
+                            )
+                            break
+        except Exception as exc:
+            self.log(f"Hosts review warning: {exc}", "WARN")
+
+        if WINREG_OK:
+            proxy_locations = [
+                (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings", "HKCU"),
+                (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings", "HKLM"),
+            ]
+            for hive, subkey, hive_name in proxy_locations:
+                proxy_enable = 0
+                proxy_server = ""
+                auto_config = ""
+                try:
+                    key = winreg.OpenKey(hive, subkey)
+                    try:
+                        proxy_enable = int(winreg.QueryValueEx(key, "ProxyEnable")[0])
+                    except OSError:
+                        proxy_enable = 0
+                    try:
+                        proxy_server = str(winreg.QueryValueEx(key, "ProxyServer")[0] or "")
+                    except OSError:
+                        proxy_server = ""
+                    try:
+                        auto_config = str(winreg.QueryValueEx(key, "AutoConfigURL")[0] or "")
+                    except OSError:
+                        auto_config = ""
+                    winreg.CloseKey(key)
+                except (FileNotFoundError, PermissionError):
+                    continue
+
+                proxy_blob = " ".join(str(part) for part in (proxy_server, auto_config) if part)
+                proxy_lower = proxy_blob.lower()
+                suspicious_proxy = self._has_strong_campaign_context(proxy_blob) or any(token in proxy_lower for token in ("127.0.0.1", "localhost"))
+                if proxy_enable and proxy_blob and suspicious_proxy:
+                    severity = "HIGH" if self._has_strong_campaign_context(proxy_blob) else "MEDIUM"
+                    action = self._reset_user_proxy_settings if severity == "HIGH" else None
+                    self._add(
+                        severity,
+                        "Proxy Configuration Review",
+                        f"Internet proxy setting requires review: {hive_name}\\{subkey} -> {proxy_blob}",
+                        f"{hive_name}\\{subkey}",
+                        action,
+                    )
+
+        try:
+            result = subprocess.run(
+                ["netsh", "winhttp", "show", "proxy"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                creationflags=0x08000000,
+            )
+            output = (result.stdout or "").strip().lower()
+            if output and "direct access (no proxy server)" not in output and (
+                self._has_strong_campaign_context(output) or any(token in output for token in ("127.0.0.1", "localhost"))
+            ):
+                self._add(
+                    "MEDIUM",
+                    "WinHTTP Proxy Review",
+                    "WinHTTP proxy is configured and should be reviewed after cleanup.",
+                    "netsh winhttp show proxy",
+                )
+        except Exception as exc:
+            self.log(f"WinHTTP proxy review warning: {exc}", "WARN")
+
+    def scan_defender_posture(self):
+        self.log("DEFENDER POSTURE REVIEW", "SECTION")
+        rows = self._run_powershell_json(
+            "try { "
+            "$pref = Get-MpPreference -ErrorAction Stop; "
+            "[pscustomobject]@{ "
+            "DisableRealtimeMonitoring=$pref.DisableRealtimeMonitoring; "
+            "DisableIOAVProtection=$pref.DisableIOAVProtection; "
+            "DisableScriptScanning=$pref.DisableScriptScanning; "
+            "ExclusionPath=@($pref.ExclusionPath); "
+            "ExclusionProcess=@($pref.ExclusionProcess); "
+            "ExclusionExtension=@($pref.ExclusionExtension) "
+            "} | ConvertTo-Json -Compress "
+            "} catch { }",
+            timeout=30,
+        )
+        if rows is None:
+            self.log("PowerShell unavailable â€” Defender review skipped", "WARN")
+            return
+        if not rows:
+            return
+
+        row = rows[0]
+        for kind in ("Path", "Process", "Extension"):
+            values = row.get(f"Exclusion{kind}") or []
+            if not isinstance(values, list):
+                values = [values]
+            for value in values:
+                value_text = str(value or "").strip()
+                if not self._is_risky_defender_exclusion(kind, value_text):
+                    continue
+                severity = "CRITICAL" if self._has_strong_campaign_context(value_text) else "HIGH"
+                self._add(
+                    severity,
+                    "Defender Exclusion",
+                    f"Suspicious Microsoft Defender exclusion ({kind.lower()}): {value_text}",
+                    value_text,
+                    lambda exclusion_kind=kind, exclusion_value=value_text: self._remove_defender_exclusion(
+                        exclusion_kind,
+                        exclusion_value,
+                    ),
+                )
+
+        disabled_controls = []
+        if bool(row.get("DisableRealtimeMonitoring")):
+            disabled_controls.append("real-time monitoring")
+        if bool(row.get("DisableIOAVProtection")):
+            disabled_controls.append("IOAV protection")
+        if bool(row.get("DisableScriptScanning")):
+            disabled_controls.append("script scanning")
+        if disabled_controls:
+            self._add(
+                "MEDIUM",
+                "Defender Protection Review",
+                "Microsoft Defender protections are disabled and should be reviewed: "
+                + ", ".join(disabled_controls),
+                "Get-MpPreference",
+            )
+
+    def scan_firewall_rules(self):
+        self.log("FIREWALL RULE REVIEW", "SECTION")
+        rows = self._run_powershell_json(
+            "try { "
+            "Get-NetFirewallRule -Enabled True -Action Allow -ErrorAction Stop | "
+            "ForEach-Object { "
+            "$rule = $_; "
+            "$app = $rule | Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue | Select-Object -First 1; "
+            "[pscustomobject]@{ "
+            "Name=$rule.Name; "
+            "DisplayName=$rule.DisplayName; "
+            "Direction=[string]$rule.Direction; "
+            "Program=($app.Program) "
+            "} "
+            "} | ConvertTo-Json -Compress "
+            "} catch { }",
+            timeout=45,
+        )
+        if rows is None:
+            self.log("PowerShell unavailable â€” firewall review skipped", "WARN")
+            return
+
+        for row in rows:
+            if self._stop:
+                return
+            try:
+                rule_name = str(row.get("Name") or "")
+                display_name = str(row.get("DisplayName") or "")
+                direction = str(row.get("Direction") or "")
+                program = str(row.get("Program") or "")
+                if not program:
+                    continue
+
+                normalized_program = self._normalized_path(program)
+                program_name = os.path.basename(normalized_program)
+                strong = self._has_strong_campaign_context(rule_name, display_name, program)
+                suspicious_path = (
+                    normalized_program
+                    and self._path_in_user_writable_exec_zone(normalized_program)
+                    and not self._is_safe_process_context(program_name, program, display_name, allow_metadata=True)
+                )
+                if not (strong or suspicious_path):
+                    continue
+
+                severity = "HIGH" if strong else "MEDIUM"
+                action = None
+                if strong or ("inbound" in direction.lower() and suspicious_path):
+                    action = lambda name=rule_name: self._delete_firewall_rule(name)
+
+                self._add(
+                    severity,
+                    "Firewall Rule Review",
+                    f"Allow firewall rule points at suspicious program: {display_name or rule_name} -> {program}",
+                    rule_name or display_name,
+                    action,
+                )
+            except Exception as exc:
+                self.log(f"Firewall review warning: {exc}", "WARN")
+
+    @staticmethod
+    def _path_in_user_writable_exec_zone(path):
+        pl = (path or "").lower()
+        return any(marker in pl for marker in USER_WRITABLE_DIR_MARKERS)
+
+    @staticmethod
+    def _looks_script_host(pname, cmdline_lower):
+        return pname in {"python.exe", "pythonw.exe", "wscript.exe", "cscript.exe", "mshta.exe", "rundll32.exe"} or any(
+            host in cmdline_lower for host in ("python.exe", "pythonw.exe", "wscript", "cscript", "mshta", "rundll32")
+        )
+
+    @staticmethod
+    def _has_external_raddr(conn):
+        try:
+            if not conn.raddr:
+                return False
+            ip = getattr(conn.raddr, "ip", "") or ""
+            return ip not in {"127.0.0.1", "::1", "0.0.0.0"}
+        except Exception:
+            return False
+
+    # ── Filesystem scan ─────────────────────────────────────────────────────
+
+    def scan_filesystem(self):
+        self.log("── FILESYSTEM SCAN ────────────────────────────────────", "SECTION")
+        visited = 0
+
+        for root in SCAN_ROOTS:
+            if not root or not os.path.isdir(root):
+                continue
+            self.log(f"Entering: {root}", "INFO")
+
+            try:
+                for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+                    if self._stop:
+                        return
+                    dirpath_lower = dirpath.lower()
+                    if self._should_skip_walk_dir(dirpath) and not self._contains_marker(dirpath_lower, CAMPAIGN_DIR_MARKERS):
+                        dirnames.clear()
+                        continue
+
+                    dirnames[:] = [
+                        d for d in dirnames
+                        if not self._should_skip_walk_dir(os.path.join(dirpath, d))
+                        or self._contains_marker(os.path.join(dirpath, d).lower(), CAMPAIGN_DIR_MARKERS)
+                    ]
+
+                    depth = dirpath.replace(root, "").count(os.sep)
+                    if depth > 7:
+                        dirnames.clear()
+                        continue
+
+                    visited += 1
+                    if visited % 40 == 0:
+                        self.progress(f"Walked {visited} dirs…  {dirpath[:65]}")
+
+                    # RenEngine bundle signature
+                    dir_names_lower = {d.lower() for d in dirnames}
+                    file_names_lower = {f.lower() for f in filenames}
+                    if RENENGINE_FOLDER_SET.issubset(dir_names_lower):
+                        has_instaler = any(f.lower() in MALICIOUS_FILENAMES for f in filenames)
+                        sev = "CRITICAL" if has_instaler else "HIGH"
+                        dp = dirpath
+                        self._add(sev, "RenEngine Bundle",
+                                  f"RenEngine folder structure at: {dp}", dp,
+                                  lambda p=dp: self._nuke_directory(p))
+
+                    if self._contains_marker(dirpath, CAMPAIGN_DIR_MARKERS):
+                        dp = dirpath
+                        self._add("CRITICAL", "Persistence Staging Directory",
+                                  f"HijackLoader persistence directory at: {dp}", dp,
+                                  lambda p=dp: self._nuke_directory(p))
+
+                    if self._looks_like_hijackloader_stage_dir(dirpath, file_names_lower):
+                        dp = dirpath
+                        self._add("CRITICAL", "HijackLoader Stage Directory",
+                                  f"HijackLoader stage directory at: {dp}", dp,
+                                  lambda p=dp: self._nuke_directory(p))
+
+                    for fname in filenames:
+                        fl = fname.lower()
+                        fpath = os.path.join(dirpath, fname)
+                        fpath_lower = fpath.lower()
+
+                        exact_ioc = self._matches_exact_ioc_hash(fpath, fname)
+                        if exact_ioc:
+                            self._add("CRITICAL", "Exact IOC Hash",
+                                      f"Exact IOC hash match ({exact_ioc}): {fpath}", fpath,
+                                      lambda p=fpath: self._delete_file(p))
+                            continue
+
+                        if fl in ("instaler.exe", "instaler.py", "instaler.pyo",
+                                  "instaler.pyc", "lnstaier.exe", "iviewers.dll"):
+                            self._add("CRITICAL", "Malicious File",
+                                      f"Known RenKill IOC: {fpath}", fpath,
+                                      lambda p=fpath: self._delete_file(p))
+
+                        elif fl in ("archive.rpa", "script.rpyc") and self._in_temp(dirpath):
+                            self._add("HIGH", "Malicious Archive/Script",
+                                      f"RenEngine payload in temp: {fpath}", fpath,
+                                      lambda p=fpath: self._delete_file(p))
+
+                        elif fl == "__init__.py" and "renpy" in dirpath.lower() and self._in_temp(dirpath):
+                            self._add("HIGH", "Hijacked Module Init",
+                                      f"Malicious __init__.py in renpy temp dir: {fpath}", fpath,
+                                      lambda p=fpath: self._delete_file(p))
+
+                        elif fl.endswith(".key") and self._in_temp(dirpath):
+                            self._add("MEDIUM", "Payload Key File",
+                                      f"Encrypted payload .key in temp: {fpath}", fpath,
+                                      lambda p=fpath: self._delete_file(p))
+
+                        elif fl in HIJACKLOADER_STAGE_FILES and self._looks_like_hijackloader_stage_dir(dirpath, file_names_lower):
+                            sev = "CRITICAL" if fl in {"w8cpbgqi.exe", "cc32290mt.dll"} else "HIGH"
+                            self._add(sev, "HijackLoader Stage Artifact",
+                                      f"HijackLoader stage artifact: {fpath}", fpath,
+                                      lambda p=fpath: self._delete_file(p))
+
+                        elif fl in LOADER_CONTAINER_DLLS and self._looks_like_hijackloader_stage_dir(dirpath, file_names_lower):
+                            self._add("HIGH", "Loader Container DLL",
+                                      f"Suspicious loader container DLL in stage directory: {fpath}",
+                                      fpath, lambda p=fpath: self._delete_file(p))
+
+                        elif fl in CAMPAIGN_FILENAMES and (
+                            self._contains_marker(fpath, CAMPAIGN_DIR_MARKERS)
+                            or "\\programdata\\" in fpath_lower
+                            or "\\appdata\\roaming\\" in fpath_lower
+                            or "\\appdata\\local\\" in fpath_lower
+                        ):
+                            sev = "CRITICAL" if fl in {"froodjurain.wkk", "chime.exe", "zoneind.exe"} else "HIGH"
+                            self._add(sev, "Persistence Artifact",
+                                      f"HijackLoader/ACR persistence artifact: {fpath}", fpath,
+                                      lambda p=fpath: self._delete_file(p))
+
+                        elif fl.endswith(".lnk") and (
+                            "\\desktop\\" in fpath_lower
+                            or fpath_lower.endswith("\\desktop")
+                        ) and self._file_contains_ascii_or_utf16le(
+                            fpath,
+                            ("broker_crypt_v4_i386", "chime.exe", "zoneind.exe", "froodjurain.wkk")
+                        ):
+                            self._add("HIGH", "Malicious Shortcut",
+                                      f"Desktop shortcut referencing RenEngine persistence: {fpath}",
+                                      fpath, lambda p=fpath: self._delete_file(p))
+
+                        elif (fl.endswith(".exe") and self._in_temp(dirpath)
+                              and self._looks_random(fname[:-4])):
+                            self._add("HIGH", "Dropped Executable",
+                                      f"Random-named EXE in temp (likely HijackLoader drop): {fpath}",
+                                      fpath, lambda p=fpath: self._delete_file(p))
+
+                        elif self._is_user_visible_root(root) and self._is_probable_source_lure(fpath, fname):
+                            self._add("MEDIUM", "Source Lure Artifact",
+                                      f"Possible infection source or lure file: {fpath}",
+                                      fpath, lambda p=fpath: self._delete_file(p))
+
+            except PermissionError:
+                pass
+            except Exception as exc:
+                self.log(f"Walk error: {exc}", "WARN")
+
+    @staticmethod
+    def _looks_random(name: str) -> bool:
+        if not name or len(name) < 6 or len(name) > 20:
+            return False
+        if not name.isalnum():
+            return False
+        has_upper = any(c.isupper() for c in name)
+        has_lower = any(c.islower() for c in name)
+        has_digit = any(c.isdigit() for c in name)
+        return has_upper and has_lower and has_digit
+
+    @staticmethod
+    def _add_process_seed(seeds, pid, severity, category, description, path):
+        existing = seeds.get(pid)
+        rank = Threat.SEVERITY_ORDER
+        if existing and rank.get(existing["severity"], 99) <= rank.get(severity, 99):
+            return
+        seeds[pid] = {
+            "severity": severity,
+            "category": category,
+            "description": description,
+            "path": path,
+        }
+
+    def _collect_connected_pids(self):
+        connected_pids = set()
+        if not self.paranoid:
+            return connected_pids
+        try:
+            for conn in psutil.net_connections(kind="inet"):
+                if conn.pid and self._has_external_raddr(conn):
+                    connected_pids.add(conn.pid)
+        except Exception as exc:
+            self.log(f"Paranoid network correlation skipped: {exc}", "WARN")
+        return connected_pids
+
+    def _collect_process_rows(self):
+        proc_rows = []
+        parent_to_children = {}
+        proc_by_pid = {}
+        scanned = 0
+
+        for proc in psutil.process_iter():
+            if self._stop:
+                return None, None, None
+            try:
+                pid = proc.pid
+                ppid = self._safe_proc_ppid(proc)
+                pname = self._safe_proc_name(proc)
+                pexe = self._safe_proc_exe(proc)
+                cmdline = self._safe_proc_cmdline(proc)
+                row = {
+                    "pid": pid,
+                    "ppid": ppid,
+                    "name": pname,
+                    "exe": pexe,
+                    "exe_lower": pexe.lower(),
+                    "cmdline": cmdline,
+                    "cmdline_lower": cmdline.lower(),
+                }
+                proc_rows.append(row)
+                proc_by_pid[pid] = row
+                parent_to_children.setdefault(ppid, []).append(pid)
+                scanned += 1
+                if scanned % 40 == 0:
+                    self.progress(f"Indexed {scanned} processes...")
+            except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+                continue
+
+        return proc_rows, parent_to_children, proc_by_pid
+
+    def _seed_process_hit(self, row, connected_pids, seeds):
+        pid = row["pid"]
+        pname = row["name"]
+        pexe = row["exe"]
+        pexe_lower = row["exe_lower"]
+        cmdline = row["cmdline"]
+        cmdline_lower = row["cmdline_lower"]
+
+        if pexe and any(temp_root and temp_root in pexe_lower for temp_root in self._temp_paths()):
+            self._add_process_seed(
+                seeds,
+                pid,
+                "CRITICAL",
+                "Process in Temp",
+                f"Process running from temp: {pname} (PID {pid})  {pexe}",
+                pexe,
+            )
+            return
+
+        if pname in CAMPAIGN_PROCESS_NAMES:
+            self._add_process_seed(
+                seeds,
+                pid,
+                "CRITICAL",
+                "Malicious Process",
+                f"Known RenEngine process: {pname} (PID {pid})  {pexe or cmdline}",
+                pexe or cmdline,
+            )
+            return
+
+        if self._contains_marker(pexe_lower, PROCESS_IOC_MARKERS) or self._contains_marker(cmdline_lower, PROCESS_IOC_MARKERS):
+            self._add_process_seed(
+                seeds,
+                pid,
+                "CRITICAL",
+                "Campaign IOC Process",
+                f"Process references RenEngine/HijackLoader artifacts: {pname} (PID {pid})  {pexe or cmdline}",
+                pexe or cmdline,
+            )
+            return
+
+        if self._looks_script_host(pname, cmdline_lower) and self._contains_marker(cmdline_lower, PROCESS_IOC_MARKERS):
+            self._add_process_seed(
+                seeds,
+                pid,
+                "CRITICAL",
+                "Stealer Script Host",
+                f"Script host launched with malware-linked command line: {pname} (PID {pid})  {cmdline}",
+                pexe or cmdline,
+            )
+            return
+
+        if self._is_safe_process_context(pname, pexe, cmdline):
+            return
+
+        if pexe and self._path_in_user_writable_exec_zone(pexe_lower):
+            if pname in {"python.exe", "pythonw.exe"} and self._contains_marker(cmdline_lower, PROCESS_IOC_MARKERS):
+                self._add_process_seed(
+                    seeds,
+                    pid,
+                    "CRITICAL",
+                    "Stealer Script Host",
+                    f"Python launched from user-writable path with malware-linked args: {pname} (PID {pid})  {cmdline}",
+                    pexe or cmdline,
+                )
+                return
+
+            if pname.endswith(".exe") and pname not in SAFE_PROCESS_NAMES:
+                if self._looks_random(pname[:-4]):
+                    self._add_process_seed(
+                        seeds,
+                        pid,
+                        "CRITICAL",
+                        "Suspicious Userland Process",
+                        f"Random-named EXE running from user-writable path: {pname} (PID {pid})  {pexe}",
+                        pexe,
+                    )
+                    return
+                if any(marker in pexe_lower for marker in COMMON_USERLAND_EXEC_MARKERS):
+                    self._add_process_seed(
+                        seeds,
+                        pid,
+                        "HIGH",
+                        "Suspicious Userland Process",
+                        f"EXE running from user-writable path: {pname} (PID {pid})  {pexe}",
+                        pexe,
+                    )
+
+        if pname in {"cmd.exe", "explorer.exe"} and self.paranoid and (
+            self._contains_marker(cmdline_lower, PROCESS_IOC_MARKERS)
+            or (pexe and not os.path.exists(pexe) and self._path_in_user_writable_exec_zone(pexe_lower))
+        ):
+            self._add_process_seed(
+                seeds,
+                pid,
+                "CRITICAL",
+                "Execution Trace Anomaly",
+                f"Windows process showing malware-linked execution trace: {pname} (PID {pid})  {pexe or cmdline}",
+                pexe or cmdline,
+            )
+            return
+
+        if not self.paranoid:
+            return
+
+        if self._looks_script_host(pname, cmdline_lower) and (
+            self._path_in_user_writable_exec_zone(pexe_lower)
+            or self._contains_marker(cmdline_lower, {"appdata", "programdata", "temp", "downloads"})
+        ):
+            self._add_process_seed(
+                seeds,
+                pid,
+                "HIGH",
+                "Paranoid Script Host",
+                f"Script-capable host in user-writable execution zone: {pname} (PID {pid})  {pexe or cmdline}",
+                pexe or cmdline,
+            )
+            return
+
+        if pid in connected_pids and pexe and self._path_in_user_writable_exec_zone(pexe_lower) and pname not in SAFE_PROCESS_NAMES:
+            severity = "CRITICAL" if (self._looks_random(pname[:-4]) or self._contains_marker(pexe_lower, PROCESS_IOC_MARKERS)) else "HIGH"
+            self._add_process_seed(
+                seeds,
+                pid,
+                severity,
+                "Paranoid Networked Process",
+                f"Network-active executable running from user-writable path: {pname} (PID {pid})  {pexe}",
+                pexe,
+            )
+            return
+
+        if (
+            pname.endswith(".exe")
+            and pname not in SAFE_PROCESS_NAMES
+            and any(token in pname for token in PARANOID_NAME_TOKENS)
+            and self._path_in_user_writable_exec_zone(pexe_lower)
+        ):
+            self._add_process_seed(
+                seeds,
+                pid,
+                "HIGH",
+                "Paranoid Masquerade Process",
+                f"Masquerading helper/service-style EXE in user-writable path: {pname} (PID {pid})  {pexe}",
+                pexe,
+            )
+
+    def _expand_process_hits(self, seeds, parent_to_children, proc_by_pid):
+        expanded = set()
+        queue = list(seeds)
+        expanded_count = 0
+
+        while queue:
+            current = queue.pop(0)
+            if current in expanded:
+                continue
+            expanded.add(current)
+            expanded_count += 1
+            if expanded_count % 25 == 0:
+                self.progress(f"Tracing {expanded_count} flagged process links...")
+            for child_pid in parent_to_children.get(current, []):
+                if child_pid not in expanded:
+                    queue.append(child_pid)
+
+        for pid in list(seeds):
+            for child_pid in parent_to_children.get(pid, []):
+                child = proc_by_pid.get(child_pid)
+                if not child or child_pid in seeds:
+                    continue
+                if self._is_safe_process_context(child["name"], child["exe"], child["cmdline"]):
+                    continue
+                self._add_process_seed(
+                    seeds,
+                    child_pid,
+                    "HIGH",
+                    "Malicious Child Process",
+                    f"Child of flagged malware-linked process: {child['name']} (PID {child_pid}) parent PID {pid}",
+                    child["exe"] or child["cmdline"],
+                )
+
+        for pid in expanded:
+            row = proc_by_pid.get(pid)
+            if not row or pid in seeds:
+                continue
+            if self._is_safe_process_context(row["name"], row["exe"], row["cmdline"]):
+                continue
+            self._add_process_seed(
+                seeds,
+                pid,
+                "HIGH",
+                "Malicious Child Process",
+                f"Descendant of flagged malware-linked process: {row['name']} (PID {pid}) parent PID {row['ppid']}",
+                row["exe"] or row["cmdline"],
+            )
+
+    def _flush_process_hits(self, seeds):
+        sort_key = lambda item: (Threat.SEVERITY_ORDER.get(item[1]["severity"], 99), item[0])
+        for pid, info in sorted(seeds.items(), key=sort_key):
+            self._add(
+                info["severity"],
+                info["category"],
+                info["description"],
+                info["path"],
+                lambda p=pid: self._kill_process_tree(p),
+            )
+
+    # ── Process scan ────────────────────────────────────────────────────────
+
+    def scan_processes(self):
+        self.log("── PROCESS SCAN ───────────────────────────────────────", "SECTION")
+        if not PSUTIL_OK:
+            self.log("psutil unavailable — process scan skipped", "WARN")
+            return
+
+        connected_pids = self._collect_connected_pids()
+        proc_rows, parent_to_children, proc_by_pid = self._collect_process_rows()
+        if proc_rows is None:
+            return
+
+        seeds = {}
+        for index, row in enumerate(proc_rows, 1):
+            self._seed_process_hit(row, connected_pids, seeds)
+            if index % 40 == 0:
+                self.progress(f"Analyzed {index} processes...")
+
+        self._expand_process_hits(seeds, parent_to_children, proc_by_pid)
+        self._module_scan_pid_targets = set(seeds)
+        self._flush_process_hits(seeds)
+
+    # ── Network scan ────────────────────────────────────────────────────────
+
+    def scan_network(self):
+        self.log("── NETWORK SCAN ───────────────────────────────────────", "SECTION")
+        if not PSUTIL_OK:
+            self.log("psutil unavailable — network scan skipped", "WARN")
+            return
+
+        try:
+            for conn in psutil.net_connections(kind="inet"):
+                if self._stop:
+                    return
+                if not conn.raddr:
+                    continue
+                if conn.raddr.ip in C2_IPS:
+                    try:
+                        pname = psutil.Process(conn.pid).name() if conn.pid else "unknown"
+                    except Exception:
+                        pname = "unknown"
+                    self._add("CRITICAL", "Active C2 Connection",
+                              f"Live C2 connection to {conn.raddr.ip}:{conn.raddr.port}  process: {pname} (PID {conn.pid})",
+                              conn.raddr.ip,
+                              lambda p=conn.pid: self._kill_pid(p) if p else None)
+        except Exception as exc:
+            self.log(f"Network scan error: {exc}", "WARN")
+
+    # ── Scheduled task scan ─────────────────────────────────────────────────
+
+    def scan_scheduled_tasks(self):
+        self.log("── SCHEDULED TASK SCAN ────────────────────────────────", "SECTION")
+        try:
+            r = subprocess.run(
+                ["schtasks", "/query", "/fo", "CSV", "/v"],
+                capture_output=True, text=True, timeout=45,
+                creationflags=0x08000000
+            )
+            task_name = None
+            for line in r.stdout.splitlines():
+                stripped = line.strip().strip('"')
+                if stripped.startswith("\\"):
+                    parts = line.split('","')
+                    if parts:
+                        task_name = parts[0].strip('"').strip()
+
+                line_lower = line.lower()
+                if task_name and any(kw in line_lower for kw in (
+                    "\\temp\\", "\\tmp\\", "instaler", "renpy",
+                    "iviewers", "lnstaier", "uis4tq7p", "broker_crypt_v4_i386",
+                    "froodjurain", "vsdebugscriptagent170", "zoneind.exe", "chime.exe"
+                )):
+                    tn = task_name
+                    self._add("HIGH", "Malicious Scheduled Task",
+                              f"Persistence scheduled task: {tn}", tn,
+                              lambda t=tn: self._delete_task(t))
+                    task_name = None
+
+        except FileNotFoundError:
+            self.log("schtasks.exe not found", "WARN")
+        except subprocess.TimeoutExpired:
+            self.log("Task scan timed out", "WARN")
+        except Exception as exc:
+            self.log(f"Task scan error: {exc}", "WARN")
+
+    # ── Registry scan ───────────────────────────────────────────────────────
+
+    def scan_registry(self):
+        self.log("── REGISTRY SCAN ──────────────────────────────────────", "SECTION")
+        if not WINREG_OK:
+            self.log("winreg unavailable — registry scan skipped", "WARN")
+            return
+
+        hives = [
+            (winreg.HKEY_CURRENT_USER,  "HKCU"),
+            (winreg.HKEY_LOCAL_MACHINE, "HKLM"),
+        ]
+        subkeys = [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce",
+            r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run",
+        ]
+
+        for hive, hive_name in hives:
+            for subkey in subkeys:
+                try:
+                    key = winreg.OpenKey(hive, subkey)
+                    i = 0
+                    while True:
+                        try:
+                            name, value, _ = winreg.EnumValue(key, i)
+                            if self._value_has_malware_signal(value):
+                                full_key = f"{hive_name}\\{subkey}"
+                                self._add("HIGH", "Registry Persistence",
+                                          f"Autorun: {full_key}  [{name}] = {value[:100]}",
+                                          full_key,
+                                          lambda h=hive, sk=subkey, n=name: self._delete_reg_val(h, sk, n))
+                            i += 1
+                        except OSError:
+                            break
+                    winreg.CloseKey(key)
+                except (FileNotFoundError, PermissionError):
+                    pass
+
+        ifeo_roots = [
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options", "HKLM"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\Image File Execution Options", "HKLM"),
+        ]
+        for hive, subkey, hive_name in ifeo_roots:
+            try:
+                root = winreg.OpenKey(hive, subkey)
+            except (FileNotFoundError, PermissionError):
+                continue
+
+            idx = 0
+            while True:
+                try:
+                    image_name = winreg.EnumKey(root, idx)
+                except OSError:
+                    break
+                idx += 1
+
+                image_path = f"{hive_name}\\{subkey}\\{image_name}"
+                try:
+                    child = winreg.OpenKey(hive, subkey + "\\" + image_name)
+                except (FileNotFoundError, PermissionError):
+                    continue
+
+                for value_name in ("Debugger", "VerifierDlls", "GlobalFlag"):
+                    try:
+                        value = winreg.QueryValueEx(child, value_name)[0]
+                    except OSError:
+                        continue
+                    if self._value_has_malware_signal(value):
+                        self._add(
+                            "CRITICAL" if value_name == "Debugger" else "HIGH",
+                            "IFEO Persistence",
+                            f"IFEO hijack on {image_name}: {value_name} = {value}",
+                            image_path,
+                            lambda h=hive, sk=subkey + "\\" + image_name, n=value_name: self._delete_reg_val(h, sk, n),
+                        )
+                try:
+                    winreg.CloseKey(child)
+                except Exception:
+                    pass
+            try:
+                winreg.CloseKey(root)
+            except Exception:
+                pass
+
+        appinit_locations = [
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows", "HKLM"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\Windows", "HKLM"),
+        ]
+        for hive, subkey, hive_name in appinit_locations:
+            try:
+                key = winreg.OpenKey(hive, subkey)
+            except (FileNotFoundError, PermissionError):
+                continue
+
+            try:
+                appinit_value = str(winreg.QueryValueEx(key, "AppInit_DLLs")[0] or "")
+            except OSError:
+                appinit_value = ""
+            if appinit_value and self._value_has_malware_signal(appinit_value):
+                self._add(
+                    "CRITICAL",
+                    "AppInit Persistence",
+                    f"AppInit_DLLs contains suspicious DLL path(s): {appinit_value}",
+                    f"{hive_name}\\{subkey}",
+                    lambda h=hive, sk=subkey, n="AppInit_DLLs": self._delete_reg_val(h, sk, n),
+                )
+            try:
+                winreg.CloseKey(key)
+            except Exception:
+                pass
+
+    # ── Remediation ─────────────────────────────────────────────────────────
+
+    def _kill_pid(self, pid):
+        if pid is None:
+            return False
+        try:
+            if not PSUTIL_OK:
+                self._log_safety_block("kill PID without process context", f"PID {pid}")
+                return False
+
+            blocked, target = self._should_block_process_remediation(pid)
+            if blocked:
+                self._log_safety_block("kill protected or trusted process", target)
+                return False
+
+            p = psutil.Process(pid)
+            p.terminate()
+            time.sleep(0.4)
+            if p.is_running():
+                p.kill()
+            self.killed += 1
+            self.log(f"Killed PID {pid}", "SUCCESS")
+            return True
+        except Exception as exc:
+            self.log(f"Could not kill PID {pid}: {exc}", "WARN")
+            return False
+
+    def _kill_process_tree(self, pid):
+        if pid is None:
+            return False
+        try:
+            if not PSUTIL_OK:
+                self._log_safety_block("kill process tree without process context", f"PID {pid}")
+                return False
+
+            blocked, target = self._should_block_process_remediation(pid)
+            if blocked:
+                self._log_safety_block("kill protected or trusted process tree", target)
+                return False
+
+            root = psutil.Process(pid)
+            victims = []
+            for proc in root.children(recursive=True):
+                try:
+                    child_name = (proc.name() or "").lower()
+                    child_exe = proc.exe() or ""
+                    child_cmd = self._normalize_cmdline(proc.cmdline())
+                    if self._is_safe_process_context(child_name, child_exe, child_cmd, allow_metadata=True):
+                        self._log_safety_block("kill protected child process", child_exe or child_cmd or child_name)
+                        continue
+                    victims.append(proc)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            victims.sort(key=lambda proc: len(proc.children(recursive=True)), reverse=True)
+
+            killed_any = False
+            for proc in victims:
+                try:
+                    proc.terminate()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+
+            gone, alive = psutil.wait_procs(victims, timeout=0.8)
+            for proc in alive:
+                try:
+                    proc.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+
+            try:
+                root.terminate()
+                time.sleep(0.4)
+                if root.is_running():
+                    root.kill()
+                killed_any = True
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+            self.killed += len(gone) + len(alive) + (1 if killed_any else 0)
+            self.log(f"Killed process tree rooted at PID {pid}", "SUCCESS")
+            return True
+        except Exception as exc:
+            self.log(f"Could not kill process tree for PID {pid}: {exc}", "WARN")
+            return self._kill_pid(pid)
+
+    def _delete_file(self, path):
+        if not os.path.isfile(path):
+            return True
+        if self._should_block_path_remediation(path):
+            self._log_safety_block("delete protected or trusted file", path)
+            return False
+        try:
+            os.remove(path)
+            self.removed += 1
+            self.log(f"Deleted: {path}", "SUCCESS")
+            return True
+        except PermissionError:
+            try:
+                subprocess.run(["attrib", "-r", "-s", "-h", path],
+                               capture_output=True, creationflags=0x08000000)
+                os.remove(path)
+                self.removed += 1
+                self.log(f"Deleted (forced): {path}", "SUCCESS")
+                return True
+            except Exception as exc:
+                self.log(f"Cannot delete {path}: {exc}", "WARN")
+        except Exception as exc:
+            self.log(f"Cannot delete {path}: {exc}", "WARN")
+        return False
+
+    def _nuke_directory(self, path):
+        if not os.path.isdir(path):
+            return True
+        if self._should_block_path_remediation(path, is_dir=True):
+            self._log_safety_block("remove protected or broad directory", path)
+            return False
+        try:
+            shutil.rmtree(path, ignore_errors=True)
+            self.removed += 1
+            self.log(f"Nuked directory: {path}", "SUCCESS")
+            return True
+        except Exception as exc:
+            self.log(f"Cannot remove dir {path}: {exc}", "WARN")
+        return False
+
+    def _delete_task(self, task_name):
+        try:
+            r = subprocess.run(
+                ["schtasks", "/delete", "/tn", task_name, "/f"],
+                capture_output=True, text=True, creationflags=0x08000000
+            )
+            if r.returncode == 0:
+                self.removed += 1
+                self.log(f"Deleted scheduled task: {task_name}", "SUCCESS")
+                return True
+            self.log(f"Task delete failed: {r.stderr.strip()}", "WARN")
+        except Exception as exc:
+            self.log(f"Cannot delete task {task_name}: {exc}", "WARN")
+        return False
+
+    def _delete_service(self, service_name):
+        if not service_name:
+            return False
+        rows = self._run_powershell_json(
+            f"Get-CimInstance Win32_Service -Filter \"Name='{service_name}'\" | "
+            "Select-Object Name,PathName | ConvertTo-Json -Compress",
+            timeout=20,
+        )
+        if rows:
+            path_name = str(rows[0].get("PathName") or "")
+            finding = self._looks_suspicious_service(service_name, "", path_name)
+            if not finding:
+                self._log_safety_block("delete trusted service", service_name)
+                return False
+        try:
+            subprocess.run(["sc", "stop", service_name], capture_output=True, text=True, timeout=15, creationflags=0x08000000)
+            result = subprocess.run(["sc", "delete", service_name], capture_output=True, text=True, timeout=15, creationflags=0x08000000)
+            if result.returncode == 0:
+                self.removed += 1
+                self.log(f"Deleted service: {service_name}", "SUCCESS")
+                return True
+            self.log(f"Service delete failed: {result.stderr.strip() or result.stdout.strip()}", "WARN")
+        except Exception as exc:
+            self.log(f"Cannot delete service {service_name}: {exc}", "WARN")
+        return False
+
+    def _delete_firewall_rule(self, rule_name):
+        if not rule_name:
+            return False
+        escaped = rule_name.replace("'", "''")
+        result = self._run_powershell(
+            "try { Remove-NetFirewallRule -Name '" + escaped + "' -ErrorAction Stop } catch { exit 1 }",
+            timeout=20,
+        )
+        if result is not None and result.returncode == 0:
+            self.removed += 1
+            self.log(f"Removed firewall rule: {rule_name}", "SUCCESS")
+            return True
+        self.log(f"Could not remove firewall rule: {rule_name}", "WARN")
+        return False
+
+    def _remove_defender_exclusion(self, kind, value):
+        if not kind or not value:
+            return False
+        escaped = str(value).replace("'", "''")
+        if kind == "Path":
+            script = "try { Remove-MpPreference -ExclusionPath '" + escaped + "' -ErrorAction Stop } catch { exit 1 }"
+        elif kind == "Process":
+            script = "try { Remove-MpPreference -ExclusionProcess '" + escaped + "' -ErrorAction Stop } catch { exit 1 }"
+        elif kind == "Extension":
+            script = "try { Remove-MpPreference -ExclusionExtension '" + escaped + "' -ErrorAction Stop } catch { exit 1 }"
+        else:
+            return False
+
+        result = self._run_powershell(script, timeout=20)
+        if result is not None and result.returncode == 0:
+            self.removed += 1
+            self.log(f"Removed Defender exclusion: {value}", "SUCCESS")
+            return True
+        self.log(f"Could not remove Defender exclusion: {value}", "WARN")
+        return False
+
+    def _remediate_disabled_startup_entry(self, reg_values, shortcut_path=""):
+        removed_any = False
+        for hive, subkey, name in reg_values:
+            removed_any = self._delete_reg_val(hive, subkey, name) or removed_any
+        if shortcut_path:
+            removed_any = self._delete_file(shortcut_path) or removed_any
+        return removed_any
+
+    def _delete_reg_val(self, hive, subkey, name):
+        if not WINREG_OK:
+            return False
+        try:
+            key = winreg.OpenKey(hive, subkey, 0, winreg.KEY_SET_VALUE)
+            winreg.DeleteValue(key, name)
+            winreg.CloseKey(key)
+            self.removed += 1
+            self.log(f"Deleted registry value: {name}", "SUCCESS")
+            return True
+        except Exception as exc:
+            self.log(f"Cannot delete reg value {name}: {exc}", "WARN")
+        return False
+
+    def _delete_wmi_subscription(self, filter_name="", consumer_name="", consumer_class=""):
+        if not filter_name and not consumer_name:
+            return False
+
+        script_lines = []
+        if filter_name:
+            escaped = filter_name.replace("'", "''")
+            script_lines.append(
+                "$f = Get-WmiObject -Namespace root\\subscription -Class __EventFilter "
+                f"-Filter \"Name='{escaped}'\" -ErrorAction SilentlyContinue; "
+                "if ($f) { "
+                "$f | ForEach-Object { $_.GetRelated('__FilterToConsumerBinding') | Remove-WmiObject -ErrorAction SilentlyContinue }; "
+                "$f | Remove-WmiObject -ErrorAction SilentlyContinue }"
+            )
+        if consumer_name:
+            escaped = consumer_name.replace("'", "''")
+            if consumer_class and consumer_class != "__EventFilter":
+                script_lines.append(
+                    f"$c = Get-WmiObject -Namespace root\\subscription -Class {consumer_class} "
+                    f"-Filter \"Name='{escaped}'\" -ErrorAction SilentlyContinue; "
+                    "if ($c) { "
+                    "$c | ForEach-Object { $_.GetRelated('__FilterToConsumerBinding') | Remove-WmiObject -ErrorAction SilentlyContinue }; "
+                    "$c | Remove-WmiObject -ErrorAction SilentlyContinue }"
+                )
+            else:
+                script_lines.append(
+                    "$classes = 'CommandLineEventConsumer','ActiveScriptEventConsumer'; "
+                    f"foreach ($cls in $classes) {{ $c = Get-WmiObject -Namespace root\\subscription -Class $cls -Filter \"Name='{escaped}'\" -ErrorAction SilentlyContinue; "
+                    "if ($c) { $c | ForEach-Object { $_.GetRelated('__FilterToConsumerBinding') | Remove-WmiObject -ErrorAction SilentlyContinue }; "
+                    "$c | Remove-WmiObject -ErrorAction SilentlyContinue } }"
+                )
+
+        result = self._run_powershell("; ".join(script_lines), timeout=30)
+        if result is not None and result.returncode == 0:
+            self.removed += 1
+            target = filter_name or consumer_name
+            self.log(f"Removed WMI persistence: {target}", "SUCCESS")
+            return True
+        self.log(f"Could not remove WMI persistence: {filter_name or consumer_name}", "WARN")
+        return False
+
+    def _reset_user_proxy_settings(self):
+        if not WINREG_OK:
+            return False
+        changed = False
+        for hive, subkey in (
+            (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"),
+            (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"),
+        ):
+            try:
+                key = winreg.OpenKey(hive, subkey, 0, winreg.KEY_SET_VALUE)
+            except (FileNotFoundError, PermissionError):
+                continue
+
+            try:
+                winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 0)
+                changed = True
+            except Exception:
+                pass
+            for value_name in ("ProxyServer", "AutoConfigURL"):
+                try:
+                    winreg.DeleteValue(key, value_name)
+                    changed = True
+                except Exception:
+                    pass
+            try:
+                winreg.CloseKey(key)
+            except Exception:
+                pass
+
+        if changed:
+            self.removed += 1
+            self.log("Reset Internet proxy settings", "SUCCESS")
+            return True
+        return False
+
+    # ── Orchestration ───────────────────────────────────────────────────────
+
+    def run_full_scan(self):
+        self.threats.clear()
+        self.killed = 0
+        self.removed = 0
+        self._stop = False
+        self.last_summary = None
+        self.cleanup_assessment = None
+        self.exposure_notes.clear()
+        self._module_scan_pid_targets.clear()
+        self._shortcut_scan_rows = None
+        self.scan_network()
+        self.scan_processes()
+        self.scan_process_modules()
+        self.scan_filesystem()
+        self.scan_startup_persistence()
+        self.scan_shortcut_targets()
+        self.scan_disabled_startup_items()
+        self.scan_services()
+        self.scan_wmi_persistence()
+        self.scan_scheduled_tasks()
+        self.scan_registry()
+        self.scan_system_tampering()
+        self.scan_defender_posture()
+        self.scan_firewall_rules()
+        self.scan_browser_extensions()
+        self.threats.sort()
+        crit = sum(1 for t in self.threats if t.severity == "CRITICAL")
+        high = sum(1 for t in self.threats if t.severity == "HIGH")
+        summary = self.summarize_threats()
+        cleanup = self.assess_cleanup_state()
+        self.scan_exposure_surface()
+        self.log(
+            f"── SCAN COMPLETE  |  {len(self.threats)} threat(s) found  —  {crit} CRITICAL  {high} HIGH ──",
+            "SECTION"
+        )
+        self.log(f"Summary verdict   : {summary['label']}", "CRITICAL" if summary["confidence"] == "high" else "WARN" if summary["confidence"] == "medium" else "INFO")
+        self.log(f"Assessment        : {summary['detail']}", "INFO")
+        self.log(f"Local confidence  : {cleanup['score']}%  —  {cleanup['label']}", "WARN" if cleanup["score"] < 90 else "INFO")
+        self.log(f"Confidence note   : {cleanup['detail']}", "INFO")
+
+    def run_remediation(self):
+        self.log("── EXECUTING REMEDIATION ──────────────────────────────", "SECTION")
+
+        for t in sorted(self.threats):
+            if t.category in ("Active C2 Connection", "Malicious Process",
+                              "Process in Temp", "Suspicious Process",
+                              "Persistence Process", "Campaign IOC Process",
+                              "Stealer Script Host", "Suspicious Userland Process",
+                              "Malicious Child Process", "Paranoid Script Host",
+                              "Paranoid Networked Process", "Paranoid Masquerade Process",
+                              "Injected/Sideloaded DLL", "Execution Trace Anomaly",
+                              "Malicious Service", "WMI Persistence"):
+                if t.action and not t.remediated:
+                    t.action()
+                    t.remediated = True
+
+        time.sleep(0.8)
+
+        for t in sorted(self.threats):
+            if t.category in ("RenEngine Bundle", "Malicious File",
+                              "Malicious Archive/Script", "Hijacked Module Init",
+                              "Payload Key File", "Dropped Executable",
+                              "Persistence Artifact", "Malicious Shortcut",
+                              "Persistence Staging Directory",
+                              "Startup Persistence Artifact", "Exact IOC Hash",
+                              "HijackLoader Stage Directory", "HijackLoader Stage Artifact",
+                              "Loader Container DLL", "IFEO Persistence",
+                              "AppInit Persistence", "Proxy Configuration Review",
+                              "Defender Exclusion", "Disabled Startup Artifact",
+                              "Firewall Rule Review"):
+                if t.action and not t.remediated:
+                    t.action()
+                    t.remediated = True
+
+        for t in sorted(self.threats):
+            if t.category in MANUAL_REVIEW_CATEGORIES and not t.remediated:
+                self.log(f"Review manually before deleting user file: {t.path or t.description}", "WARN")
+
+        for t in sorted(self.threats):
+            if t.category in ("Malicious Scheduled Task", "Registry Persistence"):
+                if t.action and not t.remediated:
+                    t.action()
+                    t.remediated = True
+
+        self.log(
+            f"── REMEDIATION DONE  |  {self.killed} process(es) killed  "
+            f"{self.removed} file(s)/entry(ies) removed ──",
+            "SECTION"
+        )
+
+    def generate_report(self) -> str:
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        crit = sum(1 for t in self.threats if t.severity == "CRITICAL")
+        high = sum(1 for t in self.threats if t.severity == "HIGH")
+        lines = [
+            "╔══════════════════════════════════════════════════════════════╗",
+            "║          RENKILL — THREAT REPORT                             ║",
+            "║          MADE WITH LOVE                                      ║",
+            "╚══════════════════════════════════════════════════════════════╝",
+            f"Generated : {now}",
+            f"Machine   : {os.environ.get('COMPUTERNAME', 'Unknown')}",
+            f"User      : {os.environ.get('USERNAME', 'Unknown')}",
+            f"Tool ver  : {VERSION}",
+            "",
+            f"Threats found   : {len(self.threats)}  ({crit} CRITICAL, {high} HIGH)",
+            f"Processes killed: {self.killed}",
+            f"Files removed   : {self.removed}",
+            "",
+            f"Summary verdict : {(self.last_summary or self.summarize_threats())['label']}",
+            f"Assessment      : {(self.last_summary or self.summarize_threats())['detail']}",
+            f"Local confidence: {(self.cleanup_assessment or self.assess_cleanup_state())['score']}%  —  {(self.cleanup_assessment or self.assess_cleanup_state())['label']}",
+            f"Confidence note : {(self.cleanup_assessment or self.assess_cleanup_state())['detail']}",
+            "",
+            "Exposure notes  :",
+        ]
+        if self.exposure_notes:
+            for description, path in self.exposure_notes:
+                lines.append(f" - {description}{': ' + path if path else ''}")
+        else:
+            lines.append(" - No high-confidence account exposure paths were flagged.")
+        lines += [
+            "",
+            "━" * 64,
+            "THREAT DETAIL",
+            "━" * 64,
+        ]
+        for i, t in enumerate(self.threats, 1):
+            lines += [
+                f"\n[{i:03d}] [{t.severity:<8}] {t.category}",
+                f"       {t.description}",
+                f"       Path      : {t.path}",
+                f"       Detected  : {t.timestamp}",
+                f"       Remediated: {'Yes' if t.remediated else 'No — MANUAL ACTION REQUIRED'}",
+            ]
+        lines += [
+            "",
+            "━" * 64,
+            "POST-INFECTION CHECKLIST (do from a CLEAN device)",
+            "━" * 64,
+            " 1. Change ALL saved browser passwords",
+            " 2. Revoke all active sessions (Google, banking, Discord, Steam)",
+            " 3. Move crypto assets to fresh wallet / new seed phrase",
+            " 4. Review Google devices and sign out anything unfamiliar",
+            " 5. Turn off Chrome sync and delete synced data before turning sync back on",
+            " 6. Review Discord Authorized Apps and submit a hacked-account ticket if needed",
+            " 7. Run Microsoft Defender Full Scan, then Microsoft Defender Offline",
+            " 8. Enable hardware/app MFA on all critical accounts",
+            " 9. Run RenKill scan again to confirm clean",
+            "10. Full Windows reinstall if CRITICAL threats persist",
+            "",
+            "━" * 64,
+            "IOC REFERENCE",
+            "━" * 64,
+            " Loader   : RenEngine (Trojan.Python.Agent.nb)",
+            " Stage 2  : HijackLoader (Trojan.Win32.Penguish)",
+            " Payload  : ACR Stealer | Lumma | Rhadamanthys | Vidar",
+            " C2 IP    : 78.40.193.126",
+            " Distrib  : dodi-repacks[.]site → MediaFire ZIP",
+        ]
+        return sanitize_for_display("\n".join(lines))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  GUI
+# ═══════════════════════════════════════════════════════════════════════════════
+
+BG      = "#0b0b0b"
+BG2     = "#111111"
+BG3     = "#181818"
+BG4     = "#1e1e1e"
+FG      = "#dcdcdc"
+FG2     = "#777777"
+FG3     = "#444444"
+RED     = "#E24B4A"
+AMBER   = "#EF9F27"
+YELLOW  = "#E6C458"
+GREEN   = "#5EC269"
+BLUE    = "#378ADD"
+MONO    = "Consolas"
+
+SEV_COLORS = {
+    "CRITICAL": RED,
+    "HIGH":     AMBER,
+    "MEDIUM":   YELLOW,
+    "INFO":     FG2,
+    "WARN":     AMBER,
+    "SUCCESS":  GREEN,
+    "SECTION":  BLUE,
+    "DEFAULT":  FG,
+}
+
+
+class App(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title(f"RenKill  v{VERSION}")
+        self.geometry("940x660")
+        self.minsize(740, 480)
+        self.configure(bg=BG)
+        self.resizable(True, True)
+
+        self._scanner = None
+        self._thread = None
+        self._paranoid_var = tk.BooleanVar(value=False)
+        self._session_reset_available = False
+        self._last_remediation_ts = 0.0
+
+        self._build()
+        self._check_admin()
+        self._startup_msg()
+
+    def _build(self):
+        # Title bar
+        bar = tk.Frame(self, bg=BG, padx=18, pady=14)
+        bar.pack(fill="x")
+
+        left = tk.Frame(bar, bg=BG)
+        left.pack(side="left")
+        tk.Label(left, text="RenKill", font=(MONO, 20, "bold"),
+                 bg=BG, fg=RED).pack(side="left")
+        tk.Label(left, text=f"  v{VERSION}  |  RenEngine / HijackLoader Removal Tool",
+                 font=(MONO, 10), bg=BG, fg=FG3).pack(side="left", pady=3)
+
+        right = tk.Frame(bar, bg=BG)
+        right.pack(side="right")
+        admin_ok = is_admin()
+        tk.Label(right,
+                 text=" ADMIN " if admin_ok else " LIMITED ",
+                 font=(MONO, 9, "bold"),
+                 bg=GREEN if admin_ok else AMBER,
+                 fg=BG, padx=5, pady=2).pack(side="right")
+        # Separator
+        tk.Frame(self, bg="#222222", height=1).pack(fill="x")
+
+        # Status bar
+        sbar = tk.Frame(self, bg=BG2, padx=18, pady=7)
+        sbar.pack(fill="x")
+        self._status_var = tk.StringVar(value="Ready")
+        self._status_lbl = tk.Label(sbar, textvariable=self._status_var,
+                                    font=(MONO, 10), bg=BG2, fg=GREEN, anchor="w")
+        self._status_lbl.pack(side="left")
+        self._count_var = tk.StringVar(value="—")
+        tk.Label(sbar, textvariable=self._count_var,
+                 font=(MONO, 10, "bold"), bg=BG2, fg=RED).pack(side="right")
+
+        # Buttons
+        brow = tk.Frame(self, bg=BG, padx=18, pady=10)
+        brow.pack(fill="x")
+
+        self._btn_scan   = self._btn(brow, "⟳  SCAN SYSTEM",   BLUE,  self._do_scan)
+        self._btn_kill   = self._btn(brow, "✕  KILL & CLEAN",  RED,   self._do_kill)
+        self._btn_sessions = self._btn(brow, "⌁  RESET SESSION DATA", AMBER, self._do_reset_sessions)
+        self._btn_report = self._btn(brow, "↓  EXPORT REPORT", GREEN, self._do_report)
+        self._btn_clear  = self._btn(brow, "⌫  CLEAR LOG",     FG3,   self._do_clear)
+        tk.Checkbutton(
+            brow,
+            text="PARANOID MODE",
+            variable=self._paranoid_var,
+            onvalue=True,
+            offvalue=False,
+            selectcolor=BG3,
+            activebackground=BG,
+            activeforeground=RED,
+            bg=BG,
+            fg=RED,
+            font=(MONO, 9, "bold"),
+            relief="flat",
+            bd=0,
+            highlightthickness=0,
+        ).pack(side="right", padx=(12, 0), pady=2)
+
+        self._btn_kill.configure(state="disabled")
+        self._btn_sessions.configure(state="disabled")
+        self._btn_report.configure(state="disabled")
+
+        # Progress
+        self._prog_var = tk.StringVar(value="")
+        tk.Label(self, textvariable=self._prog_var,
+                 font=(MONO, 9), bg=BG, fg=FG3, anchor="w", padx=18).pack(fill="x")
+
+        # Log
+        log_frame = tk.Frame(self, bg=BG, padx=18, pady=6)
+        log_frame.pack(fill="both", expand=True)
+
+        self._log_txt = scrolledtext.ScrolledText(
+            log_frame, font=(MONO, 10), bg="#080808", fg=FG,
+            relief="flat", bd=0, wrap="word",
+            insertbackground=FG, selectbackground="#2a2a2a",
+            padx=10, pady=8,
+        )
+        self._log_txt.pack(fill="both", expand=True)
+
+        for tag, color in SEV_COLORS.items():
+            bold = tag in ("SECTION", "CRITICAL")
+            self._log_txt.tag_configure(
+                tag, foreground=color,
+                font=(MONO, 10, "bold") if bold else (MONO, 10)
+            )
+        self._log_txt.configure(state="disabled")
+
+        # Footer
+        foot = tk.Frame(self, bg=BG, padx=18, pady=4)
+        foot.pack(fill="x")
+        tk.Label(foot,
+                 text="Fuck viruses",
+                 font=(MONO, 9, "bold"), bg=BG, fg=FG2).pack(side="left")
+        tk.Label(foot,
+                 text="made with \u2665 - Cloud",
+                 font=(MONO, 9, "bold"), bg=BG, fg=FG2).pack(side="right")
+
+    @staticmethod
+    def _btn(parent, text, color, cmd):
+        b = tk.Button(parent, text=text, font=(MONO, 10, "bold"),
+                      bg=BG4, fg=color, activebackground=color, activeforeground=BG,
+                      relief="flat", padx=14, pady=6, cursor="hand2",
+                      bd=0, command=cmd)
+        b.pack(side="left", padx=(0, 8))
+        return b
+
+    @staticmethod
+    def _chromium_profile_dirs(root):
+        if not os.path.isdir(root):
+            return []
+        base = os.path.basename(root).lower()
+        if base != "user data":
+            return [root]
+        out = []
+        try:
+            for entry in os.listdir(root):
+                full = os.path.join(root, entry)
+                if not os.path.isdir(full):
+                    continue
+                if entry == "Default" or entry.startswith("Profile ") or entry in {"Guest Profile", "System Profile"}:
+                    out.append(full)
+        except Exception:
+            return []
+        return out
+
+    def _delete_path_force(self, path):
+        if not os.path.exists(path):
+            return False
+        try:
+            if os.path.isdir(path):
+                shutil.rmtree(path, ignore_errors=False)
+            else:
+                os.remove(path)
+            return True
+        except PermissionError:
+            try:
+                subprocess.run(["attrib", "-r", "-s", "-h", path],
+                               capture_output=True, creationflags=0x08000000)
+                if os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=False)
+                else:
+                    os.remove(path)
+                return True
+            except Exception:
+                return False
+        except Exception:
+            return False
+
+    def _kill_named_processes(self, names):
+        killed = 0
+        if not PSUTIL_OK:
+            for name in sorted(names):
+                try:
+                    subprocess.run(["taskkill", "/F", "/T", "/IM", name],
+                                   capture_output=True, creationflags=0x08000000)
+                except Exception:
+                    pass
+            return 0
+
+        for proc in psutil.process_iter(["pid", "name"]):
+            try:
+                pname = (proc.info.get("name") or "").lower()
+                if pname in names:
+                    proc.terminate()
+                    time.sleep(0.2)
+                    if proc.is_running():
+                        proc.kill()
+                    killed += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+            except Exception:
+                pass
+        return killed
+
+    def _iter_session_reset_paths(self):
+        profile = os.environ.get("USERPROFILE", "")
+        for app in SESSION_RESET_APPS:
+            for rel_root in app["roots"]:
+                root = os.path.join(profile, rel_root)
+                kind = app["kind"]
+                if kind == "flat":
+                    if not os.path.isdir(root):
+                        continue
+                    for sub in app["subpaths"]:
+                        yield app["label"], os.path.join(root, sub)
+                elif kind == "chromium":
+                    for profile_dir in self._chromium_profile_dirs(root):
+                        for sub in CHROMIUM_SESSION_SUBPATHS:
+                            yield app["label"], os.path.join(profile_dir, sub)
+                elif kind == "firefox":
+                    if not os.path.isdir(root):
+                        continue
+                    try:
+                        for entry in os.listdir(root):
+                            profile_dir = os.path.join(root, entry)
+                            if not os.path.isdir(profile_dir):
+                                continue
+                            for fname in FIREFOX_SESSION_FILES:
+                                yield app["label"], os.path.join(profile_dir, fname)
+                            for sub in FIREFOX_SESSION_DIRS:
+                                yield app["label"], os.path.join(profile_dir, sub)
+                    except Exception:
+                        continue
+
+    def _log(self, msg, level="DEFAULT"):
+        def _w():
+            self._log_txt.configure(state="normal")
+            ts = datetime.datetime.now().strftime("%H:%M:%S")
+            tag = level if level in SEV_COLORS else "DEFAULT"
+            safe_msg = sanitize_for_display(msg)
+            if level == "SECTION":
+                self._log_txt.insert("end", f"\n[{ts}]  {safe_msg}\n", tag)
+            else:
+                self._log_txt.insert("end", f"[{ts}]  {safe_msg}\n", tag)
+            self._log_txt.see("end")
+            self._log_txt.configure(state="disabled")
+        self.after(0, _w)
+
+    def _set_status(self, msg, color=GREEN):
+        self.after(0, lambda: (
+            self._status_var.set(msg),
+            self._status_lbl.configure(fg=color)
+        ))
+
+    def _set_progress(self, msg):
+        self.after(0, lambda: self._prog_var.set(sanitize_for_display(msg)))
+
+    @staticmethod
+    def _boot_time():
+        if not PSUTIL_OK:
+            return 0.0
+        try:
+            return float(psutil.boot_time())
+        except Exception:
+            return 0.0
+
+    def _check_admin(self):
+        if is_admin():
+            self._set_status("Ready — running as Administrator")
+        else:
+            self._set_status(
+                "WARNING: No admin rights — some scan vectors limited. Restart as Admin for full coverage.",
+                AMBER
+            )
+
+    def _startup_msg(self):
+        self._log(f"{TOOL_NAME} v{VERSION}", "SECTION")
+        self._log(f"Scan roots queued : {len(SCAN_ROOTS)}", "INFO")
+        self._log(f"psutil            : {'OK' if PSUTIL_OK else 'MISSING — pip install psutil'}", "INFO" if PSUTIL_OK else "WARN")
+        self._log(f"winreg            : {'OK' if WINREG_OK else 'MISSING'}", "INFO" if WINREG_OK else "WARN")
+        self._log(f"Admin             : {'YES — full scan' if is_admin() else 'NO — limited scan'}", "INFO" if is_admin() else "WARN")
+        self._log("Scan mode         : Standard", "INFO")
+        self._log("Press SCAN SYSTEM to begin.", "DEFAULT")
+
+    def _do_scan(self):
+        if self._thread and self._thread.is_alive():
+            return
+
+        self._btn_scan.configure(state="disabled")
+        self._btn_kill.configure(state="disabled")
+        self._btn_sessions.configure(state="disabled")
+        self._btn_report.configure(state="disabled")
+        self._count_var.set("Scanning…")
+        scan_mode = "PARANOID" if self._paranoid_var.get() else "STANDARD"
+        self._set_status(f"Scanning system ({scan_mode})…", BLUE)
+        self._log(f"Scan mode         : {scan_mode}", "WARN" if self._paranoid_var.get() else "INFO")
+
+        self._scanner = ScanEngine(self._log, self._set_progress, paranoid=self._paranoid_var.get())
+        self._scanner.post_cleanup_scan = self._last_remediation_ts > 0
+        self._scanner.rebooted_after_cleanup = self._scanner.post_cleanup_scan and self._boot_time() > self._last_remediation_ts
+
+        def _run():
+            try:
+                self._scanner.run_full_scan()
+            except Exception as exc:
+                self._log(f"Scan error: {exc}", "CRITICAL")
+
+                def _fail():
+                    self._set_progress("")
+                    self._btn_scan.configure(state="normal")
+                    self._btn_report.configure(state="normal")
+                    self._btn_kill.configure(state="disabled")
+                    self._btn_sessions.configure(state="disabled")
+                    self._count_var.set("Scan error")
+                    self._set_status("Scan failed — see log for the exact error.", RED)
+                self.after(0, _fail)
+                return
+
+            n = len(self._scanner.threats)
+            summary = self._scanner.last_summary or self._scanner.summarize_threats()
+            cleanup = self._scanner.cleanup_assessment or self._scanner.assess_cleanup_state()
+
+            def _done():
+                self._set_progress("")
+                self._btn_scan.configure(state="normal")
+                self._btn_report.configure(state="normal")
+                self._session_reset_available = bool(self._scanner.exposure_notes)
+                self._btn_sessions.configure(state="normal" if self._session_reset_available else "disabled")
+                if n > 0:
+                    self._btn_kill.configure(state="normal")
+                    self._count_var.set(f"{n} threat(s)  —  {summary['label']}")
+                    self._set_status(
+                        f"Scan complete — {n} threats found. {summary['label']}. Press KILL & CLEAN to remediate.",
+                        summary["color"]
+                    )
+                    if self._session_reset_available:
+                        self._log("RESET SESSION DATA is available for local browser/Discord session wipe.", "WARN")
+                else:
+                    self._count_var.set("Clean ✓")
+                    self._set_status("Scan complete — no threats detected.", GREEN)
+                if n > 0:
+                    self._count_var.set(f"{n} threat(s)  -  {summary['label']}  |  {cleanup['score']}%")
+                    self._set_status(
+                        f"Scan complete - {n} threats found. {summary['label']}. Local confidence {cleanup['score']}%. Press KILL & CLEAN to remediate.",
+                        summary["color"]
+                    )
+                elif self._scanner.post_cleanup_scan and not self._scanner.rebooted_after_cleanup:
+                    self._set_status(
+                        f"No threats detected, but reboot then run one more scan for final confidence ({cleanup['score']}%).",
+                        AMBER
+                    )
+                elif self._scanner.post_cleanup_scan:
+                    self._set_status(
+                        f"Post-clean rescan passed - no threats detected. Local confidence {cleanup['score']}%.",
+                        GREEN
+                    )
+                else:
+                    self._set_status(f"Scan complete - no threats detected. Local confidence {cleanup['score']}%.", GREEN)
+            self.after(0, _done)
+
+        self._thread = threading.Thread(target=_run, daemon=True)
+        self._thread.start()
+
+    def _do_kill(self):
+        if not self._scanner or not self._scanner.threats:
+            return
+
+        live = [t for t in self._scanner.threats if not t.remediated]
+        procs = sum(1 for t in live if "Process" in t.category or "Connection" in t.category)
+        files = len(live) - procs
+
+        if not messagebox.askyesno(
+            "Confirm KILL & CLEAN",
+            f"RenKill will:\n\n"
+            f"  Kill {procs} process(es) / connection(s)\n"
+            f"  Delete {files} file(s) / task(s) / registry entry(ies)\n\n"
+            f"This cannot be undone. Continue?"
+        ):
+            return
+
+        self._btn_kill.configure(state="disabled")
+        self._set_status("Executing remediation…", AMBER)
+
+        def _run():
+            self._scanner.run_remediation()
+            def _done():
+                k = self._scanner.killed
+                r = self._scanner.removed
+                self._last_remediation_ts = time.time()
+                exposure_blurb = ""
+                if self._scanner.exposure_notes:
+                    exposure_blurb = (
+                        "\nExposure warning:\n"
+                        "  • Browser and/or Discord data may have been exposed\n"
+                        "  • Revoke sessions from a clean device immediately\n"
+                    )
+                self._set_status(
+                    f"Done — {k} process(es) killed, {r} item(s) removed. Run scan again to verify.",
+                    GREEN
+                )
+                self._set_status(
+                    f"Cleanup finished - {k} process(es) killed, {r} item(s) removed. Reboot, then rescan for confidence.",
+                    GREEN
+                )
+                messagebox.showinfo(
+                    "RenKill — Remediation Complete",
+                    f"Processes killed     : {k}\n"
+                    f"Files/entries removed: {r}\n\n"
+                    f"NEXT STEP ON THIS PC:\n"
+                    f"  â€¢ Reboot Windows\n"
+                    f"  â€¢ Run SCAN SYSTEM again for post-clean confidence\n\n"
+                    f"FROM A CLEAN DEVICE:\n"
+                    f"  • Change ALL browser-saved passwords\n"
+                    f"  • Revoke all active sessions\n"
+                    f"  • Move crypto to fresh wallet addresses\n\n"
+                    f"{exposure_blurb}"
+                    f"Run SCAN SYSTEM again to verify clean."
+                )
+            self.after(0, _done)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _do_reset_sessions(self):
+        if not self._session_reset_available:
+            messagebox.showinfo(
+                "Reset Session Data",
+                "Run a scan first. This button becomes available when RenKill sees browser or Discord exposure indicators."
+            )
+            return
+
+        if not messagebox.askyesno(
+            "Confirm Session Reset",
+            "RenKill will close Discord and supported browsers, then delete local session/cookie/token storage.\n\n"
+            "This will sign the user out locally and may remove site/app session state.\n"
+            "This does NOT replace password changes or remote session revocation from a clean device.\n\n"
+            "Continue?"
+        ):
+            return
+
+        self._btn_sessions.configure(state="disabled")
+        self._set_status("Resetting local session data…", AMBER)
+
+        def _run():
+            killed = 0
+            removed = 0
+            touched_apps = set()
+            process_names = set()
+            for app in SESSION_RESET_APPS:
+                process_names.update(name.lower() for name in app["processes"])
+
+            killed += self._kill_named_processes(process_names)
+            time.sleep(0.6)
+
+            for label, path in self._iter_session_reset_paths():
+                if self._delete_path_force(path):
+                    removed += 1
+                    touched_apps.add(label)
+                    self._log(f"Cleared local session data: {path}", "SUCCESS")
+
+            def _done():
+                self._session_reset_available = False
+                app_list = ", ".join(sorted(touched_apps)) if touched_apps else "none found"
+                self._set_status(
+                    f"Local session reset complete — {removed} storage item(s) cleared.",
+                    GREEN if removed else AMBER
+                )
+                messagebox.showinfo(
+                    "RenKill — Session Reset Complete",
+                    f"Processes closed : {killed}\n"
+                    f"Storage items wiped: {removed}\n"
+                    f"Apps affected    : {app_list}\n\n"
+                    f"This only clears LOCAL sessions on this PC.\n"
+                    f"You still need to do the following from a CLEAN device:\n"
+                    f"  • Change passwords\n"
+                    f"  • Revoke remote sessions\n"
+                    f"  • Review Discord Authorized Apps\n"
+                    f"  • Move crypto to fresh wallet addresses\n"
+                )
+            self.after(0, _done)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _do_report(self):
+        if not self._scanner:
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text report", "*.txt"), ("All files", "*.*")],
+            initialfile=f"RenKill_Report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        )
+        if path:
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(self._scanner.generate_report())
+                messagebox.showinfo("Saved", sanitize_for_display(f"Report saved to:\n{path}"))
+            except Exception as exc:
+                messagebox.showerror("Error", sanitize_for_display(f"Could not save: {exc}"))
+
+    def _do_clear(self):
+        self._log_txt.configure(state="normal")
+        self._log_txt.delete("1.0", "end")
+        self._log_txt.configure(state="disabled")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  ENTRY POINT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+if __name__ == "__main__":
+    if sys.platform == "win32":
+        elevate_if_needed()
+    app = App()
+    app.mainloop()

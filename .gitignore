@@ -1,0 +1,12 @@
+.vs/
+__pycache__/
+*.py[cod]
+*.pyo
+
+build/
+dist/
+
+RenKill.exe
+RenKill_Report_*.txt
+
+Thumbs.db
