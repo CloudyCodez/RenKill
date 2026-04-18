@@ -1,8 +1,9 @@
-# RenEngine Hunter v1.3.0
-**CJMXO STUDIOS — Defensive Security Tool**
+# RenKill v1.4.3
+**made with love - Cloud**
 
 Detects, kills, and removes RenEngine Loader / HijackLoader infostealer artifacts
-from Windows systems.
+from Windows systems, with added cleanup coverage for the `Instaler.exe` chain,
+post-infection session fallout, and FRST-style persistence review points.
 
 ---
 
@@ -15,13 +16,15 @@ from Windows systems.
 | Ren'Py bundle structure (`renpy/` + `data/` + `lib/`) | Directory signature |
 | Persistence staging (`broker_crypt_v4_i386`) | `%ProgramData%` / `%AppData%` path match |
 | Persistence payloads (`Froodjurain.wkk`, `VSDebugScriptAgent170.dll`, `chime.exe`, `ZoneInd.exe`) | High-confidence filename + location match |
-| Malicious desktop shortcuts (`.lnk`) | Shortcut content references persistence chain |
-| Payload decrypt keys (`.key` files in `%TEMP%`) | Extension + location |
-| Compiled payload scripts (`script.rpyc`, `archive.rpa` in temp) | Filename + location |
+| Malicious desktop shortcuts (`.lnk`) | Shortcut target and argument review |
+| Defender exclusions | FRST-style Defender posture review |
+| Disabled startup leftovers | `StartupApproved` plus autorun correlation |
+| Firewall allow-rules for suspicious programs | Rule target review with safe removal gates |
+| Payload decrypt keys (`.key`) and Ren'Py payload scripts | Filename + location |
 | Scheduled task persistence | `schtasks` query + keyword match |
-| Registry autorun entries | `HKCU/HKLM Run` key scan |
-| Active C2 connections | Network scan for `78.40.193.126` |
-| Processes running from `%TEMP%` | Process path check via psutil |
+| Registry autorun / IFEO / AppInit persistence | Registry review |
+| WMI persistence | Subscription review |
+| Active C2 connections | Network scan for known bad IPs |
 
 ---
 
@@ -29,23 +32,31 @@ from Windows systems.
 
 Requirements: Python 3.10+ installed and in PATH.
 
-```
-1. Place renengine_hunter.py and build.bat in the same folder
+```text
+1. Place renkill.py and build.bat in the same folder
 2. Double-click build.bat (or run from cmd)
 3. Wait ~60 seconds for PyInstaller to compile
-4. RenEngineHunter.exe appears in the same folder
+4. RenKill.exe appears in the same folder
+```
+
+## GitHub Actions release builds
+
+```text
+1. Push a version tag like v1.4.3
+2. GitHub Actions builds RenKill.exe on windows-latest
+3. The workflow attaches RenKill.exe and a SHA256 checksum to the GitHub Release
 ```
 
 ---
 
 ## Usage
 
-1. **Right-click → Run as Administrator** (required for registry + scheduled task removal)
-2. Click **SCAN SYSTEM** — scans filesystem, processes, network, registry, scheduled tasks
-3. Review threats in the log (color-coded by severity)
-4. Click **KILL & CLEAN** to execute all remediations
-5. Click **EXPORT REPORT** to save a full threat report
-6. Run scan a second time to verify the system is clean
+1. Right-click and run as Administrator for full registry, service, and persistence cleanup coverage
+2. Click `SCAN SYSTEM`
+3. Review the verdict, confidence readout, and findings
+4. Click `KILL & CLEAN` to remove high-confidence artifacts
+5. If prompted, use `RESET SESSION DATA` to clear local browser and Discord session material
+6. Reboot and run one more scan to confirm the machine comes back clean
 
 ---
 
@@ -58,47 +69,40 @@ Requirements: Python 3.10+ installed and in PATH.
 - `%USERPROFILE%\Desktop`
 - `%USERPROFILE%\Documents`
 - `%LOCALAPPDATA%\Programs`
-- All running processes (via psutil)
-- All active network connections (via psutil)
-- Scheduled tasks (via schtasks.exe)
-- Registry Run keys (HKCU + HKLM)
+- Running processes and process trees
+- Loaded modules for suspicious processes
+- Active network connections
+- Scheduled tasks
+- Registry autoruns, IFEO, and AppInit
+- WMI subscriptions
+- Browser extensions
+- Hosts, proxy, Defender exclusions, and firewall rules
 
 ---
-
-## Known IOCs hardcoded
-
-- **C2 IP**: `78.40.193.126`
-- **Persistence dir**: `%ProgramData%\broker_crypt_v4_i386`
-- **Persistence files**: `Froodjurain.wkk`, `Taig.gr`, `VSDebugScriptAgent170.dll`, `chime.exe`, `ZoneInd.exe`
-- **Distrib site**: `dodi-repacks[.]site` (not blocked in tool, informational)
-- **Kaspersky names**: `Trojan.Python.Agent.nb`, `HEUR:Trojan.Python.Agent.gen`,
-  `Trojan.Win32.Penguish`, `Trojan.Win32.DllHijacker`, `Trojan-PSW.Win32.ACRstealer.gen`
 
 ## Research notes
 
-- See [`RESEARCH_RENENGINE_2026.md`](./RESEARCH_RENENGINE_2026.md) for current campaign notes,
-  artifact mapping, and source links used to shape detection coverage.
+- See [`RESEARCH_RENENGINE_2026.md`](./RESEARCH_RENENGINE_2026.md) for campaign notes,
+  artifact mapping, recovery guidance, and source links that shaped detection coverage.
 
 ---
 
-## After cleaning — mandatory steps
+## After cleaning
 
-Even if this tool removes all artifacts, the data theft already occurred.
-Do the following from a **separate clean device**:
+Even if RenKill removes local artifacts, the data theft may already have happened.
+From a separate clean device:
 
-1. **Change all saved browser passwords** — assume 100% of them are compromised
-2. **Revoke all active sessions** — Google, banking, Discord, Steam, etc.
-   Session cookies bypass 2FA so revocation is required, not just password reset
-3. **Move crypto assets** — generate new wallet with fresh seed phrase on a clean machine
-4. **Enable hardware/app MFA** on all critical accounts
-5. **Consider full Windows reinstall** if any CRITICAL threats persist after two scans
+1. Change saved browser passwords
+2. Revoke active sessions for Discord, Google, Steam, email, finance, and anything important
+3. Move crypto assets to a fresh wallet if wallets were exposed
+4. Re-enable strong MFA on critical accounts
+5. Run Microsoft Defender Full Scan and Defender Offline after cleanup
 
 ---
 
 ## Sources / Research
 
-- Cyderes Howler Cell (Feb 2026) — RenEngine + HijackLoader full chain analysis
-- Kaspersky Securelist (Feb 2026) — RenEngine campaign deep dive
-- AhnLab ASEC (Oct 2025) — Rhadamanthys / RenPy fake loading screen
-- Malwarebytes Threat Intel (Apr 2026) — NWHStealer + Vidar campaigns
-- Cloudflare Research (2025) — Lumma Stealer playbook
+- Cyderes Howler Cell (Feb 2026)
+- Kaspersky Securelist (Feb 2026)
+- Malwarebytes threat research on fake game / cracked software lure chains
+- FRST helper workflows and remediation guidance from BleepingComputer, Emsisoft, and current Reddit cleanup threads
