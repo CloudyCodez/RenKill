@@ -43,6 +43,91 @@ Those names are not all globally unique on every system, so they are strongest w
   - user-writable staging directories with side-loading style `.exe` + `.dll` + odd data files
   - persistence and post-launch stealer behavior
 
+## FRST patterns showing up in Reddit cleanup threads
+
+Based on April 18, 2026 Reddit cleanup threads and the FRST lines victims shared, helpers are now seeing a persistence shape that is less dependent on fixed filenames and more dependent on where and how the payload is launched:
+
+- `Startup` shortcuts in `%AppData%\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\`
+- `ShortcutTarget` values pointing into `%LocalAppData%\Temp\tmp-<digits>-<random>\`
+- randomly named temporary EXEs launched from those temp subfolders
+- signer/company metadata on some of those temp EXEs reading `Shenzhen iMyFone Technology Co., Ltd`
+- scheduled tasks executing payloads from `%AppData%\Roaming\Godot\app_userdata\<id>\`
+- scheduled task arguments pointing at `node_modules.asar` or another `.asar` payload from the same user-writable tree
+
+Important caveat: the `Shenzhen iMyFone Technology Co., Ltd` string is not proof of malware by itself. The suspicious signal is the full combination of:
+
+- startup persistence
+- temp-stage or Godot user-data execution
+- random or throwaway launcher naming
+- `.asar` payload handoff or other loader-style arguments
+
+That combination is strong enough that RenKill should score on the structure even if the executable names rotate.
+
+## What FRST.txt and Addition.txt are actually showing
+
+The BleepingComputer FRST tutorial is useful because it explains that `FRST.txt` and `Addition.txt` split the machine state into two different kinds of evidence:
+
+- `FRST.txt` is the main scan. It focuses on processes, registry autoruns, scheduled tasks, services/drivers, internet settings, recent file creation/modification, and signature context.
+- `Addition.txt` is the companion scan. It adds accounts, Security Center state, installed programs, shortcuts and WMI, loaded modules, hosts content, network state, disabled startup items, firewall rules, event log errors, and restore-point/device-manager context.
+
+For this campaign, the current Reddit cleanup threads show why both matter:
+
+- `FRST.txt` often exposes the autorun or scheduled-task persistence.
+- `Addition.txt` often exposes the startup shortcut, WMI, browser-extension, disabled-startup, Defender, firewall, and software-install context that explains how the infection survives or what else it brought with it.
+
+## How helpers are actually fixing these cases
+
+Across the April 2026 Reddit threads, the helper workflow is remarkably consistent:
+
+1. Instruct the victim to disconnect and change passwords from a clean device.
+2. Run `FRST.txt` + `Addition.txt`.
+3. Review suspicious startup entries, startup shortcuts, scheduled tasks, Defender exclusions, firewall rules, browser extensions, and installed programs.
+4. Build a custom `fixlist.txt` or clipboard fix.
+5. Run FRST `Fix`.
+6. Run a second-opinion scanner such as Emsisoft Emergency Kit when needed.
+7. Re-scan with `FRST.txt` + `Addition.txt`.
+8. Repeat until the persistence is gone.
+
+The common themes in those fixes are:
+
+- remove startup-folder `.lnk` entries
+- remove scheduled tasks and disabled-startup leftovers
+- remove suspicious Defender exclusions
+- review installed programs that show up in the same case window, especially abuse-prone items like `Urban VPN proxy` or `NetSupport` if the victim did not knowingly install them
+- remove suspicious browser extensions and proxy/VPN add-ons
+- remove suspicious firewall allowances
+- clear temp/cache with `EmptyTemp:`
+- reboot and re-scan
+
+## Important FRST safety details that matter for RenKill
+
+- FRST scan mode is diagnostic; the danger comes from the `Fix` step.
+- FRST maintains backups and quarantine for many fix actions, but not every action is equally reversible.
+- The BleepingComputer tutorial explicitly notes that `EmptyTemp:` permanently deletes temporary data and executes after the other fix actions, usually with a reboot.
+- FRST can process startup items, scheduled tasks, WMI, firewall rules, and registry values directly from copied log lines or directives, which is why helpers can make very targeted fixes quickly.
+
+For RenKill, the practical lesson is:
+
+- prefer bounded, typed remediation for files, tasks, shortcuts, registry values, exclusions, and firewall entries
+- preserve undo where possible
+- treat temp/session wipes as separate high-impact actions
+- rely on re-scan confidence instead of assuming the first clean attempt was enough
+
+## Current fix themes seen in Instaler / social-hijack threads
+
+The Reddit and FRST-assisted cases are not just "remove one EXE" infections. The cleanup advice repeatedly includes:
+
+- Discord account recovery and session revocation
+- browser password rotation and sync review
+- Defender exclusion removal
+- suspicious browser extension removal
+- scheduled-task removal
+- startup shortcut removal
+- temp/cache cleanup
+- repeat FRST scans after each fix
+
+In other words, the "Discord/Instagram/social hijack" symptom is being treated as a full infostealer incident, not just a local file infection.
+
 ## High-confidence artifacts for RenKill to hunt
 
 ### Initial bundle
@@ -113,3 +198,12 @@ The payload families in this ecosystem steal browser credentials, cookies, auth 
 - Google Account Help, "See devices with account access" (accessed 2026-04-17): https://support.google.com/accounts/answer/3067630?hl=en
 - Google Chrome Help, "Sign in and sync in Chrome" (accessed 2026-04-17): https://support.google.com/chrome/answer/185277?hl=en
 - Microsoft Support, "Virus and Threat Protection in the Windows Security App" (accessed 2026-04-17): https://support.microsoft.com/en-us/windows/help-protect-my-pc-with-microsoft-defender-offline-9306d528-64bf-4668-5b80-ff533f183d6c
+- BleepingComputer, "FRST Tutorial - How to use Farbar Recovery Scan Tool" (updated 2025-09-11, accessed 2026-04-18): https://www.bleepingcomputer.com/forums/t/781976/frst-tutorial-how-to-use-farbar-recovery-scan-tool/
+- Emsisoft, "How do I run a scan with FRST?" (accessed 2026-04-18): https://www.emsisoft.com/en/help/1738/how-do-i-run-a-scan-with-frst/
+- Reddit, "Ran renpy's `instaler` might be cooked" (2026-04-18, accessed 2026-04-18): https://www.reddit.com/r/computerviruses/comments/1sok6ko/ran_renpys_instaler_might_be_cooked/
+- Reddit, "accidentally ran the ren'py installer malware and now i have the mr beast crypto scam messages" (2026-04-15, accessed 2026-04-18): https://www.reddit.com/r/computerviruses/comments/1sma7sc/accidentally_ran_the_renpy_installer_malware_and/
+- Reddit, "Friend ran Renpy \"Instaler\" and got discord hacked" (2026-04-15, accessed 2026-04-18): https://www.reddit.com/r/computerviruses/comments/1smgprq/friend_ran_renpy_instaler_and_got_discord_hacked/
+- Reddit, "Accidentally ran Ren'Py 'Instaler' and now I don't know if I am infected" (2026-04-14, accessed 2026-04-18): https://www.reddit.com/r/computerviruses/comments/1sl5umb/accidentally_ran_renpy_instaler_and_now_i_dont/
+- Reddit, "ran renpy instaler malware" (2026-04-10, accessed 2026-04-18): https://www.reddit.com/r/computerviruses/comments/1shbt9r/ran_renpy_instaler_malware/
+- Reddit, "Accidentally ran renpy malware, help with FRST?" (2026-04-16, accessed 2026-04-18): https://www.reddit.com/r/computerviruses/comments/1smwlmp/accidentally_ran_renpy_malware_help_with_frst/
+- Reddit, "Possibly still have a Ren py Trojan? Windows said it removed it but I'd like to make sure" (2026-04-18, accessed 2026-04-18): https://www.reddit.com/r/computerviruses/comments/1soiqj2/possibly_still_have_a_ren_py_trojan_windows_said/

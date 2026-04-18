@@ -28,6 +28,7 @@ import hashlib
 import json
 import re
 import base64
+import csv
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, filedialog
 
@@ -394,27 +395,115 @@ SAFE_PROCESS_NAMES = {
 }
 
 TRUSTED_PROCESS_NAMES = {
+    "avastsvc.exe",
+    "avastui.exe",
+    "avgsvc.exe",
+    "avgui.exe",
+    "bdservicehost.exe",
     "brave.exe",
     "chrome.exe",
     "crashpad_handler.exe",
     "discordsystemhelper.exe",
+    "ekrn.exe",
+    "egui.exe",
     "launcherservice.exe",
+    "mbam.exe",
+    "mbamservice.exe",
+    "mbamtray.exe",
+    "mcshield.exe",
+    "mfefire.exe",
+    "mfemms.exe",
     "mpcmdrun.exe",
     "mpdefendercoreservice.exe",
     "msmpeng.exe",
     "nissrv.exe",
     "onedrive.exe",
+    "savservice.exe",
+    "sentinelagent.exe",
     "securityhealthservice.exe",
     "securityhealthsystray.exe",
     "smartscreen.exe",
+    "sophoshealth.exe",
+    "sophosui.exe",
     "steamservice.exe",
     "steamwebhelper.exe",
+    "wrsa.exe",
+    "avp.exe",
+    "csfalconservice.exe",
+}
+
+PROTECTED_SECURITY_PROCESS_NAMES = {
+    "avastsvc.exe",
+    "avastui.exe",
+    "avgsvc.exe",
+    "avgui.exe",
+    "bdservicehost.exe",
+    "ekrn.exe",
+    "egui.exe",
+    "mbam.exe",
+    "mbamservice.exe",
+    "mbamtray.exe",
+    "mcshield.exe",
+    "mfefire.exe",
+    "mfemms.exe",
+    "msmpeng.exe",
+    "mpdefendercoreservice.exe",
+    "mpcmdrun.exe",
+    "nissrv.exe",
+    "savservice.exe",
+    "securityhealthservice.exe",
+    "securityhealthsystray.exe",
+    "sentinelagent.exe",
+    "smartscreen.exe",
+    "sophoshealth.exe",
+    "sophosui.exe",
+    "wrsa.exe",
+    "avp.exe",
+    "csfalconservice.exe",
+}
+
+PROTECTED_CORE_PROCESS_NAMES = {
+    "cmd.exe",
+    "conhost.exe",
+    "explorer.exe",
+    "powershell.exe",
+    "pwsh.exe",
+    "taskmgr.exe",
+    "wininit.exe",
+    "winlogon.exe",
+    "wscript.exe",
+    "cscript.exe",
+    "mshta.exe",
+    "rundll32.exe",
 }
 
 TRUSTED_VENDOR_PATH_MARKERS = (
+    "\\program files\\avast software\\",
+    "\\programdata\\avast software\\",
+    "\\program files\\avg\\",
+    "\\programdata\\avg\\",
+    "\\program files\\bitdefender\\",
+    "\\programdata\\bitdefender\\",
+    "\\program files\\crowdstrike\\",
     "\\programdata\\microsoft\\windows defender\\",
     "\\programdata\\microsoft\\windows defender advanced threat protection\\",
+    "\\program files\\eset\\",
+    "\\programdata\\eset\\",
+    "\\program files\\kaspersky lab\\",
+    "\\programdata\\kaspersky lab\\",
+    "\\program files\\malwarebytes\\",
+    "\\programdata\\malwarebytes\\",
+    "\\program files\\mcafee\\",
+    "\\programdata\\mcafee\\",
     "\\programdata\\smilegate\\",
+    "\\program files\\sentinelone\\",
+    "\\programdata\\sentinelone\\",
+    "\\program files\\sophos\\",
+    "\\programdata\\sophos\\",
+    "\\program files\\trellix\\",
+    "\\programdata\\trellix\\",
+    "\\program files\\webroot\\",
+    "\\programdata\\webroot\\",
     "\\appdata\\local\\microsoft\\onedrive\\",
     "\\program files\\microsoft onedrive\\",
     "\\appdata\\local\\discord\\",
@@ -428,25 +517,47 @@ TRUSTED_VENDOR_PATH_MARKERS = (
 
 TRUSTED_COMPANY_TOKENS = (
     "advanced micro devices",
+    "avast",
+    "avg",
+    "bitdefender",
     "brave software",
+    "crowdstrike",
     "discord",
+    "eset",
     "google",
     "intel",
+    "kaspersky",
+    "malwarebytes",
+    "mcafee",
     "microsoft",
     "mozilla",
     "nvidia",
     "opera",
+    "sentinelone",
     "smilegate",
+    "sophos",
+    "trellix",
     "valve",
+    "webroot",
 )
 
 TRUSTED_FILE_DESCRIPTION_TOKENS = (
+    "antivirus",
+    "bitdefender",
     "discord",
+    "endpoint security",
+    "eset",
+    "kaspersky",
+    "malwarebytes",
     "microsoft defender",
     "microsoft edge",
     "onedrive",
+    "security agent",
+    "sentinel",
+    "sophos",
     "steam",
     "windows security",
+    "webroot",
 )
 
 PROTECTED_SYSTEM_PATH_MARKERS = (
@@ -512,6 +623,7 @@ MANUAL_REVIEW_CATEGORIES = {
     "Defender Protection Review",
     "Firewall Rule Review",
     "Hosts Tampering Review",
+    "Installed Program Review",
     "Proxy Configuration Review",
     "Source Lure Artifact",
     "Suspicious Loader Stage Directory",
@@ -529,6 +641,76 @@ COMMON_USERLAND_EXEC_MARKERS = (
     "\\temp\\",
     "\\downloads\\",
 )
+TEMP_STAGE_DIR_REGEX = re.compile(r"\\(?:appdata\\local\\)?temp\\tmp-\d+-[a-z0-9_-]{6,}\\", re.IGNORECASE)
+GODOT_APP_USERDATA_MARKER = "\\appdata\\roaming\\godot\\app_userdata\\"
+ASAR_ARGUMENT_MARKERS = ("node_modules.asar", ".asar")
+IMYFONE_COMPANY_TOKENS = (
+    "imyfone",
+    "shenzhen imyfone technology",
+)
+PYTHON_COMPANY_TOKENS = (
+    "python software foundation",
+)
+LOCAL_TOOL_CONTEXT_MARKERS = (
+    "renkill.py",
+    "renkill.exe",
+    "renkill.spec",
+    "renengine_hunter.py",
+    "build.bat",
+)
+SCRIPT_LURE_REMOTE_MARKERS = (
+    "http://",
+    "https://",
+    "discord.gg",
+    "dropbox",
+    "go.zovo",
+    "mediafire",
+    "mega",
+    "pastebin",
+    "telegram.me",
+    "t.me/",
+)
+SAFE_SCRIPT_CONTENT_MARKERS = (
+    "build script",
+    "doctype html",
+    "<html",
+    "<head",
+    "<body",
+    "githubdesktop",
+    "pip install",
+    "pyinstaller",
+    "python -m py_compile",
+    "renengine_hunter.py",
+    "renkill.py",
+)
+PROJECT_INDICATOR_BASENAMES = (
+    ".git",
+    ".vscode",
+    "node_modules",
+    "package.json",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "pyproject.toml",
+    "requirements.txt",
+    "setup.py",
+    "readme.md",
+    "readme.txt",
+    "index.html",
+)
+PROJECT_INDICATOR_SUFFIXES = (
+    ".sln",
+    ".csproj",
+    ".pyproj",
+    ".vcxproj",
+)
+FRST_REVIEW_PROGRAM_NAMES = {
+    "netsupport",
+    "netsupport manager",
+    "netsupport school",
+    "urban vpn",
+    "urban vpn proxy",
+}
 SUSPICIOUS_EXTENSION_PERMISSIONS = {
     "cookies",
     "downloads",
@@ -818,9 +1000,11 @@ class ScanEngine:
         self.exposure_notes = []
         self.post_cleanup_scan = False
         self.rebooted_after_cleanup = False
+        self._tool_roots = self._compute_local_tool_roots()
         self._file_meta_cache = {}
         self._module_scan_pid_targets = set()
         self._shortcut_scan_rows = None
+        self._scheduled_task_rows = None
         self._reset_recovery_state()
 
     def _add(self, severity, category, description, path=None, action=None):
@@ -1146,7 +1330,7 @@ class ScanEngine:
             return None
         try:
             result = subprocess.run(
-                ["schtasks", "/query", "/tn", task_name, "/xml"],
+                [self._schtasks_path(), "/query", "/tn", task_name, "/xml"],
                 capture_output=True,
                 text=True,
                 timeout=20,
@@ -1234,7 +1418,7 @@ class ScanEngine:
             return False
         try:
             result = subprocess.run(
-                ["schtasks", "/create", "/tn", task_name, "/xml", xml_path, "/f"],
+                [self._schtasks_path(), "/create", "/tn", task_name, "/xml", xml_path, "/f"],
                 capture_output=True,
                 text=True,
                 timeout=20,
@@ -1602,10 +1786,79 @@ class ScanEngine:
         except Exception:
             return str(path).lower()
 
+    def _compute_local_tool_roots(self):
+        candidates = {
+            os.getcwd(),
+            os.path.dirname(os.path.abspath(__file__)),
+        }
+        if getattr(sys, "executable", ""):
+            candidates.add(os.path.dirname(os.path.abspath(sys.executable)))
+
+        roots = []
+        for candidate in candidates:
+            normalized = self._normalized_path(candidate).rstrip("\\/")
+            if normalized:
+                roots.append(normalized)
+        return tuple(sorted(set(roots)))
+
+    def _is_local_tool_path(self, path):
+        normalized = self._normalized_path(path).rstrip("\\/")
+        if not normalized:
+            return False
+        return any(normalized == root or normalized.startswith(root + "\\") for root in self._tool_roots)
+
+    def _is_local_tool_context(self, *values):
+        normalized_roots = self._tool_roots
+        for value in values:
+            raw = str(value or "").lower()
+            if not raw:
+                continue
+            if any(root and root in raw for root in normalized_roots):
+                return True
+            if any(marker in raw for marker in LOCAL_TOOL_CONTEXT_MARKERS):
+                return True
+        return False
+
+    def _is_project_like_path(self, path):
+        current = self._normalized_path(path)
+        if not current:
+            return False
+
+        probe = current if os.path.isdir(path) else os.path.dirname(current)
+        for _ in range(4):
+            if not probe or probe.endswith(":"):
+                break
+            try:
+                for entry in os.listdir(probe):
+                    lower = entry.lower()
+                    if lower in PROJECT_INDICATOR_BASENAMES or lower.endswith(PROJECT_INDICATOR_SUFFIXES):
+                        return True
+            except Exception:
+                pass
+            parent = os.path.dirname(probe)
+            if parent == probe:
+                break
+            probe = parent
+        return False
+
     @staticmethod
     def _powershell_path():
         windir = os.environ.get("WINDIR", r"C:\Windows")
         return os.path.join(windir, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+
+    @staticmethod
+    def _schtasks_path():
+        windir = os.environ.get("WINDIR", r"C:\Windows")
+        candidates = [
+            os.path.join(windir, "System32", "schtasks.exe"),
+            os.path.join(windir, "Sysnative", "schtasks.exe"),
+            os.path.join(windir, "SysWOW64", "schtasks.exe"),
+            shutil.which("schtasks"),
+        ]
+        for candidate in candidates:
+            if candidate and os.path.exists(candidate):
+                return candidate
+        return "schtasks"
 
     @staticmethod
     def _extract_command_target(command_text):
@@ -1618,6 +1871,34 @@ class ScanEngine:
                 return parts[1]
         match = re.match(r"([A-Za-z]:\\[^ ]+\.(?:exe|dll|bat|cmd|ps1|vbs|js))", raw, re.IGNORECASE)
         return match.group(1) if match else raw.split()[0]
+
+    @staticmethod
+    def _split_command_text(command_text):
+        raw = (command_text or "").strip()
+        if not raw:
+            return "", ""
+        if raw.startswith('"'):
+            parts = raw.split('"', 2)
+            if len(parts) >= 2:
+                target = parts[1]
+                args = parts[2].strip() if len(parts) > 2 else ""
+                return target, args
+        match = re.match(r"([A-Za-z]:\\[^ ]+\.(?:exe|dll|bat|cmd|ps1|vbs|js))\s*(.*)", raw, re.IGNORECASE)
+        if match:
+            return match.group(1), match.group(2).strip()
+        parts = raw.split(None, 1)
+        if len(parts) == 1:
+            return parts[0], ""
+        return parts[0], parts[1]
+
+    @staticmethod
+    def _is_pathlike_command_target(target):
+        raw = str(target or "").strip()
+        if not raw:
+            return False
+        if raw.startswith('"'):
+            raw = raw.strip('"')
+        return "\\" in raw or "/" in raw or bool(re.match(r"^[A-Za-z]:", raw))
 
     def _run_powershell(self, script, timeout=45):
         powershell = self._powershell_path()
@@ -1690,6 +1971,15 @@ class ScanEngine:
 
         descriptor_blob = " ".join(filter(None, (meta["description"], meta["original"])))
         return any(token in descriptor_blob for token in TRUSTED_FILE_DESCRIPTION_TOKENS)
+
+    def _file_metadata_matches(self, path, tokens):
+        if not path:
+            return False
+        meta = self._file_metadata(path)
+        if not meta:
+            return False
+        blob = " ".join(filter(None, (meta["company"], meta["product"], meta["description"], meta["original"])))
+        return any(token in blob for token in tokens)
 
     def _has_strong_campaign_context(self, *values):
         blob = " ".join(str(value).lower() for value in values if value)
@@ -1846,6 +2136,14 @@ class ScanEngine:
         args_lower = arguments.lower()
         name_lower = name.lower()
         base_name = os.path.splitext(target_exe)[0]
+        temp_launcher_score = self._score_startup_temp_launcher(target_path, arguments, working_directory)
+
+        if self._is_startup_shortcut_path(path) and temp_launcher_score >= 3:
+            severity = "CRITICAL" if temp_launcher_score >= 5 else "HIGH"
+            description = f"Startup shortcut points to temp-stage launcher: {path} -> {target_path}"
+            if self._file_metadata_matches(target_path, IMYFONE_COMPANY_TOKENS):
+                description += "  (iMyFone-signed temp launcher pattern)"
+            return severity, "Malicious Shortcut", description
 
         if target_exe in SHORTCUT_SCRIPT_HOSTS and (
             self._has_strong_campaign_context(arguments)
@@ -1982,6 +2280,8 @@ class ScanEngine:
         target = pexe or cmdline or pname or f"PID {pid}"
         if not (pname or pexe or cmdline):
             return False, target
+        if self._is_protected_core_process(pname, pexe) or self._is_protected_security_process(pname, pexe):
+            return True, target
         if self._has_strong_campaign_context(pname, pexe, cmdline):
             return False, target
         return self._is_safe_process_context(pname, pexe, cmdline, allow_metadata=True), target
@@ -2004,12 +2304,49 @@ class ScanEngine:
             return False
         return False
 
+    @staticmethod
+    def _read_small_text_blob(path, limit=131072):
+        try:
+            with open(path, "rb") as handle:
+                data = handle.read(limit)
+        except Exception:
+            return ""
+
+        if not data:
+            return ""
+
+        if b"\x00" in data:
+            try:
+                return data.decode("utf-16le", "ignore").lower()
+            except Exception:
+                return ""
+        return data.decode("utf-8", "ignore").lower()
+
+    def _script_has_lure_content(self, path):
+        if self._is_local_tool_path(path) or self._is_project_like_path(path):
+            return False
+
+        text = self._read_small_text_blob(path)
+        if not text:
+            return False
+        if any(marker in text for marker in SAFE_SCRIPT_CONTENT_MARKERS):
+            return False
+
+        strong_hits = sum(1 for token in SOURCE_LURE_KEYWORDS if token in text)
+        remote_hit = any(marker in text for marker in SCRIPT_LURE_REMOTE_MARKERS)
+        ext = os.path.splitext(str(path or "").lower())[1]
+        if ext in {".html", ".htm", ".url"}:
+            return remote_hit and strong_hits >= 1
+        return strong_hits >= 2 or (remote_hit and strong_hits >= 1)
+
     def _value_has_malware_signal(self, value):
         raw = self._normalize_cmdline(value)
         lowered = raw.lower()
         target = self._extract_command_target(raw)
         normalized_target = self._normalized_path(target)
 
+        if self._is_local_tool_context(raw, target):
+            return False
         if self._has_strong_campaign_context(raw):
             return True
         if normalized_target and not self._is_trusted_vendor_path(normalized_target) and not self._has_trusted_file_metadata(target):
@@ -2020,7 +2357,65 @@ class ScanEngine:
                     and any(ext in normalized_target for ext in (".exe", ".dll", ".cmd", ".bat", ".ps1", ".vbs", ".js"))
                 ) or self._contains_marker(normalized_target, PROCESS_IOC_MARKERS):
                     return True
+        if GODOT_APP_USERDATA_MARKER in normalized_target and any(marker in lowered for marker in ASAR_ARGUMENT_MARKERS):
+            return True
+        if self._looks_like_temp_stage_launcher(normalized_target):
+            return True
         return any(pattern in lowered for pattern in SUSPICIOUS_REG_PATTERNS)
+
+    @staticmethod
+    def _looks_like_temp_stage_launcher(path):
+        normalized = str(path or "").lower()
+        if not normalized.endswith(".exe"):
+            return False
+        return bool(TEMP_STAGE_DIR_REGEX.search(normalized))
+
+    @staticmethod
+    def _is_startup_shortcut_path(path):
+        normalized = str(path or "").lower()
+        return "\\start menu\\programs\\startup\\" in normalized
+
+    def _score_startup_temp_launcher(self, target_path, arguments="", working_directory=""):
+        normalized_target = self._normalized_path(target_path)
+        if not self._looks_like_temp_stage_launcher(normalized_target):
+            return 0
+
+        score = 2
+        target_name = os.path.splitext(os.path.basename(normalized_target))[0]
+        if self._looks_random(target_name):
+            score += 1
+
+        normalized_workdir = self._normalized_path(working_directory)
+        target_dir = os.path.dirname(normalized_target)
+        if normalized_workdir and normalized_workdir == target_dir:
+            score += 1
+
+        args_lower = self._normalize_cmdline(arguments).lower()
+        if args_lower and (
+            self._contains_marker(args_lower, PROCESS_IOC_MARKERS)
+            or any(ext in args_lower for ext in (".asar", ".dll", ".ps1", ".vbs", ".js"))
+        ):
+            score += 1
+
+        if self._file_metadata_matches(target_path, IMYFONE_COMPANY_TOKENS):
+            score += 2
+
+        return score
+
+    def _looks_like_godot_asar_task(self, executable, arguments, working_directory=""):
+        normalized_executable = self._normalized_path(executable)
+        if GODOT_APP_USERDATA_MARKER not in normalized_executable:
+            return False
+
+        argument_blob = self._normalize_cmdline(arguments).lower()
+        if not any(marker in argument_blob for marker in ASAR_ARGUMENT_MARKERS):
+            return False
+
+        normalized_workdir = self._normalized_path(working_directory)
+        if normalized_workdir and GODOT_APP_USERDATA_MARKER not in normalized_workdir and not self._path_in_user_writable_exec_zone(normalized_workdir):
+            return False
+
+        return normalized_executable.endswith(".exe")
 
     def _looks_suspicious_service(self, service_name, display_name, path_name):
         blob = " ".join(part for part in (service_name, display_name, path_name) if part)
@@ -2036,6 +2431,110 @@ class ScanEngine:
             self._looks_random(base) or self._contains_marker(normalized_executable, PROCESS_IOC_MARKERS)
         ):
             return "HIGH", "Malicious Service", f"Service points at suspicious user-writable executable: {service_name} -> {path_name}"
+        return None
+
+    def _collect_scheduled_task_rows(self):
+        if self._scheduled_task_rows is not None:
+            return self._scheduled_task_rows
+
+        rows = self._run_powershell_json(
+            "$tasks = Get-ScheduledTask -ErrorAction SilentlyContinue | ForEach-Object { "
+            "$task = $_; "
+            "foreach ($action in $task.Actions) { "
+            "[pscustomobject]@{ "
+            "TaskName=$task.TaskName; "
+            "TaskPath=$task.TaskPath; "
+            "Execute=$action.Execute; "
+            "Arguments=$action.Arguments; "
+            "WorkingDirectory=$action.WorkingDirectory; "
+            "UserId=$task.Principal.UserId; "
+            "State=[string]$task.State "
+            "} "
+            "} "
+            "}; "
+            "$tasks | ConvertTo-Json -Compress",
+            timeout=60,
+        )
+        if not rows:
+            rows = []
+            try:
+                result = subprocess.run(
+                    [self._schtasks_path(), "/query", "/fo", "CSV", "/v"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    creationflags=0x08000000,
+                )
+                reader = csv.DictReader(result.stdout.splitlines())
+                for item in reader:
+                    task_name = str(item.get("TaskName") or item.get("Task Name") or "").strip()
+                    command_text = str(item.get("Task To Run") or item.get("Actions") or "").strip()
+                    execute, arguments = self._split_command_text(command_text)
+                    rows.append(
+                        {
+                            "TaskName": task_name,
+                            "TaskPath": "",
+                            "Execute": execute,
+                            "Arguments": arguments,
+                            "WorkingDirectory": str(item.get("Start In") or item.get("Start In (Optional)") or "").strip(),
+                            "UserId": str(item.get("Run As User") or "").strip(),
+                            "State": str(item.get("Status") or item.get("Scheduled Task State") or "").strip(),
+                        }
+                    )
+            except Exception:
+                rows = []
+        self._scheduled_task_rows = rows or []
+        return self._scheduled_task_rows
+
+    def _evaluate_scheduled_task_entry(self, task_name, task_path, execute, arguments="", working_directory=""):
+        task_name = str(task_name or "")
+        task_path = str(task_path or "")
+        execute = str(execute or "")
+        arguments = str(arguments or "")
+        working_directory = str(working_directory or "")
+        blob = " ".join(part for part in (task_name, task_path, execute, arguments, working_directory) if part)
+        if not blob:
+            return None
+
+        if self._has_strong_campaign_context(blob):
+            return (
+                "CRITICAL",
+                "Malicious Scheduled Task",
+                f"Scheduled task references RenEngine/HijackLoader artifacts: {task_path}{task_name}",
+            )
+
+        executable = self._extract_command_target(execute)
+        normalized_executable = self._normalized_path(executable)
+        executable_name = os.path.basename(normalized_executable).lower()
+        argument_blob = self._normalize_cmdline(arguments).lower()
+
+        if self._looks_like_godot_asar_task(executable, arguments, working_directory):
+            severity = "CRITICAL" if self._file_metadata_matches(executable, PYTHON_COMPANY_TOKENS) else "HIGH"
+            return (
+                severity,
+                "Malicious Scheduled Task",
+                f"Scheduled task launches Godot app_userdata payload with .asar arguments: {task_path}{task_name}",
+            )
+
+        if self._looks_like_temp_stage_launcher(normalized_executable):
+            score = self._score_startup_temp_launcher(executable, arguments, working_directory)
+            if score >= 3 and not self._is_safe_process_context(executable_name, executable, arguments, allow_metadata=True):
+                return (
+                    "HIGH",
+                    "Malicious Scheduled Task",
+                    f"Scheduled task launches temp-stage executable: {task_path}{task_name} -> {executable}",
+                )
+
+        if executable and any(marker in argument_blob for marker in ASAR_ARGUMENT_MARKERS):
+            if self._path_in_user_writable_exec_zone(normalized_executable) and not self._is_safe_process_context(
+                executable_name, executable, arguments, allow_metadata=True
+            ):
+                return (
+                    "HIGH",
+                    "Malicious Scheduled Task",
+                    f"Scheduled task passes .asar payload arguments to a user-writable executable: {task_path}{task_name}",
+                )
+
         return None
 
     @staticmethod
@@ -2086,16 +2585,18 @@ class ScanEngine:
         return h.hexdigest().lower()
 
     def _is_probable_source_lure(self, path, fname):
+        if self._is_local_tool_path(path) or self._is_project_like_path(path):
+            return False
         name_lower = fname.lower()
         ext = os.path.splitext(name_lower)[1]
         if ext not in SOURCE_LURE_EXTENSIONS:
             return False
         if ext == ".exe":
             return self._contains_marker(name_lower, SOURCE_LURE_FILENAME_STRONG)
-        if self._contains_marker(name_lower, SOURCE_LURE_KEYWORDS):
+        if self._contains_marker(name_lower, SOURCE_LURE_KEYWORDS) and ext not in {".html", ".htm", ".url"}:
             return True
         if ext in {".url", ".lnk", ".html", ".htm", ".bat", ".cmd", ".ps1", ".vbs", ".js"}:
-            return self._file_contains_ascii_or_utf16le(path, SOURCE_LURE_KEYWORDS)
+            return self._script_has_lure_content(path)
         return False
 
     @staticmethod
@@ -2826,6 +3327,80 @@ class ScanEngine:
                 "Get-MpPreference",
             )
 
+    def scan_installed_programs(self):
+        self.log("INSTALLED PROGRAM REVIEW", "SECTION")
+        if not WINREG_OK:
+            self.log("winreg unavailable — installed program review skipped", "WARN")
+            return
+
+        uninstall_roots = [
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", "HKLM"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall", "HKLM"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", "HKCU"),
+        ]
+        seen = set()
+
+        for hive, subkey, hive_name in uninstall_roots:
+            try:
+                root = winreg.OpenKey(hive, subkey)
+            except (FileNotFoundError, PermissionError):
+                continue
+
+            index = 0
+            while True:
+                try:
+                    child_name = winreg.EnumKey(root, index)
+                except OSError:
+                    break
+                index += 1
+
+                try:
+                    child = winreg.OpenKey(hive, subkey + "\\" + child_name)
+                except (FileNotFoundError, PermissionError):
+                    continue
+
+                try:
+                    display_name = str(winreg.QueryValueEx(child, "DisplayName")[0] or "").strip()
+                except OSError:
+                    display_name = ""
+                try:
+                    install_location = str(winreg.QueryValueEx(child, "InstallLocation")[0] or "").strip()
+                except OSError:
+                    install_location = ""
+                try:
+                    publisher = str(winreg.QueryValueEx(child, "Publisher")[0] or "").strip()
+                except OSError:
+                    publisher = ""
+                try:
+                    uninstall_string = str(winreg.QueryValueEx(child, "UninstallString")[0] or "").strip()
+                except OSError:
+                    uninstall_string = ""
+
+                try:
+                    winreg.CloseKey(child)
+                except Exception:
+                    pass
+
+                lowered_name = display_name.lower()
+                if not lowered_name or lowered_name in seen:
+                    continue
+                if lowered_name not in FRST_REVIEW_PROGRAM_NAMES and not any(token in lowered_name for token in FRST_REVIEW_PROGRAM_NAMES):
+                    continue
+
+                seen.add(lowered_name)
+                details = " | ".join(part for part in (display_name, publisher, install_location or uninstall_string) if part)
+                self._add(
+                    "MEDIUM",
+                    "Installed Program Review",
+                    f"Installed program seen in current cleanup cases needs review: {details}",
+                    f"{hive_name}\\{subkey}\\{child_name}",
+                )
+
+            try:
+                winreg.CloseKey(root)
+            except Exception:
+                pass
+
     def _evaluate_firewall_rule(self, rule_name, display_name, direction, program):
         normalized_program = self._normalized_path(program)
         if not normalized_program:
@@ -2927,6 +3502,61 @@ class ScanEngine:
         return pname in {"python.exe", "pythonw.exe", "wscript.exe", "cscript.exe", "mshta.exe", "rundll32.exe"} or any(
             host in cmdline_lower for host in ("python.exe", "pythonw.exe", "wscript", "cscript", "mshta", "rundll32")
         )
+
+    def _has_actionable_script_host_context(self, pexe, cmdline):
+        cmdline_lower = self._normalize_cmdline(cmdline).lower()
+        target = self._extract_command_target(cmdline)
+        normalized_target = self._normalized_path(target) if self._is_pathlike_command_target(target) else ""
+        normalized_exe = self._normalized_path(pexe)
+
+        strong_cmdline_markers = STRONG_CAMPAIGN_MARKERS - {"renpy"}
+        if self._contains_marker(cmdline_lower, strong_cmdline_markers):
+            return True
+        if self._looks_like_temp_stage_launcher(normalized_target):
+            return True
+        if GODOT_APP_USERDATA_MARKER in normalized_target and any(marker in cmdline_lower for marker in ASAR_ARGUMENT_MARKERS):
+            return True
+        if normalized_target and self._path_in_user_writable_exec_zone(normalized_target):
+            base = os.path.splitext(os.path.basename(normalized_target))[0]
+            if self._looks_random(base) or self._contains_marker(normalized_target, PROCESS_IOC_MARKERS):
+                return True
+        if normalized_exe and self._path_in_user_writable_exec_zone(normalized_exe):
+            return True
+        return False
+
+    def _is_protected_core_process(self, pname, pexe):
+        return pname in PROTECTED_CORE_PROCESS_NAMES and self._is_protected_system_path(pexe)
+
+    def _is_protected_security_process(self, pname, pexe):
+        return pname in PROTECTED_SECURITY_PROCESS_NAMES and (
+            self._is_trusted_vendor_path(pexe)
+            or self._is_protected_system_path(pexe)
+            or self._has_trusted_file_metadata(pexe)
+        )
+
+    def _is_protected_shell_host(self, pname, pexe):
+        return pname in {"cmd.exe", "powershell.exe", "pwsh.exe", "wscript.exe", "cscript.exe", "mshta.exe", "rundll32.exe"} and self._is_protected_core_process(pname, pexe)
+
+    def _shell_host_has_explicit_malware_target(self, cmdline):
+        cmdline_lower = self._normalize_cmdline(cmdline).lower()
+        target = self._extract_command_target(cmdline)
+        if not self._is_pathlike_command_target(target):
+            return False
+
+        normalized_target = self._normalized_path(target)
+        base = os.path.splitext(os.path.basename(normalized_target))[0]
+        ext = os.path.splitext(normalized_target)[1]
+
+        if self._looks_like_temp_stage_launcher(normalized_target):
+            return True
+        if GODOT_APP_USERDATA_MARKER in normalized_target and any(marker in cmdline_lower for marker in ASAR_ARGUMENT_MARKERS):
+            return True
+        if self._path_in_user_writable_exec_zone(normalized_target):
+            if self._contains_marker(normalized_target, PROCESS_IOC_MARKERS):
+                return True
+            if ext in {".exe", ".dll", ".bat", ".cmd", ".hta", ".js", ".ps1", ".py", ".pyc", ".pyo", ".vbs"} and self._looks_random(base):
+                return True
+        return False
 
     @staticmethod
     def _has_external_raddr(conn):
@@ -3165,6 +3795,20 @@ class ScanEngine:
         cmdline = row["cmdline"]
         cmdline_lower = row["cmdline_lower"]
 
+        if pname in {"cmd.exe", "powershell.exe", "pwsh.exe", "python.exe", "pythonw.exe"} and (
+            self._is_local_tool_context(pexe, cmdline) or self._is_project_like_path(self._extract_command_target(cmdline) or cmdline)
+        ):
+            return
+        if self._is_protected_security_process(pname, pexe):
+            return
+        if self._is_protected_core_process(pname, pexe):
+            if self._is_protected_shell_host(pname, pexe) and self._shell_host_has_explicit_malware_target(cmdline):
+                pass
+            else:
+                return
+        if self._is_protected_shell_host(pname, pexe) and not self._shell_host_has_explicit_malware_target(cmdline):
+            return
+
         if pexe and any(temp_root and temp_root in pexe_lower for temp_root in self._temp_paths()):
             self._add_process_seed(
                 seeds,
@@ -3187,7 +3831,10 @@ class ScanEngine:
             )
             return
 
-        if self._contains_marker(pexe_lower, PROCESS_IOC_MARKERS) or self._contains_marker(cmdline_lower, PROCESS_IOC_MARKERS):
+        if self._contains_marker(pexe_lower, PROCESS_IOC_MARKERS) or (
+            self._contains_marker(cmdline_lower, PROCESS_IOC_MARKERS)
+            and (pname not in {"powershell.exe", "pwsh.exe", "cmd.exe"} or self._has_actionable_script_host_context(pexe, cmdline))
+        ):
             self._add_process_seed(
                 seeds,
                 pid,
@@ -3198,7 +3845,7 @@ class ScanEngine:
             )
             return
 
-        if self._looks_script_host(pname, cmdline_lower) and self._contains_marker(cmdline_lower, PROCESS_IOC_MARKERS):
+        if self._looks_script_host(pname, cmdline_lower) and self._contains_marker(cmdline_lower, PROCESS_IOC_MARKERS) and self._has_actionable_script_host_context(pexe, cmdline):
             self._add_process_seed(
                 seeds,
                 pid,
@@ -3416,35 +4063,27 @@ class ScanEngine:
     def scan_scheduled_tasks(self):
         self.log("── SCHEDULED TASK SCAN ────────────────────────────────", "SECTION")
         try:
-            r = subprocess.run(
-                ["schtasks", "/query", "/fo", "CSV", "/v"],
-                capture_output=True, text=True, timeout=45,
-                creationflags=0x08000000
-            )
-            task_name = None
-            for line in r.stdout.splitlines():
-                stripped = line.strip().strip('"')
-                if stripped.startswith("\\"):
-                    parts = line.split('","')
-                    if parts:
-                        task_name = parts[0].strip('"').strip()
-
-                line_lower = line.lower()
-                if task_name and any(kw in line_lower for kw in (
-                    "\\temp\\", "\\tmp\\", "instaler", "renpy",
-                    "iviewers", "lnstaier", "uis4tq7p", "broker_crypt_v4_i386",
-                    "froodjurain", "vsdebugscriptagent170", "zoneind.exe", "chime.exe"
-                )):
-                    tn = task_name
-                    self._add("HIGH", "Malicious Scheduled Task",
-                              f"Persistence scheduled task: {tn}", tn,
-                              lambda t=tn: self._delete_task(t))
-                    task_name = None
-
-        except FileNotFoundError:
-            self.log("schtasks.exe not found", "WARN")
-        except subprocess.TimeoutExpired:
-            self.log("Task scan timed out", "WARN")
+            for row in self._collect_scheduled_task_rows():
+                if self._stop:
+                    return
+                finding = self._evaluate_scheduled_task_entry(
+                    row.get("TaskName"),
+                    row.get("TaskPath"),
+                    row.get("Execute"),
+                    row.get("Arguments"),
+                    row.get("WorkingDirectory"),
+                )
+                if not finding:
+                    continue
+                severity, category, description = finding
+                task_name = f"{row.get('TaskPath') or ''}{row.get('TaskName') or ''}"
+                self._add(
+                    severity,
+                    category,
+                    description,
+                    task_name,
+                    lambda t=task_name: self._delete_task(t),
+                )
         except Exception as exc:
             self.log(f"Task scan error: {exc}", "WARN")
 
@@ -3709,7 +4348,7 @@ class ScanEngine:
         backup = self._capture_task_xml(task_name)
         try:
             r = subprocess.run(
-                ["schtasks", "/delete", "/tn", task_name, "/f"],
+                [self._schtasks_path(), "/delete", "/tn", task_name, "/f"],
                 capture_output=True, text=True, creationflags=0x08000000
             )
             if r.returncode == 0:
@@ -3920,6 +4559,7 @@ class ScanEngine:
         self.exposure_notes.clear()
         self._module_scan_pid_targets.clear()
         self._shortcut_scan_rows = None
+        self._scheduled_task_rows = None
         self.scan_network()
         self.scan_processes()
         self.scan_process_modules()
@@ -3934,6 +4574,7 @@ class ScanEngine:
         self.scan_system_tampering()
         self.scan_defender_posture()
         self.scan_firewall_rules()
+        self.scan_installed_programs()
         self.scan_browser_extensions()
         self.threats.sort()
         crit = sum(1 for t in self.threats if t.severity == "CRITICAL")
@@ -4110,6 +4751,8 @@ class App(tk.Tk):
         self._last_remediation_ts = 0.0
 
         self._build()
+        self.bind("<Configure>", self._refresh_status_layout)
+        self.after(0, self._refresh_status_layout)
         self._check_admin()
         self._startup_msg()
         summary = self._update_revert_button()
@@ -4145,27 +4788,34 @@ class App(tk.Tk):
         # Status bar
         sbar = tk.Frame(self, bg=BG2, padx=18, pady=7)
         sbar.pack(fill="x")
+        sbar.grid_columnconfigure(0, weight=1)
         self._status_var = tk.StringVar(value="Ready")
         self._status_lbl = tk.Label(sbar, textvariable=self._status_var,
-                                    font=(MONO, 10), bg=BG2, fg=GREEN, anchor="w")
-        self._status_lbl.pack(side="left")
+                                    font=(MONO, 10), bg=BG2, fg=GREEN, anchor="w", justify="left")
+        self._status_lbl.grid(row=0, column=0, sticky="ew")
         self._count_var = tk.StringVar(value="—")
-        tk.Label(sbar, textvariable=self._count_var,
-                 font=(MONO, 10, "bold"), bg=BG2, fg=RED).pack(side="right")
+        self._count_lbl = tk.Label(sbar, textvariable=self._count_var,
+                                   font=(MONO, 10, "bold"), bg=BG2, fg=RED, anchor="e", justify="right")
+        self._count_lbl.grid(row=1, column=0, sticky="ew", pady=(3, 0))
 
         # Buttons
         brow = tk.Frame(self, bg=BG, padx=18, pady=10)
         brow.pack(fill="x")
 
-        self._btn_scan = self._btn(brow, "⟳  SCAN SYSTEM", BLUE, self._do_scan)
-        self._btn_kill = self._btn(brow, "✕  KILL & CLEAN", RED, self._do_kill)
-        self._btn_revert = self._btn(brow, "REVERT LAST CLEAN", BLUE, self._do_revert)
-        self._btn_sessions = self._btn(brow, "⌁  RESET SESSION DATA", AMBER, self._do_reset_sessions)
-        self._btn_report = self._btn(brow, "↓  EXPORT REPORT", GREEN, self._do_report)
-        self._btn_clear = self._btn(brow, "⌫  CLEAR LOG", FG3, self._do_clear)
+        primary_actions = tk.Frame(brow, bg=BG)
+        primary_actions.pack(fill="x")
+        secondary_actions = tk.Frame(brow, bg=BG, pady=6)
+        secondary_actions.pack(fill="x")
 
-        tk.Checkbutton(
-            brow,
+        self._btn_scan = self._btn(primary_actions, "⟳  SCAN SYSTEM", BLUE, self._do_scan)
+        self._btn_kill = self._btn(primary_actions, "✕  KILL & CLEAN", RED, self._do_kill)
+        self._btn_revert = self._btn(primary_actions, "REVERT LAST CLEAN", BLUE, self._do_revert)
+        self._btn_sessions = self._btn(primary_actions, "⌁  RESET SESSION DATA", AMBER, self._do_reset_sessions)
+        self._btn_report = self._btn(secondary_actions, "↓  EXPORT REPORT", GREEN, self._do_report)
+        self._btn_clear = self._btn(secondary_actions, "⌫  CLEAR LOG", FG3, self._do_clear)
+
+        self._paranoid_chk = tk.Checkbutton(
+            secondary_actions,
             text="PARANOID MODE",
             variable=self._paranoid_var,
             onvalue=True,
@@ -4179,7 +4829,8 @@ class App(tk.Tk):
             relief="flat",
             bd=0,
             highlightthickness=0,
-        ).pack(side="right", padx=(12, 0), pady=2)
+        )
+        self._paranoid_chk.pack(side="right", padx=(12, 0), pady=2)
 
         self._btn_kill.configure(state="disabled")
         self._btn_revert.configure(state="disabled")
@@ -4348,6 +4999,12 @@ class App(tk.Tk):
             self._status_lbl.configure(fg=color)
         ))
 
+    def _refresh_status_layout(self, _event=None):
+        if not hasattr(self, "_status_lbl"):
+            return
+        wrap = max(320, self.winfo_width() - 72)
+        self._status_lbl.configure(wraplength=wrap)
+
     def _set_progress(self, msg):
         self.after(0, lambda: self._prog_var.set(sanitize_for_display(msg)))
 
@@ -4460,34 +5117,37 @@ class App(tk.Tk):
                 self._btn_sessions.configure(state="normal" if self._session_reset_available else "disabled")
                 if n > 0:
                     self._btn_kill.configure(state="normal")
-                    self._count_var.set(f"{n} threat(s)  —  {summary['label']}")
+                    self._count_var.set(f"{n} threats  |  {cleanup['score']}% confidence")
                     self._set_status(
-                        f"Scan complete — {n} threats found. {summary['label']}. Press KILL & CLEAN to remediate.",
+                        f"Scan complete. {summary['label']}. Local confidence {cleanup['score']}%. Use KILL & CLEAN to remediate.",
                         summary["color"]
                     )
                     if self._session_reset_available:
                         self._log("RESET SESSION DATA is available for local browser/Discord session wipe.", "WARN")
                 else:
-                    self._count_var.set("Clean ✓")
-                    self._set_status("Scan complete — no threats detected.", GREEN)
+                    self._count_var.set("Clean")
+                    self._set_status("Scan complete. No threats detected.", GREEN)
                 if n > 0:
-                    self._count_var.set(f"{n} threat(s)  -  {summary['label']}  |  {cleanup['score']}%")
+                    self._count_var.set(f"{n} threats  |  {cleanup['score']}% confidence")
                     self._set_status(
-                        f"Scan complete - {n} threats found. {summary['label']}. Local confidence {cleanup['score']}%. Press KILL & CLEAN to remediate.",
+                        f"Scan complete. {summary['label']}. Local confidence {cleanup['score']}%. Use KILL & CLEAN to remediate.",
                         summary["color"]
                     )
                 elif self._scanner.post_cleanup_scan and not self._scanner.rebooted_after_cleanup:
+                    self._count_var.set(f"Clean  |  {cleanup['score']}% confidence")
                     self._set_status(
-                        f"No threats detected, but reboot then run one more scan for final confidence ({cleanup['score']}%).",
+                        f"No threats detected, but reboot and scan once more for final confidence ({cleanup['score']}%).",
                         AMBER
                     )
                 elif self._scanner.post_cleanup_scan:
+                    self._count_var.set(f"Clean  |  {cleanup['score']}% confidence")
                     self._set_status(
-                        f"Post-clean rescan passed - no threats detected. Local confidence {cleanup['score']}%.",
+                        f"Post-clean rescan passed. No threats detected. Local confidence {cleanup['score']}%.",
                         GREEN
                     )
                 else:
-                    self._set_status(f"Scan complete - no threats detected. Local confidence {cleanup['score']}%.", GREEN)
+                    self._count_var.set(f"Clean  |  {cleanup['score']}% confidence")
+                    self._set_status(f"Scan complete. No threats detected. Local confidence {cleanup['score']}%.", GREEN)
             self.after(0, _done)
 
         self._thread = threading.Thread(target=_run, daemon=True)
