@@ -1,15 +1,15 @@
-# RenKill v1.4.3
-**made with love - Cloud**
+# RenKill v1.4.4
 
-Detects, kills, and removes RenEngine Loader / HijackLoader infostealer artifacts
-from Windows systems, with added cleanup coverage for the `Instaler.exe` chain,
-post-infection session fallout, and FRST-style persistence review points.
+Windows cleanup tool for the fake Ren'Py `Instaler.exe` / RenEngine loader chain.
+It focuses on the stuff this infection tends to leave behind: staged payloads,
+persistence, session fallout, and the same review surfaces people keep seeing in
+FRST cleanup threads.
 
 ---
 
-## What it targets
+## Coverage
 
-| Malware Component | Detection Method |
+| Artifact or Behavior | How RenKill Looks For It |
 |---|---|
 | RenEngine Loader (`Instaler.exe`, `Instaler.py`) | Filename + folder structure match |
 | HijackLoader DLL (`iviewers.dll`, randomname EXEs) | Filename + entropy heuristic |
@@ -28,9 +28,9 @@ post-infection session fallout, and FRST-style persistence review points.
 
 ---
 
-## Build instructions (Windows)
+## Build
 
-Requirements: Python 3.10+ installed and in PATH.
+Requirements: Python 3.10+ in `PATH`.
 
 ```text
 1. Place renkill.py and build.bat in the same folder
@@ -39,7 +39,7 @@ Requirements: Python 3.10+ installed and in PATH.
 4. RenKill.exe appears in the same folder
 ```
 
-## GitHub Actions release builds
+## Release Builds
 
 ```text
 1. Push a version tag like v1.4.3
@@ -49,18 +49,18 @@ Requirements: Python 3.10+ installed and in PATH.
 
 ---
 
-## Usage
+## How To Use It
 
 1. Right-click and run as Administrator for full registry, service, and persistence cleanup coverage
 2. Click `SCAN SYSTEM`
-3. Review the verdict, confidence readout, and findings
+3. Read the verdict, confidence readout, and findings
 4. Click `KILL & CLEAN` to remove high-confidence artifacts
 5. If prompted, use `RESET SESSION DATA` to clear local browser and Discord session material
-6. Reboot and run one more scan to confirm the machine comes back clean
+6. Reboot and run one more scan
 
 ---
 
-## Scan locations
+## What It Reviews
 
 - `%TEMP%` and `%TMP%`
 - `%APPDATA%` and `%LOCALAPPDATA%`
@@ -80,16 +80,16 @@ Requirements: Python 3.10+ installed and in PATH.
 
 ---
 
-## Research notes
+## Research
 
 - See [`RESEARCH_RENENGINE_2026.md`](./RESEARCH_RENENGINE_2026.md) for campaign notes,
-  artifact mapping, recovery guidance, and source links that shaped detection coverage.
+  cleanup patterns, and the sources behind the current detection coverage.
 
 ---
 
-## After cleaning
+## After Cleanup
 
-Even if RenKill removes local artifacts, the data theft may already have happened.
+Removing the local infection does not undo stolen sessions or stolen data.
 From a separate clean device:
 
 1. Change saved browser passwords
@@ -100,7 +100,7 @@ From a separate clean device:
 
 ---
 
-## Sources / Research
+## Source Trail
 
 - Cyderes Howler Cell (Feb 2026)
 - Kaspersky Securelist (Feb 2026)

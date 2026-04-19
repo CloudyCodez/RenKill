@@ -1,19 +1,7 @@
 #!/usr/bin/env python3
-"""
-RenKill v1.4.4
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Detects, kills, and removes RenEngine Loader /
-HijackLoader infostealer artifacts from Windows systems.
+"""RenKill.
 
-Targets:
-  - RenEngine Loader (Trojan.Python.Agent.nb)
-  - HijackLoader (Trojan.Win32.Penguish)
-  - ACR Stealer, Lumma Stealer, Rhadamanthys, Vidar payloads
-  - Associated scheduled task persistence
-  - Associated registry autorun entries
-  - Active C2 network connections
-
-Defensive Security Tool
+Windows cleanup tool for the fake Ren'Py "Instaler.exe" / RenEngine loader chain.
 """
 
 import os
@@ -32,7 +20,7 @@ import csv
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, filedialog
 
-# ── Windows-only imports (safe-guarded) ─────────────────────────────────────
+# Windows-only imports
 try:
     import winreg
     WINREG_OK = True
@@ -46,9 +34,7 @@ except ImportError:
     PSUTIL_OK = False
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  IOC DATABASE
-# ═══════════════════════════════════════════════════════════════════════════════
+# IOC definitions
 
 VERSION = "1.4.4"
 TOOL_NAME = "RenKill"
@@ -621,10 +607,12 @@ STRONG_CAMPAIGN_MARKERS = {
 MANUAL_REVIEW_CATEGORIES = {
     "Browser Extension Review",
     "Defender Protection Review",
+    "Defender Policy Review",
     "Firewall Rule Review",
     "Hosts Tampering Review",
     "Installed Program Review",
     "Proxy Configuration Review",
+    "Security Center Review",
     "Source Lure Artifact",
     "Suspicious Loader Stage Directory",
     "Suspicious RenPy Loader Bundle",
@@ -710,6 +698,15 @@ FRST_REVIEW_PROGRAM_NAMES = {
     "netsupport school",
     "urban vpn",
     "urban vpn proxy",
+}
+DEFENDER_POLICY_VALUE_NAMES = {
+    "disableantispyware",
+    "disablerealtimemonitoring",
+    "disablebehaviormonitoring",
+    "disableioavprotection",
+    "disablescriptscanning",
+    "submitconsent",
+    "spynetreporting",
 }
 SUSPICIOUS_EXTENSION_PERMISSIONS = {
     "cookies",
@@ -941,9 +938,7 @@ def sanitize_for_display(text):
     return out
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  ADMIN ELEVATION
-# ═══════════════════════════════════════════════════════════════════════════════
+# Admin elevation
 
 def is_admin():
     try:
@@ -962,9 +957,7 @@ def elevate_if_needed():
             sys.exit(0)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  THREAT MODEL
-# ═══════════════════════════════════════════════════════════════════════════════
+# Threat model
 
 class Threat:
     SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "INFO": 3}
@@ -982,9 +975,7 @@ class Threat:
         return self.SEVERITY_ORDER.get(self.severity, 99) < self.SEVERITY_ORDER.get(other.severity, 99)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  SCANNER ENGINE
-# ═══════════════════════════════════════════════════════════════════════════════
+# Scanner engine
 
 class ScanEngine:
     def __init__(self, log_cb, progress_cb, paranoid=False):
@@ -1125,7 +1116,7 @@ class ScanEngine:
         self._persist_recovery_session()
         return True
 
-    def latest_recovery_manifest(self):
+    def _load_latest_recovery_manifest(self):
         pointer = self._latest_recovery_pointer()
         if not pointer or not os.path.isfile(pointer):
             return None
@@ -1150,8 +1141,8 @@ class ScanEngine:
             return None
         return manifest
 
-    def latest_recovery_summary(self):
-        manifest = self.latest_recovery_manifest()
+    def get_latest_recovery_summary(self):
+        manifest = self._load_latest_recovery_manifest()
         if not manifest:
             return {
                 "available": False,
@@ -1478,7 +1469,7 @@ class ScanEngine:
         return restored_any
 
     def revert_last_remediation(self):
-        manifest = self.latest_recovery_manifest()
+        manifest = self._load_latest_recovery_manifest()
         if not manifest:
             return {
                 "restored": 0,
@@ -1669,7 +1660,7 @@ class ScanEngine:
             confidence = "medium"
             color = AMBER
         elif suspicious_only:
-            label = "Suspicious activity, not clearly RenLoader"
+            label = "Suspicious activity, weak RenLoader match"
             detail = "Only generic suspicious-process heuristics fired. Review before deleting everything."
             confidence = "low"
             color = YELLOW
@@ -1737,7 +1728,7 @@ class ScanEngine:
             label = "Cleanup incomplete or reboot pending"
             detail = "Artifacts are still present, or the machine has not yet been rebooted and rescanned after cleanup."
         else:
-            label = "Local cleanup confidence is low"
+            label = "Cleanup still has work to do"
             detail = "This scan still sees malware-linked artifacts or persistence. Do not consider the machine clean yet."
 
         assessment = {
@@ -2948,7 +2939,7 @@ class ScanEngine:
     def scan_disabled_startup_items(self):
         self.log("DISABLED STARTUP REVIEW", "SECTION")
         if not WINREG_OK:
-            self.log("winreg unavailable â€” disabled startup review skipped", "WARN")
+            self.log("winreg unavailable - disabled startup review skipped", "WARN")
             return
 
         shortcut_rows = self._collect_shortcut_rows()
@@ -3285,7 +3276,7 @@ class ScanEngine:
             timeout=30,
         )
         if rows is None:
-            self.log("PowerShell unavailable â€” Defender review skipped", "WARN")
+            self.log("PowerShell unavailable - Defender review skipped", "WARN")
             return
         if not rows:
             return
@@ -3327,10 +3318,102 @@ class ScanEngine:
                 "Get-MpPreference",
             )
 
+    def scan_security_posture(self):
+        self.log("SECURITY CENTER REVIEW", "SECTION")
+
+        rows = self._run_powershell_json(
+            "try { "
+            "Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct -ErrorAction Stop | "
+            "Select-Object displayName,pathToSignedProductExe,productState | ConvertTo-Json -Compress "
+            "} catch { }",
+            timeout=30,
+        )
+        if rows is not None:
+            if not rows:
+                self._add(
+                    "MEDIUM",
+                    "Security Center Review",
+                    "Security Center did not report any antivirus product. Review protection state after cleanup.",
+                    "root/SecurityCenter2:AntiVirusProduct",
+                )
+            else:
+                for row in rows:
+                    try:
+                        display_name = str(row.get("displayName") or "").strip()
+                        exe_path = str(row.get("pathToSignedProductExe") or "").strip()
+                        product_state = str(row.get("productState") or "").strip()
+                        if exe_path and not (
+                            self._is_trusted_vendor_path(exe_path)
+                            or self._is_protected_system_path(exe_path)
+                            or self._has_trusted_file_metadata(exe_path)
+                        ):
+                            self._add(
+                                "MEDIUM",
+                                "Security Center Review",
+                                f"Security Center lists an antivirus product from an unusual path: {display_name or exe_path}",
+                                exe_path,
+                            )
+                        if not display_name and not exe_path and product_state:
+                            self._add(
+                                "MEDIUM",
+                                "Security Center Review",
+                                f"Security Center returned an incomplete antivirus product entry (state {product_state}).",
+                                "root/SecurityCenter2:AntiVirusProduct",
+                            )
+                    except Exception as exc:
+                        self.log(f"Security Center review warning: {exc}", "WARN")
+
+        if not WINREG_OK:
+            return
+
+        policy_roots = [
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows Defender", "HKLM"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection", "HKLM"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\Microsoft\Windows Defender\Spynet", "HKLM"),
+        ]
+        for hive, subkey, hive_name in policy_roots:
+            try:
+                key = winreg.OpenKey(hive, subkey)
+            except (FileNotFoundError, PermissionError):
+                continue
+
+            index = 0
+            while True:
+                try:
+                    value_name, value, _ = winreg.EnumValue(key, index)
+                except OSError:
+                    break
+                index += 1
+
+                lowered_name = str(value_name or "").strip().lower()
+                if lowered_name not in DEFENDER_POLICY_VALUE_NAMES:
+                    continue
+
+                suspicious = False
+                try:
+                    suspicious = int(value) not in {0}
+                except Exception:
+                    suspicious = str(value).strip().lower() not in {"", "0", "false"}
+
+                if not suspicious:
+                    continue
+
+                self._add(
+                    "MEDIUM",
+                    "Defender Policy Review",
+                    f"Windows Defender policy override requires review: {hive_name}\\{subkey} [{value_name}] = {value}",
+                    f"{hive_name}\\{subkey}",
+                )
+
+            try:
+                winreg.CloseKey(key)
+            except Exception:
+                pass
+
     def scan_installed_programs(self):
         self.log("INSTALLED PROGRAM REVIEW", "SECTION")
         if not WINREG_OK:
-            self.log("winreg unavailable — installed program review skipped", "WARN")
+            self.log("winreg unavailable - installed program review skipped", "WARN")
             return
 
         uninstall_roots = [
@@ -3460,7 +3543,7 @@ class ScanEngine:
             timeout=45,
         )
         if rows is None:
-            self.log("PowerShell unavailable â€” firewall review skipped", "WARN")
+            self.log("PowerShell unavailable - firewall review skipped", "WARN")
             return
 
         for row in rows:
@@ -4199,7 +4282,7 @@ class ScanEngine:
             except Exception:
                 pass
 
-    # ── Remediation ─────────────────────────────────────────────────────────
+    # Remediation helpers
 
     def _kill_pid(self, pid):
         if pid is None:
@@ -4573,6 +4656,7 @@ class ScanEngine:
         self.scan_registry()
         self.scan_system_tampering()
         self.scan_defender_posture()
+        self.scan_security_posture()
         self.scan_firewall_rules()
         self.scan_installed_programs()
         self.scan_browser_extensions()
@@ -4624,7 +4708,7 @@ class ScanEngine:
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         crit = sum(1 for t in self.threats if t.severity == "CRITICAL")
         high = sum(1 for t in self.threats if t.severity == "HIGH")
-        recovery = self.latest_recovery_summary()
+        recovery = self.get_latest_recovery_summary()
         summary = self.last_summary or self.summarize_threats()
         cleanup = self.cleanup_assessment or self.assess_cleanup_state()
         lines = [
@@ -4704,9 +4788,7 @@ class ScanEngine:
         return sanitize_for_display("\n".join(lines))
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  GUI
-# ═══════════════════════════════════════════════════════════════════════════════
+# GUI
 
 BG      = "#0b0b0b"
 BG2     = "#111111"
@@ -5037,7 +5119,7 @@ class App(tk.Tk):
 
     def _load_recovery_summary(self):
         scanner = ScanEngine(lambda *_: None, lambda *_: None)
-        return scanner.latest_recovery_summary()
+        return scanner.get_latest_recovery_summary()
 
     def _update_revert_button(self):
         summary = self._load_recovery_summary()
@@ -5348,12 +5430,11 @@ class App(tk.Tk):
         self._log_txt.configure(state="disabled")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  ENTRY POINT
-# ═══════════════════════════════════════════════════════════════════════════════
+# Entry point
 
 if __name__ == "__main__":
     if sys.platform == "win32":
         elevate_if_needed()
     app = App()
     app.mainloop()
+

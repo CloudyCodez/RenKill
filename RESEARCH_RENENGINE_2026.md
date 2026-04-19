@@ -1,8 +1,8 @@
-# RenEngine / "RenLoader" Research Notes
+# RenEngine / "RenLoader" Notes
 
 Last updated: 2026-04-18
 
-## Bottom line
+## Snapshot
 
 What victims are calling "RenLoader" or the "Ren'Py `Instaler.exe` virus" matches current reporting on the `RenEngine Loader` campaign. The packaging in your screenshot is consistent with the Ren'Py launcher abuse described by Cyderes and Kaspersky: a small archive containing `Instaler.exe` plus `data`, `lib`, and `renpy` folders, with the real malicious logic hidden in `archive.rpa` and `script.rpyc`.
 
@@ -13,9 +13,9 @@ What victims are calling "RenLoader" or the "Ren'Py `Instaler.exe` virus" matche
 - Stage 3: Establish persistence using `broker_crypt_v4_i386` directories and dropped loader files.
 - Final payload: usually ACR Stealer, but Cyderes also observed Rhadamanthys, AsyncRAT, and XWorm in similar chains.
 
-## Additional stage files seen in reporting
+## Extra Stage Files Seen In Reporting
 
-Kaspersky's February 11, 2026 write-up adds another useful layer for defenders. In one infection path, the malicious "game" unpacked a hidden `.temp` directory containing:
+Kaspersky's February 11, 2026 write-up adds another useful layer. In one infection path, the malicious "game" unpacked a hidden `.temp` directory containing:
 
 - `DKsyVGUJ.exe`
 - `borlndmm.dll`
@@ -30,20 +30,20 @@ Kaspersky also observed later-stage files and modules including:
 - `Zt5qwYUCFL.txt`
 - `W8CPbGQI.exe`
 
-Those names are not all globally unique on every system, so they are strongest when found in `%TEMP%`, hidden `.temp` folders, or alongside the RenEngine/HijackLoader chain.
+Those names are not all globally unique on every system. They matter most when they show up in `%TEMP%`, hidden `.temp` folders, or beside the rest of the RenEngine/HijackLoader chain.
 
-## Variant notes and filename churn
+## Variant Notes And Filename Churn
 
 - Kaspersky's February 23, 2026 update says the same loader family has been active since at least March 2025 and has shifted payloads from Lumma to ACR, with Vidar also seen in some chains.
 - Cyderes also reported new HijackLoader anti-analysis modules named `ANTIVMGPU`, `ANTIVMHYPERVISORNAMES`, and `ANTIVMMACS`.
 - AhnLab and Microsoft reporting around `Amatera` suggests defenders should expect overlapping payload naming, MaaS reuse, and quick filename rotation.
-- Practical takeaway: exact names are still useful, but RenKill should also score on structure and chain behavior:
+- Exact names still help, but the stronger long-term signal is structure and chain behavior:
   - Ren'Py-style `data/lib/renpy` launcher bundles
   - paired launcher `.exe` plus `.py` / `.pyc`
   - user-writable staging directories with side-loading style `.exe` + `.dll` + odd data files
   - persistence and post-launch stealer behavior
 
-## FRST patterns showing up in Reddit cleanup threads
+## FRST Patterns Showing Up In Reddit Cleanup Threads
 
 Based on April 18, 2026 Reddit cleanup threads and the FRST lines victims shared, helpers are now seeing a persistence shape that is less dependent on fixed filenames and more dependent on where and how the payload is launched:
 
@@ -61,11 +61,11 @@ Important caveat: the `Shenzhen iMyFone Technology Co., Ltd` string is not proof
 - random or throwaway launcher naming
 - `.asar` payload handoff or other loader-style arguments
 
-That combination is strong enough that RenKill should score on the structure even if the executable names rotate.
+That combination is strong enough to score on structure even if the executable names rotate.
 
-## What FRST.txt and Addition.txt are actually showing
+## What FRST.txt And Addition.txt Actually Show
 
-The BleepingComputer FRST tutorial is useful because it explains that `FRST.txt` and `Addition.txt` split the machine state into two different kinds of evidence:
+The BleepingComputer FRST tutorial is useful here because `FRST.txt` and `Addition.txt` split the machine state into two different kinds of evidence:
 
 - `FRST.txt` is the main scan. It focuses on processes, registry autoruns, scheduled tasks, services/drivers, internet settings, recent file creation/modification, and signature context.
 - `Addition.txt` is the companion scan. It adds accounts, Security Center state, installed programs, shortcuts and WMI, loaded modules, hosts content, network state, disabled startup items, firewall rules, event log errors, and restore-point/device-manager context.
@@ -75,9 +75,9 @@ For this campaign, the current Reddit cleanup threads show why both matter:
 - `FRST.txt` often exposes the autorun or scheduled-task persistence.
 - `Addition.txt` often exposes the startup shortcut, WMI, browser-extension, disabled-startup, Defender, firewall, and software-install context that explains how the infection survives or what else it brought with it.
 
-## How helpers are actually fixing these cases
+## How Helpers Are Fixing These Cases
 
-Across the April 2026 Reddit threads, the helper workflow is remarkably consistent:
+Across the April 2026 Reddit threads, the helper workflow is pretty consistent:
 
 1. Instruct the victim to disconnect and change passwords from a clean device.
 2. Run `FRST.txt` + `Addition.txt`.
@@ -99,23 +99,23 @@ The common themes in those fixes are:
 - clear temp/cache with `EmptyTemp:`
 - reboot and re-scan
 
-## Important FRST safety details that matter for RenKill
+## FRST Safety Details That Matter For RenKill
 
 - FRST scan mode is diagnostic; the danger comes from the `Fix` step.
 - FRST maintains backups and quarantine for many fix actions, but not every action is equally reversible.
 - The BleepingComputer tutorial explicitly notes that `EmptyTemp:` permanently deletes temporary data and executes after the other fix actions, usually with a reboot.
 - FRST can process startup items, scheduled tasks, WMI, firewall rules, and registry values directly from copied log lines or directives, which is why helpers can make very targeted fixes quickly.
 
-For RenKill, the practical lesson is:
+For RenKill, the lesson is pretty simple:
 
 - prefer bounded, typed remediation for files, tasks, shortcuts, registry values, exclusions, and firewall entries
 - preserve undo where possible
 - treat temp/session wipes as separate high-impact actions
 - rely on re-scan confidence instead of assuming the first clean attempt was enough
 
-## Current fix themes seen in Instaler / social-hijack threads
+## Current Fix Themes In Instaler / Social-Hijack Threads
 
-The Reddit and FRST-assisted cases are not just "remove one EXE" infections. The cleanup advice repeatedly includes:
+The Reddit and FRST-assisted cases are not just "remove one EXE" infections. The cleanup advice keeps circling back to:
 
 - Discord account recovery and session revocation
 - browser password rotation and sync review
@@ -128,9 +128,9 @@ The Reddit and FRST-assisted cases are not just "remove one EXE" infections. The
 
 In other words, the "Discord/Instagram/social hijack" symptom is being treated as a full infostealer incident, not just a local file infection.
 
-## High-confidence artifacts for RenKill to hunt
+## High-Confidence Artifacts To Hunt
 
-### Initial bundle
+### Initial Bundle
 
 - `Instaler.exe`
 - `archive.rpa`
@@ -138,7 +138,7 @@ In other words, the "Discord/Instagram/social hijack" symptom is being treated a
 - Ren'Py-style folder trio: `data`, `lib`, `renpy`
 - Temp `.key` files used to decode the next stage
 
-### Persistence-stage artifacts
+### Persistence-Stage Artifacts
 
 - `%ProgramData%\broker_crypt_v4_i386\`
 - `%ProgramData%\broker_crypt_v4_i386\d3dx9_43.dll`
@@ -149,31 +149,31 @@ In other words, the "Discord/Instagram/social hijack" symptom is being treated a
 - `%AppData%\Local\ZoneInd.exe`
 - Desktop `.lnk` shortcuts pointing at the above persistence chain
 
-### Exact sample hashes from Cyderes
+### Exact Sample Hashes From Cyderes
 
 - ZIP package SHA256: `9e3b296339e25b1bae1f9d028a17f030dcf2ab25ad46221b37731ea4fdfde057`
 - `Instaler.exe` SHA256: `7123e1514b939b165985560057fe3c761440a9fff9783a3b84e861fd2888d4ab`
 - `d3dx9_43.dll` SHA256: `326ec5aeeafc4c31c234146dc604a849f20f1445e2f973466682cb33889b4e4c`
 - `VSDebugScriptAgent170.dll` SHA256: `db4ccd0e8f03c6d282726bfb4ee9aa15aa41e7a5edcb49e13fbd0001452cdfa2`
 
-## Why victims lose Discord even with 2FA
+## Why Victims Lose Discord Even With 2FA
 
 The payload families in this ecosystem steal browser credentials, cookies, auth tokens, wallet data, and session material. That means password changes alone are not enough. Session revocation is mandatory because stolen cookies can preserve access after 2FA.
 
-## Notable behavioral signs
+## Notable Behavioral Signs
 
 - "Game" installer does little or nothing visible.
 - Browser sessions or Discord sessions get hijacked shortly after execution.
 - Discord account starts sending spam, often fake MrBeast crypto/casino messages.
 - Temp, AppData, and ProgramData receive randomly named executables or the `broker_crypt_v4_i386` persistence set.
 
-## Recovery implications
+## Recovery Implications
 
 - File cleanup helps stop reinfection and persistence.
 - It does **not** undo stolen credentials, stolen cookies, or wallet compromise.
 - Incident response still needs password resets from a clean device, session revocation, Discord authorized-app review, and possibly a full OS reinstall if trust is lost.
 
-## Concrete remediation for already-infected users
+## Concrete Remediation For Already-Infected Users
 
 - Disconnect the infected PC from sensitive accounts until cleanup is complete.
 - From a separate clean device, change passwords for any accounts saved in the browser.
