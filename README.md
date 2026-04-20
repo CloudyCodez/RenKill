@@ -1,4 +1,4 @@
-# RenKill v1.4.4
+# RenKill v1.4.9
 
 Windows cleanup tool for the fake Ren'Py `Instaler.exe` / RenEngine loader chain.
 It focuses on the stuff this infection tends to leave behind: staged payloads,
@@ -84,6 +84,7 @@ Requirements: Python 3.10+ in `PATH`.
 
 - See [`RESEARCH_RENENGINE_2026.md`](./RESEARCH_RENENGINE_2026.md) for campaign notes,
   cleanup patterns, and the sources behind the current detection coverage.
+- See [`ROADMAP_1_5_0.md`](./ROADMAP_1_5_0.md) for the next release target and the FRST-style parity work planned for it.
 
 ---
 

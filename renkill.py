@@ -36,7 +36,7 @@ except ImportError:
 
 # IOC definitions
 
-VERSION = "1.4.4"
+VERSION = "1.4.9"
 TOOL_NAME = "RenKill"
 
 MALICIOUS_FILENAMES = {
@@ -606,6 +606,7 @@ STRONG_CAMPAIGN_MARKERS = {
 
 MANUAL_REVIEW_CATEGORIES = {
     "Browser Extension Review",
+    "Browser Policy Review",
     "Defender Protection Review",
     "Defender Policy Review",
     "Firewall Rule Review",
@@ -613,7 +614,9 @@ MANUAL_REVIEW_CATEGORIES = {
     "Installed Program Review",
     "Proxy Configuration Review",
     "Security Center Review",
+    "Security Event Review",
     "Source Lure Artifact",
+    "Startup Correlation Review",
     "Suspicious Loader Stage Directory",
     "Suspicious RenPy Loader Bundle",
     "WinHTTP Proxy Review",
@@ -630,6 +633,7 @@ COMMON_USERLAND_EXEC_MARKERS = (
     "\\downloads\\",
 )
 TEMP_STAGE_DIR_REGEX = re.compile(r"\\(?:appdata\\local\\)?temp\\tmp-\d+-[a-z0-9_-]{6,}\\", re.IGNORECASE)
+DRIVE_PATH_REGEX = re.compile(r"[A-Za-z]:\\[^\"'\r\n]+", re.IGNORECASE)
 GODOT_APP_USERDATA_MARKER = "\\appdata\\roaming\\godot\\app_userdata\\"
 ASAR_ARGUMENT_MARKERS = ("node_modules.asar", ".asar")
 IMYFONE_COMPANY_TOKENS = (
@@ -699,6 +703,31 @@ FRST_REVIEW_PROGRAM_NAMES = {
     "urban vpn",
     "urban vpn proxy",
 }
+
+BROWSER_POLICY_ROOTS = (
+    ("Chrome", r"SOFTWARE\Policies\Google\Chrome"),
+    ("Edge", r"SOFTWARE\Policies\Microsoft\Edge"),
+    ("Brave", r"SOFTWARE\Policies\BraveSoftware\Brave"),
+)
+
+BROWSER_POLICY_SUSPICIOUS_VALUE_TOKENS = (
+    "extensioninstallforcelist",
+    "extensionsettings",
+    "homepage",
+    "homepagelocation",
+    "proxy",
+    "restoreonstartupurls",
+    "restoreonstartup",
+    "webappinstallforcelist",
+)
+
+SECURITY_EVENT_LOG_SPECS = (
+    ("Microsoft-Windows-Windows Defender/Operational", 7, "Defender", ()),
+    ("Microsoft-Windows-CodeIntegrity/Operational", 7, "CodeIntegrity", ()),
+    ("Microsoft-Windows-SecurityCenter/Operational", 7, "SecurityCenter", ()),
+    ("Microsoft-Windows-Windows Firewall With Advanced Security/Firewall", 7, "Firewall", ()),
+    ("System", 3, "ServiceControlManager", ("Service Control Manager",)),
+)
 DEFENDER_POLICY_VALUE_NAMES = {
     "disableantispyware",
     "disablerealtimemonitoring",
@@ -778,6 +807,7 @@ PERSISTENCE_THREAT_CATEGORIES = {
     "Persistence Artifact",
     "Persistence Staging Directory",
     "Registry Persistence",
+    "Startup Correlation Review",
     "Startup Persistence Artifact",
     "WMI Persistence",
 }
@@ -996,6 +1026,9 @@ class ScanEngine:
         self._module_scan_pid_targets = set()
         self._shortcut_scan_rows = None
         self._scheduled_task_rows = None
+        self._autorun_rows = None
+        self._disabled_startup_rows = None
+        self._wmi_rows = None
         self._reset_recovery_state()
 
     def _add(self, severity, category, description, path=None, action=None):
@@ -1566,21 +1599,115 @@ class ScanEngine:
             "INFO",
         )
 
-    def summarize_threats(self):
-        if not self.threats:
-            self.last_summary = {
-                "label": "No threats detected",
-                "detail": "No malware-like artifacts matched the current RenKill rules.",
-                "confidence": "clean",
-                "color": GREEN,
-            }
-            return self.last_summary
+    @staticmethod
+    def _report_group_name(category):
+        startup_categories = {
+            "Disabled Startup Artifact",
+            "Malicious Scheduled Task",
+            "Malicious Shortcut",
+            "Registry Persistence",
+            "Startup Correlation Review",
+            "Startup Persistence Artifact",
+            "WMI Persistence",
+        }
+        process_categories = {
+            "Active C2 Connection",
+            "Campaign IOC Process",
+            "Execution Trace Anomaly",
+            "Injected/Sideloaded DLL",
+            "Malicious Child Process",
+            "Paranoid Masquerade Process",
+            "Paranoid Networked Process",
+            "Paranoid Script Host",
+            "Process in Temp",
+            "Suspicious Process",
+            "Suspicious Userland Process",
+        }
+        posture_categories = {
+            "Browser Extension Review",
+            "Browser Policy Review",
+            "Defender Exclusion",
+            "Defender Policy Review",
+            "Defender Protection Review",
+            "Firewall Rule Review",
+            "Hosts Tampering Review",
+            "Installed Program Review",
+            "Proxy Configuration Review",
+            "Security Center Review",
+            "Security Event Review",
+            "WinHTTP Proxy Review",
+        }
+        filesystem_categories = {
+            "Exact IOC Hash",
+            "HijackLoader Stage Artifact",
+            "HijackLoader Stage Directory",
+            "Loader Container DLL",
+            "Malicious Archive/Script",
+            "Malicious File",
+            "Persistence Artifact",
+            "Persistence Staging Directory",
+            "RenEngine Bundle",
+            "Source Lure Artifact",
+            "Suspicious Loader Stage Directory",
+            "Suspicious RenPy Loader Bundle",
+        }
 
+        if category in startup_categories:
+            return "Startup / Persistence"
+        if category in process_categories:
+            return "Process / Memory / Network"
+        if category in filesystem_categories:
+            return "Files / Staging"
+        if category in posture_categories:
+            return "System Posture / Policy"
+        return "Other Findings"
+
+    def assess_account_exposure(self):
+        exposure_count = len(self.exposure_notes)
+        summary = self.last_summary or self.summarize_threats()
+        profile = self._threat_confidence_profile()
+
+        score = 8
+        if summary["confidence"] in {"high", "medium"}:
+            score += 24
+        if profile["generic_stealer_hits"] >= 2:
+            score += 26
+        elif profile["generic_stealer_hits"] >= 1:
+            score += 14
+        if "Active C2 Connection" in profile["categories"]:
+            score += 16
+        if "Defender Exclusion" in profile["categories"]:
+            score += 8
+        if "Browser Extension Review" in profile["categories"] or "Browser Policy Review" in profile["categories"]:
+            score += 8
+        if exposure_count:
+            score += min(32, exposure_count * 10)
+
+        score = self._clamp_score(score, lower=0, upper=98)
+
+        if score >= 70:
+            label = "High account/session compromise risk"
+            detail = "Browser or app session material may already be exposed. Treat this like a full account-compromise incident from a clean device."
+            color = RED
+        elif score >= 40:
+            label = "Moderate account/session compromise risk"
+            detail = "Local signs point to possible session or credential exposure. Review accounts, revoke sessions, and rotate sensitive credentials from a clean device."
+            color = AMBER
+        else:
+            label = "Low confirmed account/session compromise risk"
+            detail = "This scan did not surface strong signs of account-session theft, but clean-device review is still smart if the user ran the malware."
+            color = YELLOW
+
+        return {
+            "score": score,
+            "label": label,
+            "detail": detail,
+            "color": color,
+        }
+
+    def _threat_confidence_profile(self):
         categories = [t.category for t in self.threats]
         text_blob = " ".join(f"{t.category} {t.description} {t.path}".lower() for t in self.threats)
-
-        renloader_hits = 0
-        generic_stealer_hits = 0
 
         renloader_markers = (
             "instaler", "lnstaier", "renpy", "archive.rpa", "script.rpyc",
@@ -1594,8 +1721,8 @@ class ScanEngine:
             "active c2 connection", "malicious scheduled task", "registry persistence"
         )
 
-        renloader_hits += sum(1 for marker in renloader_markers if marker in text_blob)
-        generic_stealer_hits += sum(1 for marker in generic_markers if marker in text_blob)
+        renloader_hits = sum(1 for marker in renloader_markers if marker in text_blob)
+        generic_stealer_hits = sum(1 for marker in generic_markers if marker in text_blob)
 
         renloader_hits += sum(1 for cat in categories if cat in {
             "AppInit Persistence",
@@ -1632,8 +1759,31 @@ class ScanEngine:
             "Startup Persistence Artifact",
         })
 
+        startup_layers = sum(1 for cat in categories if cat in {
+            "Startup Correlation Review",
+            "Disabled Startup Artifact",
+            "Malicious Scheduled Task",
+            "Malicious Shortcut",
+            "Registry Persistence",
+            "WMI Persistence",
+        })
+        persistence_layers = sum(1 for cat in categories if cat in PERSISTENCE_THREAT_CATEGORIES)
+        review_layers = sum(1 for cat in categories if cat in MANUAL_REVIEW_CATEGORIES)
+
         if self._has_renloader_corroboration():
             renloader_hits += 2
+        if "Startup Correlation Review" in categories:
+            renloader_hits += 2
+            generic_stealer_hits += 1
+        if startup_layers >= 3:
+            renloader_hits += 2
+            generic_stealer_hits += 1
+        elif startup_layers >= 2:
+            renloader_hits += 1
+        if persistence_layers >= 4:
+            renloader_hits += 2
+        elif persistence_layers >= 2:
+            renloader_hits += 1
 
         suspicious_only = all(cat in {
             "Suspicious Userland Process",
@@ -1644,14 +1794,46 @@ class ScanEngine:
             "Process in Temp",
         } for cat in categories)
 
-        if renloader_hits >= 4:
+        return {
+            "categories": categories,
+            "renloader_hits": renloader_hits,
+            "generic_stealer_hits": generic_stealer_hits,
+            "startup_layers": startup_layers,
+            "persistence_layers": persistence_layers,
+            "review_layers": review_layers,
+            "suspicious_only": suspicious_only,
+        }
+
+    def summarize_threats(self):
+        if not self.threats:
+            self.last_summary = {
+                "label": "No threats detected",
+                "detail": "No malware-like artifacts matched the current RenKill rules.",
+                "confidence": "clean",
+                "color": GREEN,
+            }
+            return self.last_summary
+
+        profile = self._threat_confidence_profile()
+        renloader_hits = profile["renloader_hits"]
+        generic_stealer_hits = profile["generic_stealer_hits"]
+        suspicious_only = profile["suspicious_only"]
+        startup_layers = profile["startup_layers"]
+
+        if renloader_hits >= 6:
             label = "Probably RenLoader / RenEngine"
-            detail = "Multiple campaign-specific artifacts matched the RenEngine/HijackLoader chain."
+            if startup_layers >= 3:
+                detail = "Multiple campaign-specific artifacts matched, with layered startup persistence consistent with the RenEngine/HijackLoader chain."
+            else:
+                detail = "Multiple campaign-specific artifacts matched the RenEngine/HijackLoader chain."
             confidence = "high"
             color = RED
-        elif renloader_hits >= 2:
+        elif renloader_hits >= 3:
             label = "Possible RenLoader / RenEngine"
-            detail = "Some campaign-specific artifacts matched, but the chain is not fully confirmed."
+            if startup_layers >= 2:
+                detail = "Some campaign-specific artifacts matched, and the startup state shows layered persistence that needs review."
+            else:
+                detail = "Some campaign-specific artifacts matched, but the chain is not fully confirmed."
             confidence = "medium"
             color = AMBER
         elif generic_stealer_hits >= 2:
@@ -1675,6 +1857,9 @@ class ScanEngine:
             "detail": detail,
             "confidence": confidence,
             "color": color,
+            "renloader_hits": renloader_hits,
+            "generic_hits": generic_stealer_hits,
+            "startup_layers": startup_layers,
         }
         return self.last_summary
 
@@ -1682,6 +1867,11 @@ class ScanEngine:
         categories = {t.category for t in self.threats}
         critical = sum(1 for t in self.threats if t.severity == "CRITICAL")
         high = sum(1 for t in self.threats if t.severity == "HIGH")
+        profile = self._threat_confidence_profile()
+        renloader_hits = profile["renloader_hits"]
+        startup_layers = profile["startup_layers"]
+        persistence_layers = profile["persistence_layers"]
+        review_layers = profile["review_layers"]
 
         if not self.threats:
             if self.post_cleanup_scan and self.rebooted_after_cleanup:
@@ -1719,6 +1909,18 @@ class ScanEngine:
             score -= 8
         if {"Active C2 Connection", "Defender Exclusion", "Malicious Service", "WMI Persistence"} & categories:
             score -= 14
+        if startup_layers >= 3:
+            score -= 16
+        elif startup_layers >= 2:
+            score -= 8
+        if persistence_layers >= 4:
+            score -= 10
+        if renloader_hits >= 6:
+            score -= 10
+        elif renloader_hits >= 3:
+            score -= 5
+        if review_layers >= 4:
+            score -= 4
         if self.post_cleanup_scan and self.rebooted_after_cleanup:
             score -= 12
             label = "Artifacts remain after reboot and rescan"
@@ -2477,6 +2679,173 @@ class ScanEngine:
         self._scheduled_task_rows = rows or []
         return self._scheduled_task_rows
 
+    def _collect_run_autorun_rows(self):
+        if self._autorun_rows is not None:
+            return self._autorun_rows
+
+        rows = []
+        if not WINREG_OK:
+            self._autorun_rows = rows
+            return rows
+
+        locations = [
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", "HKCU"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce", "HKCU"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", "HKLM"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce", "HKLM"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run", "HKLM"),
+        ]
+
+        for hive, subkey, hive_name in locations:
+            try:
+                key = winreg.OpenKey(hive, subkey)
+            except (FileNotFoundError, PermissionError):
+                continue
+
+            index = 0
+            while True:
+                try:
+                    value_name, value, _ = winreg.EnumValue(key, index)
+                except OSError:
+                    break
+                index += 1
+                rows.append(
+                    {
+                        "HiveName": hive_name,
+                        "Subkey": subkey,
+                        "ValueName": str(value_name or ""),
+                        "Value": str(value or ""),
+                    }
+                )
+
+            try:
+                winreg.CloseKey(key)
+            except Exception:
+                pass
+
+        self._autorun_rows = rows
+        return rows
+
+    def _collect_disabled_startup_rows(self):
+        if self._disabled_startup_rows is not None:
+            return self._disabled_startup_rows
+
+        rows = []
+        if not WINREG_OK:
+            self._disabled_startup_rows = rows
+            return rows
+
+        shortcut_rows = {}
+        for row in self._collect_shortcut_rows():
+            shortcut_path = self._normalized_path(row.get("Path"))
+            if shortcut_path:
+                shortcut_rows[shortcut_path] = row
+
+        actual_run_keys = {
+            "Run": [
+                (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", "HKCU"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", "HKLM"),
+            ],
+            "Run32": [
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run", "HKLM"),
+            ],
+        }
+
+        startupapproved_roots = [
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved", "HKCU"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved", "HKLM"),
+        ]
+
+        for hive, root, hive_name in startupapproved_roots:
+            for child_name in ("Run", "Run32", "StartupFolder"):
+                subkey = root + "\\" + child_name
+                try:
+                    key = winreg.OpenKey(hive, subkey)
+                except (FileNotFoundError, PermissionError):
+                    continue
+
+                index = 0
+                while True:
+                    try:
+                        item_name, binary_value, _ = winreg.EnumValue(key, index)
+                    except OSError:
+                        break
+                    index += 1
+
+                    if not self._is_disabled_startupapproved_value(binary_value):
+                        continue
+
+                    if child_name in actual_run_keys:
+                        for run_hive, run_key, run_hive_name in actual_run_keys[child_name]:
+                            try:
+                                run_handle = winreg.OpenKey(run_hive, run_key)
+                                run_value = str(winreg.QueryValueEx(run_handle, item_name)[0] or "")
+                                winreg.CloseKey(run_handle)
+                            except (FileNotFoundError, PermissionError, OSError):
+                                continue
+
+                            rows.append(
+                                {
+                                    "Kind": "autorun",
+                                    "Path": f"{run_hive_name}\\{run_key}[{item_name}]",
+                                    "Command": run_value,
+                                    "SourceLabel": f"disabled-startup:{child_name.lower()}",
+                                    "ApprovalKey": f"{hive_name}\\{subkey}[{item_name}]",
+                                }
+                            )
+                            break
+                        continue
+
+                    for startup_root in self._startup_shortcut_roots():
+                        shortcut_path = self._normalized_path(os.path.join(startup_root, item_name))
+                        row = shortcut_rows.get(shortcut_path)
+                        if not row:
+                            continue
+                        rows.append(
+                            {
+                                "Kind": "shortcut",
+                                "Path": str(row.get("Path") or ""),
+                                "Command": str(row.get("TargetPath") or ""),
+                                "Arguments": str(row.get("Arguments") or ""),
+                                "WorkingDirectory": str(row.get("WorkingDirectory") or ""),
+                                "SourceLabel": "disabled-startup:startupfolder",
+                                "ApprovalKey": f"{hive_name}\\{subkey}[{item_name}]",
+                            }
+                        )
+                        break
+
+                try:
+                    winreg.CloseKey(key)
+                except Exception:
+                    pass
+
+        self._disabled_startup_rows = rows
+        return rows
+
+    def _collect_wmi_persistence_rows(self):
+        if self._wmi_rows is not None:
+            return self._wmi_rows
+
+        rows = []
+        queries = (
+            ("__EventFilter", "Get-WmiObject -Namespace root\\subscription -Class __EventFilter | Select-Object Name,Query,EventNamespace | ConvertTo-Json -Compress"),
+            ("CommandLineEventConsumer", "Get-WmiObject -Namespace root\\subscription -Class CommandLineEventConsumer | Select-Object Name,CommandLineTemplate,ExecutablePath | ConvertTo-Json -Compress"),
+            ("ActiveScriptEventConsumer", "Get-WmiObject -Namespace root\\subscription -Class ActiveScriptEventConsumer | Select-Object Name,ScriptingEngine,ScriptText | ConvertTo-Json -Compress"),
+        )
+
+        for class_name, script in queries:
+            query_rows = self._run_powershell_json(script, timeout=45)
+            if query_rows is None:
+                self._wmi_rows = []
+                return self._wmi_rows
+            for row in query_rows:
+                item = {"ClassName": class_name}
+                item.update(row)
+                rows.append(item)
+
+        self._wmi_rows = rows
+        return rows
+
     def _evaluate_scheduled_task_entry(self, task_name, task_path, execute, arguments="", working_directory=""):
         task_name = str(task_name or "")
         task_path = str(task_path or "")
@@ -2527,6 +2896,149 @@ class ScanEngine:
                 )
 
         return None
+
+    def _startup_signal_for_command(self, command_text, arguments="", working_directory=""):
+        raw = self._normalize_cmdline(command_text)
+        arguments = self._normalize_cmdline(arguments)
+        working_directory = str(working_directory or "")
+        blob = " ".join(part for part in (raw, arguments, working_directory) if part)
+        target = self._extract_command_target(raw)
+        normalized_target = self._normalized_path(target)
+
+        if not blob or self._is_local_tool_context(blob, target):
+            return None
+
+        score = 0
+        reasons = []
+        if self._has_strong_campaign_context(blob):
+            score += 4
+            reasons.append("campaign markers")
+        if self._looks_like_temp_stage_launcher(normalized_target):
+            score += 3
+            reasons.append("temp-stage launcher")
+        if self._looks_like_godot_asar_task(target, arguments, working_directory):
+            score += 3
+            reasons.append("Godot app_userdata + asar payload")
+
+        if normalized_target and self._path_in_user_writable_exec_zone(normalized_target):
+            base = os.path.splitext(os.path.basename(normalized_target))[0]
+            if self._contains_marker(normalized_target, PROCESS_IOC_MARKERS):
+                score += 2
+                reasons.append("user-writable IOC path")
+            elif self._looks_random(base):
+                score += 2
+                reasons.append("random launcher in user-writable path")
+
+        if target:
+            target_name = os.path.basename(normalized_target).lower()
+            if self._is_safe_process_context(target_name, target, arguments, allow_metadata=True):
+                if score < 4:
+                    return None
+
+        if score <= 0:
+            return None
+
+        identity = normalized_target or blob.lower()
+        return {
+            "identity": identity,
+            "target": target or raw,
+            "score": score,
+            "reasons": reasons,
+        }
+
+    def scan_startup_correlations(self):
+        self.log("STARTUP CORRELATION REVIEW", "SECTION")
+
+        correlated = {}
+
+        for row in self._collect_shortcut_rows():
+            signal = self._startup_signal_for_command(
+                row.get("TargetPath"),
+                row.get("Arguments"),
+                row.get("WorkingDirectory"),
+            )
+            if not signal:
+                continue
+            bucket = correlated.setdefault(signal["identity"], {"score": 0, "sources": [], "target": signal["target"], "reasons": set()})
+            bucket["score"] = max(bucket["score"], signal["score"])
+            bucket["sources"].append(f"shortcut:{row.get('Path')}")
+            bucket["reasons"].update(signal["reasons"])
+
+        for row in self._collect_scheduled_task_rows():
+            signal = self._startup_signal_for_command(
+                row.get("Execute"),
+                row.get("Arguments"),
+                row.get("WorkingDirectory"),
+            )
+            if not signal:
+                continue
+            task_label = f"{row.get('TaskPath') or ''}{row.get('TaskName') or ''}"
+            bucket = correlated.setdefault(signal["identity"], {"score": 0, "sources": [], "target": signal["target"], "reasons": set()})
+            bucket["score"] = max(bucket["score"], signal["score"])
+            bucket["sources"].append(f"task:{task_label}")
+            bucket["reasons"].update(signal["reasons"])
+
+        for row in self._collect_run_autorun_rows():
+            signal = self._startup_signal_for_command(row.get("Value"))
+            if not signal:
+                continue
+            location = f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]"
+            bucket = correlated.setdefault(signal["identity"], {"score": 0, "sources": [], "target": signal["target"], "reasons": set()})
+            bucket["score"] = max(bucket["score"], signal["score"])
+            bucket["sources"].append(f"autorun:{location}")
+            bucket["reasons"].update(signal["reasons"])
+
+        for row in self._collect_disabled_startup_rows():
+            signal = self._startup_signal_for_command(
+                row.get("Command"),
+                row.get("Arguments"),
+                row.get("WorkingDirectory"),
+            )
+            if not signal:
+                continue
+            location = str(row.get("Path") or row.get("ApprovalKey") or "")
+            bucket = correlated.setdefault(signal["identity"], {"score": 0, "sources": [], "target": signal["target"], "reasons": set()})
+            bucket["score"] = max(bucket["score"], signal["score"] + 1)
+            bucket["sources"].append(f"{row.get('SourceLabel') or 'disabled-startup'}:{location}")
+            bucket["reasons"].update(signal["reasons"])
+            bucket["reasons"].add("disabled startup residue")
+
+        for row in self._collect_wmi_persistence_rows():
+            class_name = str(row.get("ClassName") or "")
+            if class_name != "CommandLineEventConsumer":
+                continue
+            command = str(row.get("CommandLineTemplate") or row.get("ExecutablePath") or "")
+            signal = self._startup_signal_for_command(command)
+            if not signal:
+                continue
+            name = str(row.get("Name") or class_name)
+            bucket = correlated.setdefault(signal["identity"], {"score": 0, "sources": [], "target": signal["target"], "reasons": set()})
+            bucket["score"] = max(bucket["score"], signal["score"] + 2)
+            bucket["sources"].append(f"wmi:{name}")
+            bucket["reasons"].update(signal["reasons"])
+            bucket["reasons"].add("WMI command consumer")
+
+        for bucket in correlated.values():
+            unique_sources = sorted(set(bucket["sources"]))
+            if len(unique_sources) < 2:
+                continue
+
+            severity = "HIGH" if len(unique_sources) >= 3 or bucket["score"] >= 4 else "MEDIUM"
+            if any(source.startswith("wmi:") for source in unique_sources) and len(unique_sources) >= 2:
+                severity = "HIGH"
+            source_kinds = []
+            for source in unique_sources:
+                kind = source.split(":", 1)[0]
+                if kind not in source_kinds:
+                    source_kinds.append(kind)
+            source_list = ", ".join(source_kinds[:4])
+            reason_text = ", ".join(sorted(bucket["reasons"])) if bucket["reasons"] else "repeated startup persistence"
+            self._add(
+                severity,
+                "Startup Correlation Review",
+                f"Suspicious startup target is reused across {len(unique_sources)} surfaces ({source_list}): {bucket['target']} [{reason_text}]",
+                bucket["target"],
+            )
 
     @staticmethod
     def _chromium_profile_dirs(root):
@@ -3483,6 +3995,151 @@ class ScanEngine:
                 winreg.CloseKey(root)
             except Exception:
                 pass
+
+    def _event_message_has_browser_policy_signal(self, policy_name, value_text):
+        policy_name = str(policy_name or "").strip().lower()
+        value_text = str(value_text or "").strip()
+        value_lower = value_text.lower()
+
+        if self._has_strong_campaign_context(policy_name, value_text):
+            return True
+        if self._is_local_tool_context(value_text):
+            return False
+        if any(token in policy_name for token in BROWSER_POLICY_SUSPICIOUS_VALUE_TOKENS):
+            if any(marker in value_lower for marker in SCRIPT_LURE_REMOTE_MARKERS):
+                return True
+            if any(token in value_lower for token in ("127.0.0.1", "localhost")):
+                return True
+            if self._path_in_user_writable_exec_zone(self._normalized_path(value_text)):
+                return True
+        return False
+
+    def scan_browser_policies(self):
+        self.log("BROWSER POLICY REVIEW", "SECTION")
+        if not WINREG_OK:
+            self.log("winreg unavailable - browser policy review skipped", "WARN")
+            return
+
+        policy_hives = (
+            (winreg.HKEY_LOCAL_MACHINE, "HKLM"),
+            (winreg.HKEY_CURRENT_USER, "HKCU"),
+        )
+
+        for browser_label, subkey in BROWSER_POLICY_ROOTS:
+            for hive, hive_name in policy_hives:
+                try:
+                    key = winreg.OpenKey(hive, subkey)
+                except (FileNotFoundError, PermissionError):
+                    continue
+
+                index = 0
+                while True:
+                    try:
+                        value_name, value, _ = winreg.EnumValue(key, index)
+                    except OSError:
+                        break
+                    index += 1
+
+                    value_text = value if isinstance(value, str) else json.dumps(value, default=str)
+                    if not self._event_message_has_browser_policy_signal(value_name, value_text):
+                        continue
+
+                    severity = "HIGH" if self._has_strong_campaign_context(value_name, value_text) else "MEDIUM"
+                    self._add(
+                        severity,
+                        "Browser Policy Review",
+                        f"{browser_label} policy requires review: {value_name} = {value_text}",
+                        f"{hive_name}\\{subkey}",
+                    )
+
+                try:
+                    winreg.CloseKey(key)
+                except Exception:
+                    pass
+
+    def _is_suspicious_security_event(self, source_label, message):
+        message = str(message or "").strip()
+        message_lower = message.lower()
+        if not message or self._is_local_tool_context(message):
+            return False
+        if self._has_strong_campaign_context(message):
+            return True
+        if TEMP_STAGE_DIR_REGEX.search(message_lower):
+            return True
+        if GODOT_APP_USERDATA_MARKER in message_lower and any(marker in message_lower for marker in ASAR_ARGUMENT_MARKERS):
+            return True
+        extracted_paths = [self._normalized_path(match.group(0).rstrip(" .,)")) for match in DRIVE_PATH_REGEX.finditer(message)]
+        userland_path_hit = any(
+            path and self._path_in_user_writable_exec_zone(path) and not self._is_local_tool_path(path)
+            for path in extracted_paths
+        )
+
+        if any(token in message_lower for token in ("127.0.0.1", "localhost")) and source_label in {"Defender", "Firewall", "SecurityCenter"}:
+            return True
+        if source_label == "CodeIntegrity" and (userland_path_hit or any(marker in message_lower for marker in USER_WRITABLE_DIR_MARKERS)):
+            return True
+        if source_label == "Defender" and userland_path_hit:
+            return True
+        if source_label == "Firewall" and (
+            userland_path_hit
+            or any(token in message_lower for token in ("allow", "allowed", "authorized")) and any(marker in message_lower for marker in USER_WRITABLE_DIR_MARKERS)
+        ):
+            return True
+        if source_label == "SecurityCenter" and (
+            userland_path_hit
+            or any(token in message_lower for token in ("disabled", "off", "not monitored", "snooze", "expired"))
+        ):
+            return True
+        if source_label == "ServiceControlManager" and userland_path_hit and any(
+            token in message_lower for token in ("service", "failed", "terminated", "error", "could not")
+        ):
+            return True
+        return False
+
+    def scan_security_events(self):
+        self.log("SECURITY EVENT REVIEW", "SECTION")
+        seen = set()
+        for log_name, days_back, source_label, provider_names in SECURITY_EVENT_LOG_SPECS:
+            provider_filter = ""
+            if provider_names:
+                quoted = ", ".join("'" + str(name).replace("'", "''") + "'" for name in provider_names)
+                provider_filter = f"; ProviderName=@({quoted})"
+            script = (
+                "try { "
+                f"$since = (Get-Date).AddDays(-{days_back}); "
+                f"Get-WinEvent -FilterHashtable @{{LogName='{log_name}'; StartTime=$since{provider_filter}}} -ErrorAction Stop | "
+                "Select-Object -First 40 TimeCreated, Id, ProviderName, Message | ConvertTo-Json -Compress "
+                "} catch { }"
+            )
+            rows = self._run_powershell_json(script, timeout=35)
+            if rows is None:
+                self.log(f"PowerShell unavailable - {source_label} event review skipped", "WARN")
+                return
+
+            for row in rows:
+                try:
+                    message = str(row.get("Message") or "").strip()
+                    if not self._is_suspicious_security_event(source_label, message):
+                        continue
+
+                    event_id = str(row.get("Id") or "")
+                    provider = str(row.get("ProviderName") or source_label)
+                    compact = " ".join(message.split())
+                    compact = compact[:220] + ("..." if len(compact) > 220 else "")
+                    fingerprint = (source_label, event_id, compact)
+                    if fingerprint in seen:
+                        continue
+                    seen.add(fingerprint)
+
+                    severity = "HIGH" if self._has_strong_campaign_context(message) else "MEDIUM"
+                    self._add(
+                        severity,
+                        "Security Event Review",
+                        f"{source_label} event requires review: {provider} [{event_id}] {compact}",
+                        log_name,
+                    )
+                except Exception as exc:
+                    self.log(f"{source_label} event review warning: {exc}", "WARN")
 
     def _evaluate_firewall_rule(self, rule_name, display_name, direction, program):
         normalized_program = self._normalized_path(program)
@@ -4643,6 +5300,9 @@ class ScanEngine:
         self._module_scan_pid_targets.clear()
         self._shortcut_scan_rows = None
         self._scheduled_task_rows = None
+        self._autorun_rows = None
+        self._disabled_startup_rows = None
+        self._wmi_rows = None
         self.scan_network()
         self.scan_processes()
         self.scan_process_modules()
@@ -4654,9 +5314,12 @@ class ScanEngine:
         self.scan_wmi_persistence()
         self.scan_scheduled_tasks()
         self.scan_registry()
+        self.scan_startup_correlations()
         self.scan_system_tampering()
         self.scan_defender_posture()
         self.scan_security_posture()
+        self.scan_browser_policies()
+        self.scan_security_events()
         self.scan_firewall_rules()
         self.scan_installed_programs()
         self.scan_browser_extensions()
@@ -4666,14 +5329,17 @@ class ScanEngine:
         summary = self.summarize_threats()
         cleanup = self.assess_cleanup_state()
         self.scan_exposure_surface()
+        exposure = self.assess_account_exposure()
         self.log(
-            f"── SCAN COMPLETE  |  {len(self.threats)} threat(s) found  —  {crit} CRITICAL  {high} HIGH ──",
+            f"-- SCAN COMPLETE  |  {len(self.threats)} threat(s) found  -  {crit} CRITICAL  {high} HIGH --",
             "SECTION"
         )
         self.log(f"Summary verdict   : {summary['label']}", "CRITICAL" if summary["confidence"] == "high" else "WARN" if summary["confidence"] == "medium" else "INFO")
         self.log(f"Assessment        : {summary['detail']}", "INFO")
-        self.log(f"Local confidence  : {cleanup['score']}%  —  {cleanup['label']}", "WARN" if cleanup["score"] < 90 else "INFO")
+        self.log(f"Local confidence  : {cleanup['score']}%  -  {cleanup['label']}", "WARN" if cleanup["score"] < 90 else "INFO")
         self.log(f"Confidence note   : {cleanup['detail']}", "INFO")
+        self.log(f"Account risk      : {exposure['score']}%  -  {exposure['label']}", "CRITICAL" if exposure["score"] >= 70 else "WARN")
+        self.log(f"Account note      : {exposure['detail']}", "INFO")
 
     def run_remediation(self):
         self._recovery_session = None
@@ -4711,11 +5377,17 @@ class ScanEngine:
         recovery = self.get_latest_recovery_summary()
         summary = self.last_summary or self.summarize_threats()
         cleanup = self.cleanup_assessment or self.assess_cleanup_state()
+        exposure = self.assess_account_exposure()
+
+        grouped = {}
+        for threat in self.threats:
+            group_name = self._report_group_name(threat.category)
+            grouped.setdefault(group_name, []).append(threat)
+
         lines = [
-            "╔══════════════════════════════════════════════════════════════╗",
-            "║          RENKILL — THREAT REPORT                             ║",
-            "║          MADE WITH LOVE                                      ║",
-            "╚══════════════════════════════════════════════════════════════╝",
+            "=" * 64,
+            "RENKILL THREAT REPORT",
+            "=" * 64,
             f"Generated : {now}",
             f"Machine   : {os.environ.get('COMPUTERNAME', 'Unknown')}",
             f"User      : {os.environ.get('USERNAME', 'Unknown')}",
@@ -4728,64 +5400,75 @@ class ScanEngine:
             "",
             f"Summary verdict : {summary['label']}",
             f"Assessment      : {summary['detail']}",
-            f"Local confidence: {cleanup['score']}%  —  {cleanup['label']}",
+            f"Local confidence: {cleanup['score']}% - {cleanup['label']}",
             f"Confidence note : {cleanup['detail']}",
-            "",
+            f"Account risk    : {exposure['score']}% - {exposure['label']}",
+            f"Account note    : {exposure['detail']}",
         ]
+
         if recovery["available"]:
             lines.append(
                 f"Recovery items  : {recovery['reversible_count']} reversible change(s), "
-                f"{recovery['note_count']} non-reversible note(s)",
+                f"{recovery['note_count']} non-reversible note(s)"
             )
-        lines += [
-            "",
-            "Exposure notes  :",
-        ]
+
+        lines += ["", "Exposure notes:"]
         if self.exposure_notes:
-            for description, path in self.exposure_notes:
-                lines.append(f" - {description}{': ' + path if path else ''}")
+            for description, path_text in self.exposure_notes:
+                lines.append(f"- {description}" + (f" | {path_text}" if path_text else ""))
         else:
-            lines.append(" - No high-confidence account exposure paths were flagged.")
+            lines.append("- No high-confidence account exposure paths were flagged.")
+
+        lines += ["", "=" * 64, "FINDINGS BY SURFACE", "=" * 64]
+        group_order = (
+            "Startup / Persistence",
+            "Process / Memory / Network",
+            "Files / Staging",
+            "System Posture / Policy",
+            "Other Findings",
+        )
+        item_index = 1
+        for group_name in group_order:
+            items = grouped.get(group_name) or []
+            if not items:
+                continue
+            lines += ["", group_name]
+            for threat in items:
+                lines += [
+                    f"[{item_index:03d}] [{threat.severity:<8}] {threat.category}",
+                    f"       {threat.description}",
+                    f"       Path      : {threat.path}",
+                    f"       Detected  : {threat.timestamp}",
+                    f"       Remediated: {'Yes' if threat.remediated else 'No - MANUAL ACTION REQUIRED'}",
+                ]
+                item_index += 1
+
         lines += [
             "",
-            "━" * 64,
-            "THREAT DETAIL",
-            "━" * 64,
-        ]
-        for i, t in enumerate(self.threats, 1):
-            lines += [
-                f"\n[{i:03d}] [{t.severity:<8}] {t.category}",
-                f"       {t.description}",
-                f"       Path      : {t.path}",
-                f"       Detected  : {t.timestamp}",
-                f"       Remediated: {'Yes' if t.remediated else 'No — MANUAL ACTION REQUIRED'}",
-            ]
-        lines += [
-            "",
-            "━" * 64,
+            "=" * 64,
             "POST-INFECTION CHECKLIST (do from a CLEAN device)",
-            "━" * 64,
+            "=" * 64,
             " 1. Change ALL saved browser passwords",
             " 2. Revoke all active sessions (Google, banking, Discord, Steam)",
-            " 3. Move crypto assets to fresh wallet / new seed phrase",
+            " 3. Move crypto assets to a fresh wallet / new seed phrase",
             " 4. Review Google devices and sign out anything unfamiliar",
-            " 5. Turn off Chrome sync and delete synced data before turning sync back on",
+            " 5. Turn off Chrome sync and clear synced data before turning sync back on",
             " 6. Review Discord Authorized Apps and submit a hacked-account ticket if needed",
             " 7. Run Microsoft Defender Full Scan, then Microsoft Defender Offline",
-            " 8. Enable hardware/app MFA on all critical accounts",
-            " 9. Run RenKill scan again to confirm clean",
-            "10. Full Windows reinstall if CRITICAL threats persist",
+            " 8. Re-enable MFA on critical accounts",
+            " 9. Run RenKill again after reboot to confirm clean",
+            "10. Reinstall Windows if CRITICAL threats persist",
             "",
-            "━" * 64,
+            "=" * 64,
             "IOC REFERENCE",
-            "━" * 64,
+            "=" * 64,
             " Loader   : RenEngine (Trojan.Python.Agent.nb)",
             " Stage 2  : HijackLoader (Trojan.Win32.Penguish)",
             " Payload  : ACR Stealer | Lumma | Rhadamanthys | Vidar",
             " C2 IP    : 78.40.193.126",
-            " Distrib  : dodi-repacks[.]site → MediaFire ZIP",
+            " Distrib  : dodi-repacks[.]site -> MediaFire ZIP",
         ]
-        return sanitize_for_display("\n".join(lines))
+        return sanitize_for_display("\\n".join(lines))
 
 
 # GUI
@@ -5189,6 +5872,7 @@ class App(tk.Tk):
             n = len(self._scanner.threats)
             summary = self._scanner.last_summary or self._scanner.summarize_threats()
             cleanup = self._scanner.cleanup_assessment or self._scanner.assess_cleanup_state()
+            exposure = self._scanner.assess_account_exposure()
 
             def _done():
                 self._set_progress("")
@@ -5199,9 +5883,9 @@ class App(tk.Tk):
                 self._btn_sessions.configure(state="normal" if self._session_reset_available else "disabled")
                 if n > 0:
                     self._btn_kill.configure(state="normal")
-                    self._count_var.set(f"{n} threats  |  {cleanup['score']}% confidence")
+                    self._count_var.set(f"{n} threats  |  local {cleanup['score']}%  |  account risk {exposure['score']}%")
                     self._set_status(
-                        f"Scan complete. {summary['label']}. Local confidence {cleanup['score']}%. Use KILL & CLEAN to remediate.",
+                        f"Scan complete. {summary['label']}. Local {cleanup['score']}%. Account risk {exposure['score']}%. Use KILL & CLEAN to remediate.",
                         summary["color"]
                     )
                     if self._session_reset_available:
@@ -5210,9 +5894,9 @@ class App(tk.Tk):
                     self._count_var.set("Clean")
                     self._set_status("Scan complete. No threats detected.", GREEN)
                 if n > 0:
-                    self._count_var.set(f"{n} threats  |  {cleanup['score']}% confidence")
+                    self._count_var.set(f"{n} threats  |  local {cleanup['score']}%  |  account risk {exposure['score']}%")
                     self._set_status(
-                        f"Scan complete. {summary['label']}. Local confidence {cleanup['score']}%. Use KILL & CLEAN to remediate.",
+                        f"Scan complete. {summary['label']}. Local {cleanup['score']}%. Account risk {exposure['score']}%. Use KILL & CLEAN to remediate.",
                         summary["color"]
                     )
                 elif self._scanner.post_cleanup_scan and not self._scanner.rebooted_after_cleanup:
@@ -5224,12 +5908,12 @@ class App(tk.Tk):
                 elif self._scanner.post_cleanup_scan:
                     self._count_var.set(f"Clean  |  {cleanup['score']}% confidence")
                     self._set_status(
-                        f"Post-clean rescan passed. No threats detected. Local confidence {cleanup['score']}%.",
+                        f"Post-clean rescan passed. No threats detected. Local {cleanup['score']}%. Account risk {exposure['score']}%.",
                         GREEN
                     )
                 else:
                     self._count_var.set(f"Clean  |  {cleanup['score']}% confidence")
-                    self._set_status(f"Scan complete. No threats detected. Local confidence {cleanup['score']}%.", GREEN)
+                    self._set_status(f"Scan complete. No threats detected. Local {cleanup['score']}%. Account risk {exposure['score']}%.", GREEN)
             self.after(0, _done)
 
         self._thread = threading.Thread(target=_run, daemon=True)
