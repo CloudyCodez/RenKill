@@ -50,22 +50,17 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
+
+python -m py_compile reninspect.py
+if errorlevel 1 (
+    echo [ERROR] reninspect.py failed to compile.
+    pause
+    exit /b 1
+)
 echo.
 
 echo [*] Building RenKill.exe...
-python -m PyInstaller ^
-    --onefile ^
-    --windowed ^
-    --name "RenKill" ^
-    --hidden-import psutil ^
-    --hidden-import winreg ^
-    --hidden-import tkinter ^
-    --hidden-import tkinter.scrolledtext ^
-    --hidden-import tkinter.messagebox ^
-    --hidden-import tkinter.filedialog ^
-    --collect-all psutil ^
-    --noupx ^
-    renkill.py
+python -m PyInstaller --clean -y RenKill.spec
 
 if errorlevel 1 (
     echo [ERROR] Build failed. Check the output above.
@@ -73,13 +68,13 @@ if errorlevel 1 (
     exit /b 1
 )
 
-if exist dist\RenKill.exe (
-    copy /y dist\RenKill.exe RenKill.exe >nul
+if exist dist\RenKill\RenKill.exe (
     echo.
     echo [OK] Build complete.
-    echo [OK] Output copied to RenKill.exe
+    echo [OK] Output folder: dist\RenKill
+    echo [OK] Launch file: dist\RenKill\RenKill.exe
 ) else (
-    echo [ERROR] dist\RenKill.exe was not produced.
+    echo [ERROR] dist\RenKill\RenKill.exe was not produced.
     pause
     exit /b 1
 )

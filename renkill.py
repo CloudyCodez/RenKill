@@ -262,6 +262,7 @@ GENERIC_LAUNCHER_KEYWORDS = (
 )
 
 RENPY_LAUNCHER_SCRIPT_EXTENSIONS = {".py", ".pyc", ".pyo"}
+RENPY_PAYLOAD_INDICATOR_EXTENSIONS = {".key", ".rpa", ".rpyc"}
 
 SOURCE_LURE_EXTENSIONS = {
     ".zip", ".rar", ".7z", ".iso", ".lnk", ".url", ".html", ".htm",
@@ -3110,11 +3111,22 @@ class ScanEngine:
                 return True
         return False
 
+    @staticmethod
+    def _has_random_launcher_stem(stems):
+        for stem in stems:
+            lowered = str(stem or "").lower()
+            if lowered in {"python", "pythonw", "renpy"}:
+                continue
+            if ScanEngine._looks_random(lowered):
+                return True
+        return False
+
     def _profile_renpy_bundle(self, dirpath, dir_names_lower, filenames):
         if not RENENGINE_FOLDER_SET.issubset(dir_names_lower):
             return None
 
         names_lower = [name.lower() for name in filenames]
+        file_name_set = set(names_lower)
         exe_stems = {
             os.path.splitext(name)[0]
             for name in names_lower
@@ -3136,12 +3148,37 @@ class ScanEngine:
             SOURCE_LURE_KEYWORDS,
         )
         generic_launcher = self._has_generic_launcher_stem(exe_stems | script_stems)
+        random_launcher = self._has_random_launcher_stem(exe_stems | script_stems)
+        has_archive_payload = "archive.rpa" in file_name_set
+        has_compiled_payload = "script.rpyc" in file_name_set
+        has_key_file = any(name.endswith(".key") for name in names_lower)
+        payload_indicator_count = sum(
+            1 for name in names_lower
+            if os.path.splitext(name)[1] in RENPY_PAYLOAD_INDICATOR_EXTENSIONS
+        )
+        suspicious_root_mix = (
+            len(exe_stems) >= 1
+            and len(script_stems) >= 1
+            and payload_indicator_count >= 2
+        )
 
         score = 0
         reasons = []
         if paired_stems:
             score += 2
             reasons.append("paired exe/script launcher")
+        if has_archive_payload and has_compiled_payload:
+            score += 2
+            reasons.append("archive.rpa + script.rpyc payload")
+        elif has_archive_payload or has_compiled_payload:
+            score += 1
+            reasons.append("compiled Ren'Py payload file")
+        if has_key_file:
+            score += 1
+            reasons.append("nearby decode-stage key file")
+        if suspicious_root_mix:
+            score += 1
+            reasons.append("launcher and payload files mixed in root")
         if suspicious_location:
             score += 1
             reasons.append("user-writable bundle location")
@@ -3151,13 +3188,21 @@ class ScanEngine:
         if generic_launcher:
             score += 1
             reasons.append("generic launcher naming")
+        if random_launcher:
+            score += 1
+            reasons.append("random launcher naming")
 
         return {
             "score": score,
             "paired_stems": paired_stems,
+            "has_archive_payload": has_archive_payload,
+            "has_compiled_payload": has_compiled_payload,
+            "has_key_file": has_key_file,
+            "payload_indicator_count": payload_indicator_count,
             "suspicious_location": suspicious_location,
             "lure_context": lure_context,
             "generic_launcher": generic_launcher,
+            "random_launcher": random_launcher,
             "reasons": reasons,
         }
 
@@ -3172,6 +3217,14 @@ class ScanEngine:
                 "CRITICAL",
                 "RenEngine Bundle",
                 f"Ren'Py loader bundle with campaign markers at: {dirpath}",
+            )
+
+        if profile["score"] >= 6:
+            reason_text = ", ".join(profile["reasons"][:4])
+            return (
+                "CRITICAL",
+                "RenEngine Bundle",
+                f"Ren'Py loader bundle matches strong inner-payload signals ({reason_text}): {dirpath}",
             )
 
         if profile["score"] >= 4:
@@ -5890,29 +5943,20 @@ class App(tk.Tk):
                     )
                     if self._session_reset_available:
                         self._log("RESET SESSION DATA is available for local browser/Discord session wipe.", "WARN")
-                else:
-                    self._count_var.set("Clean")
-                    self._set_status("Scan complete. No threats detected.", GREEN)
-                if n > 0:
-                    self._count_var.set(f"{n} threats  |  local {cleanup['score']}%  |  account risk {exposure['score']}%")
-                    self._set_status(
-                        f"Scan complete. {summary['label']}. Local {cleanup['score']}%. Account risk {exposure['score']}%. Use KILL & CLEAN to remediate.",
-                        summary["color"]
-                    )
                 elif self._scanner.post_cleanup_scan and not self._scanner.rebooted_after_cleanup:
-                    self._count_var.set(f"Clean  |  {cleanup['score']}% confidence")
+                    self._count_var.set(f"Clean  |  local {cleanup['score']}%  |  account risk {exposure['score']}%")
                     self._set_status(
-                        f"No threats detected, but reboot and scan once more for final confidence ({cleanup['score']}%).",
+                        f"No threats detected, but reboot and scan once more. Local {cleanup['score']}%. Account risk {exposure['score']}%.",
                         AMBER
                     )
                 elif self._scanner.post_cleanup_scan:
-                    self._count_var.set(f"Clean  |  {cleanup['score']}% confidence")
+                    self._count_var.set(f"Clean  |  local {cleanup['score']}%  |  account risk {exposure['score']}%")
                     self._set_status(
                         f"Post-clean rescan passed. No threats detected. Local {cleanup['score']}%. Account risk {exposure['score']}%.",
                         GREEN
                     )
                 else:
-                    self._count_var.set(f"Clean  |  {cleanup['score']}% confidence")
+                    self._count_var.set(f"Clean  |  local {cleanup['score']}%  |  account risk {exposure['score']}%")
                     self._set_status(f"Scan complete. No threats detected. Local {cleanup['score']}%. Account risk {exposure['score']}%.", GREEN)
             self.after(0, _done)
 
@@ -5948,29 +5992,28 @@ class App(tk.Tk):
                 if self._scanner.exposure_notes:
                     exposure_blurb = (
                         "\nExposure warning:\n"
-                        "  • Browser and/or Discord data may have been exposed\n"
-                        "  • Revoke sessions from a clean device immediately\n"
+                        "  - Browser and/or Discord data may have been exposed\n"
+                        "  - Revoke sessions from a clean device immediately\n"
                     )
                 recovery_blurb = self._recovery_snapshot_blurb(recovery)
+                exposure = self._scanner.assess_account_exposure()
                 self._set_status(
-                    f"Done — {k} process(es) killed, {r} item(s) removed. Run scan again to verify.",
-                    GREEN
-                )
-                self._set_status(
-                    f"Cleanup finished - {k} process(es) killed, {r} item(s) removed. Reboot, then rescan for confidence.",
+                    f"Cleanup finished - {k} process(es) killed, {r} item(s) removed. Reboot, rescan, and treat account risk as {exposure['score']}%.",
                     GREEN
                 )
                 messagebox.showinfo(
-                    "RenKill — Remediation Complete",
+                    "RenKill - Remediation Complete",
                     f"Processes killed     : {k}\n"
                     f"Files/entries removed: {r}\n\n"
+                    f"Local cleanup state  : reboot and rescan needed\n"
+                    f"Account risk         : {exposure['score']}% - {exposure['label']}\n\n"
                     f"NEXT STEP ON THIS PC:\n"
-                    f"  â€¢ Reboot Windows\n"
-                    f"  â€¢ Run SCAN SYSTEM again for post-clean confidence\n\n"
+                    f"  - Reboot Windows\n"
+                    f"  - Run SCAN SYSTEM again for post-clean confidence\n\n"
                     f"FROM A CLEAN DEVICE:\n"
-                    f"  • Change ALL browser-saved passwords\n"
-                    f"  • Revoke all active sessions\n"
-                    f"  • Move crypto to fresh wallet addresses\n\n"
+                    f"  - Change ALL browser-saved passwords\n"
+                    f"  - Revoke all active sessions\n"
+                    f"  - Move crypto to fresh wallet addresses\n\n"
                     f"{recovery_blurb}"
                     f"{exposure_blurb}"
                     f"Run SCAN SYSTEM again to verify clean."

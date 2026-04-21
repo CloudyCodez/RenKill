@@ -33,37 +33,31 @@ jobs:
         run: |
           python -m py_compile .\renkill.py
           python -m py_compile .\renengine_hunter.py
+          python -m py_compile .\reninspect.py
 
-      - name: Build RenKill.exe
+      - name: Build RenKill package
         shell: pwsh
         run: |
-          python -m PyInstaller `
-            --onefile `
-            --windowed `
-            --name "RenKill" `
-            --hidden-import psutil `
-            --hidden-import winreg `
-            --hidden-import tkinter `
-            --hidden-import tkinter.scrolledtext `
-            --hidden-import tkinter.messagebox `
-            --hidden-import tkinter.filedialog `
-            --collect-all psutil `
-            --noupx `
-            .\renkill.py
+          python -m PyInstaller --clean -y .\RenKill.spec
+
+      - name: Archive release package
+        shell: pwsh
+        run: |
+          Compress-Archive -Path .\dist\RenKill\* -DestinationPath .\dist\RenKill-${{ github.ref_name }}-windows.zip -Force
 
       - name: Generate checksum
         shell: pwsh
         run: |
-          $hash = (Get-FileHash .\dist\RenKill.exe -Algorithm SHA256).Hash.ToLower()
-          Set-Content -Path .\dist\RenKill.sha256.txt -Value "$hash *RenKill.exe"
+          $hash = (Get-FileHash .\dist\RenKill-${{ github.ref_name }}-windows.zip -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path .\dist\RenKill-${{ github.ref_name }}-windows.sha256.txt -Value "$hash *RenKill-${{ github.ref_name }}-windows.zip"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: RenKill-${{ github.ref_name }}
           path: |
-            dist/RenKill.exe
-            dist/RenKill.sha256.txt
+            dist/RenKill-${{ github.ref_name }}-windows.zip
+            dist/RenKill-${{ github.ref_name }}-windows.sha256.txt
           if-no-files-found: error
 
       - name: Attach assets to GitHub release
@@ -71,7 +65,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/RenKill.exe
-            dist/RenKill.sha256.txt
+            dist/RenKill-${{ github.ref_name }}-windows.zip
+            dist/RenKill-${{ github.ref_name }}-windows.sha256.txt
           generate_release_notes: true
           fail_on_unmatched_files: true

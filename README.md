@@ -43,9 +43,13 @@ Requirements: Python 3.10+ in `PATH`.
 
 ```text
 1. Push a version tag like v1.4.3
-2. GitHub Actions builds RenKill.exe on windows-latest
-3. The workflow attaches RenKill.exe and a SHA256 checksum to the GitHub Release
+2. GitHub Actions builds the RenKill folder package on windows-latest
+3. The workflow attaches a zipped Windows package and SHA256 checksum to the GitHub Release
 ```
+
+The public build now ships as a packaged app folder instead of a onefile EXE.
+That is partly for reliability and partly to reduce the "fresh packed utility"
+look that tends to trip aggressive AV heuristics.
 
 ---
 
@@ -57,6 +61,35 @@ Requirements: Python 3.10+ in `PATH`.
 4. Click `KILL & CLEAN` to remove high-confidence artifacts
 5. If prompted, use `RESET SESSION DATA` to clear local browser and Discord session material
 6. Reboot and run one more scan
+
+---
+
+## RenInspect
+
+`reninspect.py` is the safe microscope for suspicious packages.
+It is static-only and never executes the sample.
+
+Use it when you want to inspect:
+
+- a suspicious extracted folder
+- a suspicious `.zip`
+- a possible fake Ren'Py game bundle before you ever run it
+
+Example:
+
+```text
+python reninspect.py "C:\path\to\suspicious-folder"
+python reninspect.py "C:\path\to\sample.zip" --report-out "C:\path\to\reninspect_report.txt"
+```
+
+What it looks for:
+
+- Ren'Py folder layout (`data`, `lib`, `renpy`)
+- `archive.rpa`, `script.rpyc`, and `.key` payload clues
+- suspicious DLL sideload names
+- temp-stage launcher patterns
+- Godot `app_userdata` + `.asar` clues
+- random-looking launchers and campaign-linked markers
 
 ---
 
