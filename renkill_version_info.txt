@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 4, 9, 0),
-    prodvers=(1, 4, 9, 0),
+    filevers=(1, 4, 10, 0),
+    prodvers=(1, 4, 10, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -17,11 +17,11 @@ VSVersionInfo(
           [
             StringStruct('CompanyName', 'Cloud'),
             StringStruct('FileDescription', 'RenKill RenEngine and HijackLoader removal tool'),
-            StringStruct('FileVersion', '1.4.9'),
+            StringStruct('FileVersion', '1.4.10'),
             StringStruct('InternalName', 'RenKill'),
             StringStruct('OriginalFilename', 'RenKill.exe'),
             StringStruct('ProductName', 'RenKill'),
-            StringStruct('ProductVersion', '1.4.9'),
+            StringStruct('ProductVersion', '1.4.10'),
             StringStruct('LegalCopyright', 'Copyright (C) Cloud'),
           ]
         )

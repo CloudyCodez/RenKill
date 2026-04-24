@@ -17,6 +17,7 @@ import json
 import re
 import base64
 import csv
+import traceback
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, filedialog
 
@@ -36,7 +37,7 @@ except ImportError:
 
 # IOC definitions
 
-VERSION = "1.4.9"
+VERSION = "1.4.10"
 TOOL_NAME = "RenKill"
 
 MALICIOUS_FILENAMES = {
@@ -1587,8 +1588,20 @@ class ScanEngine:
     def _run_remediation_bucket(self, categories):
         for threat in sorted(self.threats):
             if threat.category in categories and threat.action and not threat.remediated:
-                threat.action()
-                threat.remediated = True
+                try:
+                    result = threat.action()
+                    threat.remediated = bool(result)
+                    if not result:
+                        self.log(
+                            f"Remediation action did not complete for {threat.category}: {threat.path or threat.description}",
+                            "WARN",
+                        )
+                except Exception as exc:
+                    self.log(
+                        f"Remediation error in {threat.category}: {exc} | {threat.path or threat.description}",
+                        "CRITICAL",
+                    )
+                    self.log(traceback.format_exc().strip(), "WARN")
 
     def _log_recovery_snapshot_summary(self):
         if not self._recovery_session:
@@ -2206,6 +2219,8 @@ class ScanEngine:
     def _is_safe_process_context(self, pname, pexe, cmdline="", allow_metadata=False):
         if self._has_strong_campaign_context(pname, pexe, cmdline):
             return False
+        if self._is_local_tool_context(pexe, cmdline):
+            return True
         if pname in TRUSTED_PROCESS_NAMES:
             return True
         if self._is_trusted_vendor_path(pexe) or self._is_protected_system_path(pexe):
@@ -2474,6 +2489,8 @@ class ScanEngine:
         target = pexe or cmdline or pname or f"PID {pid}"
         if not (pname or pexe or cmdline):
             return False, target
+        if self._is_local_tool_context(pexe, cmdline):
+            return True, target
         if self._is_protected_core_process(pname, pexe) or self._is_protected_security_process(pname, pexe):
             return True, target
         if self._has_strong_campaign_context(pname, pexe, cmdline):
@@ -5422,6 +5439,10 @@ class ScanEngine:
         )
 
         self._log_recovery_snapshot_summary()
+        return {
+            "killed": self.killed,
+            "removed": self.removed,
+        }
 
     def generate_report(self) -> str:
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -5652,6 +5673,8 @@ class App(tk.Tk):
 
         self._btn_kill.configure(state="disabled")
         self._btn_revert.configure(state="disabled")
+        self._btn_scan.configure(state="disabled")
+        self._btn_scan.configure(state="disabled")
         self._btn_sessions.configure(state="disabled")
         self._btn_report.configure(state="disabled")
 
@@ -5817,6 +5840,35 @@ class App(tk.Tk):
             self._status_lbl.configure(fg=color)
         ))
 
+    @staticmethod
+    def _diagnostic_log_path():
+        candidates = [
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), TOOL_NAME),
+            os.path.join(os.getcwd(), TOOL_NAME),
+        ]
+        for root in candidates:
+            if not root:
+                continue
+            try:
+                os.makedirs(root, exist_ok=True)
+                return os.path.join(root, "renkill_diagnostics.log")
+            except Exception:
+                continue
+        return ""
+
+    def _write_diagnostic_log(self, context):
+        path = self._diagnostic_log_path()
+        if not path:
+            return ""
+        try:
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write(f"\n[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {context}\n")
+                handle.write(traceback.format_exc())
+                handle.write("\n")
+            return path
+        except Exception:
+            return ""
+
     def _refresh_status_layout(self, _event=None):
         if not hasattr(self, "_status_lbl"):
             return
@@ -5981,8 +6033,34 @@ class App(tk.Tk):
         self._btn_revert.configure(state="disabled")
         self._set_status("Executing remediation…", AMBER)
 
+        self._btn_scan.configure(state="disabled")
+
         def _run():
-            self._scanner.run_remediation()
+            try:
+                self._scanner.run_remediation()
+            except Exception as exc:
+                diag_path = self._write_diagnostic_log("KILL & CLEAN crash")
+
+                def _fail():
+                    self._btn_scan.configure(state="normal")
+                    self._btn_kill.configure(state="normal" if self._scanner and self._scanner.threats else "disabled")
+                    self._update_revert_button()
+                    self._set_status("Cleanup failed - see log for details.", RED)
+                    self._log(f"Cleanup error: {exc}", "CRITICAL")
+                    if diag_path:
+                        self._log(f"Diagnostic log written to: {diag_path}", "WARN")
+                    messagebox.showerror(
+                        "RenKill - Cleanup Failed",
+                        sanitize_for_display(
+                            "KILL & CLEAN hit an internal error and stopped safely.\n\n"
+                            f"Error: {exc}\n"
+                            + (f"Diagnostic log: {diag_path}\n\n" if diag_path else "\n")
+                            + "Please send the last log lines and this diagnostic path to Cloud."
+                        ),
+                    )
+
+                self.after(0, _fail)
+                return
             def _done():
                 k = self._scanner.killed
                 r = self._scanner.removed
@@ -6018,6 +6096,7 @@ class App(tk.Tk):
                     f"{exposure_blurb}"
                     f"Run SCAN SYSTEM again to verify clean."
                 )
+                self._btn_scan.configure(state="normal")
             self.after(0, _done)
 
         threading.Thread(target=_run, daemon=True).start()
