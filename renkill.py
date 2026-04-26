@@ -37,7 +37,7 @@ except ImportError:
 
 # IOC definitions
 
-VERSION = "1.4.10"
+VERSION = "1.4.11"
 TOOL_NAME = "RenKill"
 
 MALICIOUS_FILENAMES = {
@@ -5673,8 +5673,6 @@ class App(tk.Tk):
 
         self._btn_kill.configure(state="disabled")
         self._btn_revert.configure(state="disabled")
-        self._btn_scan.configure(state="disabled")
-        self._btn_scan.configure(state="disabled")
         self._btn_sessions.configure(state="disabled")
         self._btn_report.configure(state="disabled")
 

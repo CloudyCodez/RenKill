@@ -1,4 +1,4 @@
-# RenKill v1.4.10
+# RenKill v1.4.11
 
 Windows cleanup tool for the fake Ren'Py `Instaler.exe` / RenEngine loader chain.
 It focuses on the stuff this infection tends to leave behind: staged payloads,
