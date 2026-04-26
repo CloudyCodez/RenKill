@@ -891,6 +891,7 @@ PERSISTENCE_THREAT_CATEGORIES = {
     "Persistence Staging Directory",
     "Policy Persistence",
     "Registry Persistence",
+    "RunOnceEx Persistence",
     "SafeBoot Review",
     "Shell Persistence Review",
     "Startup-Launched Process",
@@ -926,6 +927,7 @@ RENLOADER_CORRELATION_CATEGORIES = {
     "Persistence Process",
     "Persistence Staging Directory",
     "Registry Persistence",
+    "RunOnceEx Persistence",
     "RenEngine Bundle",
     "SafeBoot Review",
     "Startup-Launched Process",
@@ -1132,12 +1134,15 @@ class ScanEngine:
         self.exposure_notes = []
         self.post_cleanup_scan = False
         self.rebooted_after_cleanup = False
+        self.post_cleanup_persistence_summary = None
+        self.post_cleanup_browser_summary = None
         self._tool_roots = self._compute_local_tool_roots()
         self._file_meta_cache = {}
         self._module_scan_pid_targets = set()
         self._shortcut_scan_rows = None
         self._scheduled_task_rows = None
         self._autorun_rows = None
+        self._runonceex_rows = None
         self._policy_rows = None
         self._active_setup_rows = None
         self._disabled_startup_rows = None
@@ -1246,6 +1251,63 @@ class ScanEngine:
         self.log("Recovery snapshot started for this cleanup session.", "INFO")
         return True
 
+    def _startup_snapshot_entries(self):
+        entries = []
+
+        def add(surface, location, command):
+            cmd = self._normalize_cmdline(command).strip()
+            if not cmd or self._is_local_tool_context(cmd):
+                return
+            target = self._extract_command_target(cmd)
+            signal = self._startup_signal_for_command(cmd)
+            entries.append(
+                {
+                    "surface": surface,
+                    "location": str(location or ""),
+                    "command": cmd,
+                    "target": self._normalized_path(target) or cmd.lower(),
+                    "signal": bool(signal),
+                }
+            )
+
+        for row in self._collect_run_autorun_rows():
+            add("autorun", f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]", row.get("Value"))
+        for row in self._collect_runonceex_rows():
+            add("runonceex", f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]", row.get("Value"))
+        for row in self._collect_policy_persistence_rows():
+            add("policy", f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]", row.get("Value"))
+        for row in self._collect_active_setup_rows():
+            add("active-setup", f"{row.get('HiveName')}\\{row.get('Subkey')}[StubPath]", row.get("StubPath"))
+        for row in self._collect_shell_persistence_rows():
+            add("shell", f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]", row.get("Value"))
+        for row in self._collect_logon_persistence_rows():
+            add("logon", f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]", row.get("Value"))
+        for row in self._collect_shortcut_rows():
+            add("shortcut", row.get("Path"), " ".join(part for part in (row.get("TargetPath"), row.get("Arguments")) if part))
+        for row in self._iter_startup_file_rows():
+            add("startup-file", row.get("Path"), row.get("Path"))
+        for row in self._collect_scheduled_task_rows():
+            add("task", f"{row.get('TaskPath') or ''}{row.get('TaskName') or ''}", " ".join(part for part in (row.get("Execute"), row.get("Arguments")) if part))
+        for row in self._collect_wmi_persistence_rows():
+            if str(row.get("ClassName") or "") == "CommandLineEventConsumer":
+                add("wmi", str(row.get("Name") or ""), row.get("CommandLineTemplate") or row.get("ExecutablePath"))
+            elif str(row.get("ClassName") or "") == "ActiveScriptEventConsumer":
+                add("wmi-script", str(row.get("Name") or ""), row.get("ScriptText"))
+
+        return entries
+
+    def _capture_pre_cleanup_snapshot(self):
+        if not self._begin_recovery_session():
+            return False
+        snapshot = {
+            "captured_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "entries": self._startup_snapshot_entries(),
+            "browser_entries": self._browser_snapshot_entries(),
+        }
+        self._recovery_session["pre_cleanup_snapshot"] = snapshot
+        self._persist_recovery_session()
+        return True
+
     def _record_recovery_entry(self, entry):
         if not self._begin_recovery_session():
             return False
@@ -1307,6 +1369,253 @@ class ScanEngine:
             "reversible_count": len(manifest.get("entries") or []),
             "note_count": len(manifest.get("notes") or []),
         }
+
+    def compare_post_cleanup_persistence(self):
+        if not self.post_cleanup_scan:
+            self.post_cleanup_persistence_summary = None
+            return None
+
+        manifest = self._load_latest_recovery_manifest()
+        snapshot = (manifest or {}).get("pre_cleanup_snapshot") or {}
+        previous_entries = snapshot.get("entries") or []
+        if not previous_entries:
+            self.post_cleanup_persistence_summary = None
+            return None
+
+        current_entries = self._startup_snapshot_entries()
+        current_targets = {}
+        for entry in current_entries:
+            current_targets.setdefault(entry.get("target") or "", []).append(entry)
+
+        reappeared = []
+        cleared = 0
+        suspicious_reappeared = 0
+        for entry in previous_entries:
+            target = entry.get("target") or ""
+            matches = current_targets.get(target) or []
+            if matches:
+                reappeared.append(
+                    {
+                        "target": target,
+                        "before": entry,
+                        "after": matches[0],
+                    }
+                )
+                if entry.get("signal") or matches[0].get("signal"):
+                    suspicious_reappeared += 1
+            else:
+                cleared += 1
+
+        summary = {
+            "before_count": len(previous_entries),
+            "current_count": len(current_entries),
+            "cleared_count": cleared,
+            "reappeared_count": len(reappeared),
+            "suspicious_reappeared_count": suspicious_reappeared,
+            "reappeared": reappeared[:8],
+        }
+        self.post_cleanup_persistence_summary = summary
+        return summary
+
+    def _browser_review_entries(self):
+        findings = []
+        seen = set()
+
+        def add(label, path, target, description, signal=True):
+            path_text = str(path or "")
+            target_text = str(target or "").strip().lower()
+            finding_key = (label, path_text, target_text, description)
+            if finding_key in seen:
+                return
+            seen.add(finding_key)
+            findings.append(
+                {
+                    "label": str(label or ""),
+                    "path": path_text,
+                    "target": target_text or path_text.lower(),
+                    "description": str(description or ""),
+                    "signal": bool(signal),
+                }
+            )
+
+        for label, manifest_path in self._iter_chromium_extension_manifests():
+            try:
+                with open(manifest_path, "r", encoding="utf-8") as handle:
+                    manifest = json.load(handle)
+            except Exception:
+                continue
+
+            blob = json.dumps(manifest, ensure_ascii=True).lower()
+            permissions = {
+                str(value).lower()
+                for section in ("permissions", "host_permissions", "optional_permissions")
+                for value in (manifest.get(section) or [])
+            }
+            keyword_hit = self._contains_marker(
+                blob,
+                {
+                    "acrstealer",
+                    "broker_crypt",
+                    "chime",
+                    "froodjurain",
+                    "instaler",
+                    "lumma",
+                    "renengine",
+                    "renloader",
+                    "rhadamanthys",
+                    "vidar",
+                    "vsdebugscriptagent170",
+                    "zoneind",
+                },
+            )
+            remote_lure_hit = self._contains_marker(blob, {"go.zovo", "mediafire", "mega", "dodi-repacks"})
+            risky_permissions = bool(permissions & {perm.lower() for perm in SUSPICIOUS_EXTENSION_PERMISSIONS})
+            update_url = str(
+                manifest.get("update_url")
+                or manifest.get("browser_specific_settings", {}).get("gecko", {}).get("update_url")
+                or ""
+            )
+            update_url_lower = update_url.lower()
+            extension_name = str(manifest.get("name") or os.path.basename(os.path.dirname(manifest_path)))
+            extension_name_lower = extension_name.lower()
+            suspicious_update_url = bool(update_url_lower) and not any(
+                marker in update_url_lower for marker in OFFICIAL_EXTENSION_UPDATE_URL_MARKERS
+            )
+            impersonation_hit = extension_name_lower in IMPERSONATED_EXTENSION_NAMES
+
+            if not (
+                self._has_strong_campaign_context(blob, manifest_path)
+                or remote_lure_hit
+                or (keyword_hit and risky_permissions)
+                or (impersonation_hit and suspicious_update_url)
+                or (suspicious_update_url and risky_permissions and self._contains_remote_loader_marker(update_url_lower))
+            ):
+                continue
+
+            target = f"{label}:{extension_name_lower}:{update_url_lower or manifest_path.lower()}"
+            add(label, manifest_path, target, f"{label} extension needs review: {extension_name}")
+
+        profile = os.environ.get("USERPROFILE", "")
+        for label, rel_root in CHROMIUM_EXTENSION_REVIEW_ROOTS:
+            root = os.path.join(profile, rel_root)
+            for profile_dir in self._chromium_profile_dirs(root):
+                preferences_path = os.path.join(profile_dir, "Preferences")
+                if not os.path.isfile(preferences_path):
+                    continue
+                try:
+                    with open(preferences_path, "r", encoding="utf-8", errors="ignore") as handle:
+                        preferences = json.load(handle)
+                except Exception:
+                    continue
+
+                settings = (((preferences or {}).get("extensions") or {}).get("settings") or {})
+                if not isinstance(settings, dict):
+                    continue
+
+                for ext_id, entry in settings.items():
+                    if not isinstance(entry, dict):
+                        continue
+
+                    state = int(entry.get("state") or 0)
+                    if state <= 0:
+                        continue
+
+                    manifest = entry.get("manifest") or {}
+                    extension_name = str(manifest.get("name") or ext_id)
+                    extension_name_lower = extension_name.lower()
+                    update_url = str(entry.get("update_url") or manifest.get("update_url") or "")
+                    update_url_lower = update_url.lower()
+                    suspicious_update_url = bool(update_url_lower) and not any(
+                        marker in update_url_lower for marker in OFFICIAL_EXTENSION_UPDATE_URL_MARKERS
+                    )
+                    impersonation_hit = extension_name_lower in IMPERSONATED_EXTENSION_NAMES
+                    profile_ext_dir = os.path.join(profile_dir, "Extensions", ext_id)
+                    installed_on_disk = os.path.isdir(profile_ext_dir)
+                    path_value = str(entry.get("path") or "")
+                    normalized_path = self._normalized_path(path_value)
+                    risky_state = (
+                        (impersonation_hit and suspicious_update_url)
+                        or (suspicious_update_url and self._contains_remote_loader_marker(update_url_lower))
+                        or (normalized_path and self._path_in_user_writable_exec_zone(normalized_path) and not self._is_local_tool_path(normalized_path))
+                    )
+                    if not risky_state:
+                        continue
+
+                    target_root = normalized_path or profile_ext_dir or ext_id
+                    target = f"{label}:{ext_id.lower()}:{target_root.lower()}:{update_url_lower}"
+                    if not installed_on_disk:
+                        add(
+                            label,
+                            preferences_path,
+                            target,
+                            f"{label} profile still references a missing suspicious extension: {extension_name}",
+                        )
+                    else:
+                        add(
+                            label,
+                            preferences_path,
+                            target,
+                            f"{label} extension state needs review: {extension_name}",
+                        )
+
+        return findings
+
+    def _browser_snapshot_entries(self):
+        entries = []
+        for finding in self._browser_review_entries():
+            entries.append(
+                {
+                    "browser": finding.get("label") or "",
+                    "path": finding.get("path") or "",
+                    "target": finding.get("target") or "",
+                    "description": finding.get("description") or "",
+                    "signal": bool(finding.get("signal")),
+                }
+            )
+        return entries
+
+    def compare_post_cleanup_browser_state(self):
+        if not self.post_cleanup_scan:
+            self.post_cleanup_browser_summary = None
+            return None
+
+        manifest = self._load_latest_recovery_manifest()
+        snapshot = (manifest or {}).get("pre_cleanup_snapshot") or {}
+        previous_entries = snapshot.get("browser_entries") or []
+        if not previous_entries:
+            self.post_cleanup_browser_summary = None
+            return None
+
+        current_entries = self._browser_snapshot_entries()
+        current_targets = {}
+        for entry in current_entries:
+            current_targets.setdefault(entry.get("target") or "", []).append(entry)
+
+        reappeared = []
+        cleared = 0
+        for entry in previous_entries:
+            target = entry.get("target") or ""
+            matches = current_targets.get(target) or []
+            if matches:
+                reappeared.append(
+                    {
+                        "target": target,
+                        "before": entry,
+                        "after": matches[0],
+                    }
+                )
+            else:
+                cleared += 1
+
+        summary = {
+            "before_count": len(previous_entries),
+            "current_count": len(current_entries),
+            "cleared_count": cleared,
+            "reappeared_count": len(reappeared),
+            "reappeared": reappeared[:8],
+        }
+        self.post_cleanup_browser_summary = summary
+        return summary
 
     @staticmethod
     def _safe_backup_name(path):
@@ -1795,6 +2104,7 @@ class ScanEngine:
             "Malicious Shortcut",
             "Policy Persistence",
             "Registry Persistence",
+            "RunOnceEx Persistence",
             "SafeBoot Review",
             "Session Manager Review",
             "Shell Persistence Review",
@@ -2005,6 +2315,7 @@ class ScanEngine:
             "Persistence Artifact",
             "Persistence Process",
             "Persistence Staging Directory",
+            "RunOnceEx Persistence",
             "SafeBoot Review",
             "Session Manager Review",
             "Startup-Launched Process",
@@ -2049,6 +2360,7 @@ class ScanEngine:
             "Malicious Shortcut",
             "Policy Persistence",
             "Registry Persistence",
+            "RunOnceEx Persistence",
             "SafeBoot Review",
             "Session Manager Review",
             "Shell Persistence Review",
@@ -2157,6 +2469,8 @@ class ScanEngine:
         critical = sum(1 for t in self.threats if t.severity == "CRITICAL")
         high = sum(1 for t in self.threats if t.severity == "HIGH")
         profile = self._threat_confidence_profile()
+        persistence_compare = self.compare_post_cleanup_persistence()
+        browser_compare = self.compare_post_cleanup_browser_state()
         renloader_hits = profile["renloader_hits"]
         startup_layers = profile["startup_layers"]
         persistence_layers = profile["persistence_layers"]
@@ -2164,6 +2478,24 @@ class ScanEngine:
 
         if not self.threats:
             if self.post_cleanup_scan and self.rebooted_after_cleanup:
+                if persistence_compare and persistence_compare["reappeared_count"]:
+                    assessment = {
+                        "score": 72,
+                        "label": "Post-clean rescan is cleaner, but persistence drift returned",
+                        "detail": "No direct malware hits remain, but one or more startup or persistence targets reappeared after cleanup and reboot.",
+                        "color": AMBER,
+                    }
+                    self.cleanup_assessment = assessment
+                    return assessment
+                if browser_compare and browser_compare["reappeared_count"]:
+                    assessment = {
+                        "score": 84,
+                        "label": "Post-clean rescan is cleaner, but browser residue came back",
+                        "detail": "No direct malware hits remain, but suspicious browser extension or profile-state residue still reappeared after cleanup and reboot.",
+                        "color": AMBER,
+                    }
+                    self.cleanup_assessment = assessment
+                    return assessment
                 assessment = {
                     "score": 96,
                     "label": "Post-clean rescan passed",
@@ -2221,6 +2553,26 @@ class ScanEngine:
         else:
             label = "Cleanup still has work to do"
             detail = "This scan still sees malware-linked artifacts or persistence. Do not consider the machine clean yet."
+
+        if persistence_compare and self.post_cleanup_scan:
+            if persistence_compare["suspicious_reappeared_count"] >= 2:
+                score -= 14
+                label = "Persistence reappeared after cleanup"
+                detail = "Multiple startup or persistence targets came back after cleanup. The infection or its relaunch path is still alive."
+            elif persistence_compare["reappeared_count"] >= 1:
+                score -= 8
+                detail += " A startup or persistence target reappeared after cleanup, so trust should stay low."
+            elif persistence_compare["cleared_count"] >= 3 and self.rebooted_after_cleanup:
+                score += 4
+        if browser_compare and self.post_cleanup_scan:
+            if browser_compare["reappeared_count"] >= 2:
+                score -= 8
+                detail += " Suspicious browser extension or profile-state residue also came back after cleanup."
+            elif browser_compare["reappeared_count"] == 1:
+                score -= 4
+                detail += " One suspicious browser-state item came back after cleanup."
+            elif browser_compare["cleared_count"] >= 2 and self.rebooted_after_cleanup:
+                score += 2
 
         assessment = {
             "score": self._clamp_score(score),
@@ -3229,6 +3581,72 @@ class ScanEngine:
         self._policy_rows = rows
         return rows
 
+    def _collect_runonceex_rows(self):
+        if self._runonceex_rows is not None:
+            return self._runonceex_rows
+
+        rows = []
+        if not WINREG_OK:
+            self._runonceex_rows = rows
+            return rows
+
+        locations = [
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnceEx", "HKLM"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\RunOnceEx", "HKLM"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnceEx", "HKCU"),
+        ]
+
+        for hive, subkey, hive_name in locations:
+            try:
+                root = winreg.OpenKey(hive, subkey)
+            except (FileNotFoundError, PermissionError):
+                continue
+
+            try:
+                index = 0
+                while True:
+                    try:
+                        child_name = winreg.EnumKey(root, index)
+                    except OSError:
+                        break
+                    index += 1
+                    child_path = subkey + "\\" + child_name
+                    try:
+                        child = winreg.OpenKey(hive, child_path)
+                    except (FileNotFoundError, PermissionError):
+                        continue
+
+                    try:
+                        value_index = 0
+                        while True:
+                            try:
+                                value_name, value, _ = winreg.EnumValue(child, value_index)
+                            except OSError:
+                                break
+                            value_index += 1
+                            rows.append(
+                                {
+                                    "Hive": hive,
+                                    "HiveName": hive_name,
+                                    "Subkey": child_path,
+                                    "ValueName": str(value_name or ""),
+                                    "Value": str(value or ""),
+                                }
+                            )
+                    finally:
+                        try:
+                            winreg.CloseKey(child)
+                        except Exception:
+                            pass
+            finally:
+                try:
+                    winreg.CloseKey(root)
+                except Exception:
+                    pass
+
+        self._runonceex_rows = rows
+        return rows
+
     def _collect_active_setup_rows(self):
         if self._active_setup_rows is not None:
             return self._active_setup_rows
@@ -3796,6 +4214,14 @@ class ScanEngine:
         component_name = str((row or {}).get("ComponentName") or "")
         component_label = str((row or {}).get("ComponentLabel") or "")
         display = component_label or component_name or "Active Setup component"
+        raw_lower = raw.lower()
+
+        if (
+            normalized_target.endswith("\\installer\\chrmstp.exe")
+            and self._has_trusted_file_metadata(target)
+            and any(token in raw_lower for token in ("--configure-user-settings", "--system-level"))
+        ):
+            return None
 
         if self._value_has_malware_signal(raw):
             return "HIGH", "Active Setup Persistence", f"Active Setup component launches a suspicious StubPath: {display} -> {raw}"
@@ -3807,6 +4233,27 @@ class ScanEngine:
             stem = os.path.splitext(os.path.basename(normalized_target))[0]
             if self._looks_random(stem) or self._contains_marker(normalized_target, PROCESS_IOC_MARKERS):
                 return "HIGH", "Active Setup Persistence", f"Active Setup component launches a suspicious user-writable payload: {display} -> {raw}"
+        return None
+
+    def _looks_suspicious_runonceex(self, row):
+        raw = self._normalize_cmdline((row or {}).get("Value")).strip()
+        if not raw:
+            return None
+
+        target = self._extract_command_target(raw)
+        normalized_target = self._normalized_path(target)
+        value_name = str((row or {}).get("ValueName") or "")
+
+        if self._value_has_malware_signal(raw):
+            return "HIGH", "RunOnceEx Persistence", f"RunOnceEx launches a suspicious command: {value_name} = {raw}"
+        if self._contains_remote_loader_marker(raw):
+            return "HIGH", "RunOnceEx Persistence", f"RunOnceEx references a remote loader or downloader command: {value_name} = {raw}"
+        if normalized_target and self._looks_like_temp_stage_launcher(normalized_target):
+            return "HIGH", "RunOnceEx Persistence", f"RunOnceEx launches a temp-stage executable: {value_name} = {raw}"
+        if normalized_target and self._path_in_user_writable_exec_zone(normalized_target):
+            stem = os.path.splitext(os.path.basename(normalized_target))[0]
+            if self._looks_random(stem) or self._contains_marker(normalized_target, PROCESS_IOC_MARKERS):
+                return "HIGH", "RunOnceEx Persistence", f"RunOnceEx launches a suspicious user-writable payload: {value_name} = {raw}"
         return None
 
     def _evaluate_scheduled_task_entry(self, task_name, task_path, execute, arguments="", working_directory=""):
@@ -4008,6 +4455,17 @@ class ScanEngine:
             bucket["sources"].append(f"policy:{location}")
             bucket["reasons"].update(signal["reasons"])
             bucket["reasons"].add("policy-backed autorun")
+
+        for row in self._collect_runonceex_rows():
+            signal = self._startup_signal_for_command(row.get("Value"))
+            if not signal:
+                continue
+            location = f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]"
+            bucket = correlated.setdefault(signal["identity"], {"score": 0, "sources": [], "target": signal["target"], "reasons": set()})
+            bucket["score"] = max(bucket["score"], signal["score"] + 1)
+            bucket["sources"].append(f"runonceex:{location}")
+            bucket["reasons"].update(signal["reasons"])
+            bucket["reasons"].add("runonceex autorun")
 
         for row in self._collect_active_setup_rows():
             signal = self._startup_signal_for_command(row.get("StubPath"))
@@ -4790,67 +5248,14 @@ class ScanEngine:
 
     def scan_browser_extensions(self):
         self.log("BROWSER EXTENSION REVIEW", "SECTION")
-        for label, manifest_path in self._iter_chromium_extension_manifests():
+        for finding in self._browser_review_entries():
             if self._stop:
                 return
-            try:
-                with open(manifest_path, "r", encoding="utf-8") as handle:
-                    manifest = json.load(handle)
-            except Exception:
-                continue
-
-            blob = json.dumps(manifest, ensure_ascii=True).lower()
-            permissions = {
-                str(value).lower()
-                for section in ("permissions", "host_permissions", "optional_permissions")
-                for value in (manifest.get(section) or [])
-            }
-            keyword_hit = self._contains_marker(
-                blob,
-                {
-                    "acrstealer",
-                    "broker_crypt",
-                    "chime",
-                    "froodjurain",
-                    "instaler",
-                    "lumma",
-                    "renengine",
-                    "renloader",
-                    "rhadamanthys",
-                    "vidar",
-                    "vsdebugscriptagent170",
-                    "zoneind",
-                },
-            )
-            remote_lure_hit = self._contains_marker(blob, {"go.zovo", "mediafire", "mega", "dodi-repacks"})
-            risky_permissions = bool(permissions & {perm.lower() for perm in SUSPICIOUS_EXTENSION_PERMISSIONS})
-            update_url = str(
-                manifest.get("update_url")
-                or manifest.get("browser_specific_settings", {}).get("gecko", {}).get("update_url")
-                or ""
-            )
-            update_url_lower = update_url.lower()
-            extension_name = str(manifest.get("name") or os.path.basename(os.path.dirname(manifest_path)))
-            extension_name_lower = extension_name.lower()
-            suspicious_update_url = bool(update_url_lower) and not any(
-                marker in update_url_lower for marker in OFFICIAL_EXTENSION_UPDATE_URL_MARKERS
-            )
-            impersonation_hit = extension_name_lower in IMPERSONATED_EXTENSION_NAMES
-
-            if not (
-                self._has_strong_campaign_context(blob, manifest_path)
-                or remote_lure_hit
-                or (keyword_hit and risky_permissions)
-                or (impersonation_hit and suspicious_update_url)
-                or (suspicious_update_url and risky_permissions and self._contains_remote_loader_marker(update_url_lower))
-            ):
-                continue
-
             self._add(
                 "MEDIUM",
                 "Browser Extension Review",
-                f"{label} extension needs review: {extension_name}",
-                manifest_path,
+                finding["description"],
+                finding["path"],
             )
 
     def scan_system_tampering(self):
@@ -5307,6 +5712,15 @@ class ScanEngine:
             return False
         if self._has_strong_campaign_context(message_lower):
             return False
+        if extracted_paths and all(
+            path and (
+                self._is_trusted_vendor_path(path)
+                or self._is_protected_system_path(path)
+                or self._has_trusted_file_metadata(path)
+            )
+            for path in extracted_paths
+        ):
+            return True
         if any(
             path
             and self._path_in_user_writable_exec_zone(path)
@@ -5331,12 +5745,16 @@ class ScanEngine:
             "modifying user: system",
         )
         has_benign_rule = any(token in message_lower for token in benign_rule_tokens)
-        if not has_benign_rule:
-            return False
-        return any(token in message_lower for token in benign_actor_tokens)
+        if has_benign_rule and any(token in message_lower for token in benign_actor_tokens):
+            return True
+        if "\\appdata\\local\\programs\\opera gx\\opera.exe" in message_lower:
+            return True
+        return False
 
     @staticmethod
     def _is_benign_defender_event(message_lower):
+        if "[2050]" in message_lower and "has uploaded a file for further analysis" in message_lower:
+            return True
         if "microsoft defender antivirus configuration has changed" not in message_lower:
             return False
         if "default\\productappdatapath" in message_lower and "\\programdata\\microsoft" in message_lower:
@@ -6239,6 +6657,28 @@ class ScanEngine:
                 action,
             )
 
+    def scan_runonceex_persistence(self):
+        self.log("RUNONCEEX REVIEW", "SECTION")
+        if not WINREG_OK:
+            self.log("winreg unavailable - RunOnceEx review skipped", "WARN")
+            return
+
+        for row in self._collect_runonceex_rows():
+            if self._stop:
+                return
+            finding = self._looks_suspicious_runonceex(row)
+            if not finding:
+                continue
+            severity, category, description = finding
+            location = f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]"
+            self._add(
+                severity,
+                category,
+                description,
+                location,
+                lambda h=row.get("Hive"), sk=row.get("Subkey"), n=row.get("ValueName"): self._delete_reg_val(h, sk, n),
+            )
+
     def scan_active_setup_persistence(self):
         self.log("ACTIVE SETUP REVIEW", "SECTION")
         if not WINREG_OK:
@@ -6962,6 +7402,7 @@ class ScanEngine:
         self.last_summary = None
         self.cleanup_assessment = None
         self.exposure_notes.clear()
+        self.post_cleanup_browser_summary = None
         self._module_scan_pid_targets.clear()
         self._shortcut_scan_rows = None
         self._scheduled_task_rows = None
@@ -6984,6 +7425,7 @@ class ScanEngine:
         self.scan_wmi_persistence()
         self.scan_scheduled_tasks()
         self.scan_registry()
+        self.scan_runonceex_persistence()
         self.scan_policy_persistence()
         self.scan_active_setup_persistence()
         self.scan_session_manager_review()
@@ -7008,6 +7450,7 @@ class ScanEngine:
         self.scan_exposure_surface()
         exposure = self.assess_account_exposure()
         breakdown = self.finding_breakdown()
+        browser_compare = self.post_cleanup_browser_summary or self.compare_post_cleanup_browser_state()
         self.log(
             f"-- SCAN COMPLETE  |  {len(self.threats)} threat(s) found  -  {crit} CRITICAL  {high} HIGH --",
             "SECTION"
@@ -7017,6 +7460,11 @@ class ScanEngine:
         self.log(f"Confirmed items   : {breakdown['confirmed']}  |  Review-first: {breakdown['review']}  |  Other: {breakdown['other']}", "INFO")
         self.log(f"Local confidence  : {cleanup['score']}%  -  {cleanup['label']}", "WARN" if cleanup["score"] < 90 else "INFO")
         self.log(f"Confidence note   : {cleanup['detail']}", "INFO")
+        if browser_compare:
+            self.log(
+                f"Browser compare   : {browser_compare['cleared_count']} suspicious browser item(s) cleared, {browser_compare['reappeared_count']} reappeared",
+                "INFO" if not browser_compare["reappeared_count"] else "WARN",
+            )
         self.log(f"Account risk      : {exposure['score']}%  -  {exposure['label']}", "CRITICAL" if exposure["score"] >= 70 else "WARN")
         self.log(f"Account note      : {exposure['detail']}", "INFO")
 
@@ -7025,6 +7473,7 @@ class ScanEngine:
         self._recovery_manifest_path = ""
         self._recovery_warning_emitted = False
         self._begin_recovery_session()
+        self._capture_pre_cleanup_snapshot()
 
         file_cleanup_categories = self._active_file_remediation_categories()
         self.log("── EXECUTING REMEDIATION ──────────────────────────────", "SECTION")
@@ -7090,6 +7539,8 @@ class ScanEngine:
         cleanup = self.cleanup_assessment or self.assess_cleanup_state()
         exposure = self.assess_account_exposure()
         breakdown = self.finding_breakdown()
+        persistence_compare = self.post_cleanup_persistence_summary or self.compare_post_cleanup_persistence()
+        browser_compare = self.post_cleanup_browser_summary or self.compare_post_cleanup_browser_state()
         recovery_plan = self.build_account_recovery_plan(exposure).splitlines()
 
         grouped = {}
@@ -7121,6 +7572,17 @@ class ScanEngine:
             f"Account risk    : {exposure['score']}% - {exposure['label']}",
             f"Account note    : {exposure['detail']}",
         ]
+
+        if persistence_compare:
+            lines += [
+                f"Startup snapshot: {persistence_compare['before_count']} before cleanup, {persistence_compare['current_count']} on this scan",
+                f"Snapshot change : {persistence_compare['cleared_count']} cleared, {persistence_compare['reappeared_count']} reappeared",
+            ]
+        if browser_compare:
+            lines += [
+                f"Browser snapshot: {browser_compare['before_count']} suspicious item(s) before cleanup, {browser_compare['current_count']} on this scan",
+                f"Browser change  : {browser_compare['cleared_count']} cleared, {browser_compare['reappeared_count']} reappeared",
+            ]
 
         if recovery["available"]:
             lines.append(
@@ -7899,6 +8361,7 @@ class App(tk.Tk):
             "Malicious Shortcut",
             "Policy Persistence",
             "Registry Persistence",
+            "RunOnceEx Persistence",
             "SafeBoot Review",
             "Session Manager Review",
             "Shell Persistence Review",
@@ -8071,6 +8534,8 @@ class App(tk.Tk):
             summary = self._scanner.last_summary or self._scanner.summarize_threats()
             cleanup = self._scanner.cleanup_assessment or self._scanner.assess_cleanup_state()
             exposure = self._scanner.assess_account_exposure()
+            persistence_compare = self._scanner.post_cleanup_persistence_summary or self._scanner.compare_post_cleanup_persistence()
+            browser_compare = self._scanner.post_cleanup_browser_summary or self._scanner.compare_post_cleanup_browser_state()
 
             def _done():
                 self._set_progress("")
@@ -8093,6 +8558,7 @@ class App(tk.Tk):
                     "Malicious Shortcut",
                     "Policy Persistence",
                     "Registry Persistence",
+                    "RunOnceEx Persistence",
                     "SafeBoot Review",
                     "Session Manager Review",
                     "Shell Persistence Review",
@@ -8113,6 +8579,16 @@ class App(tk.Tk):
                             f"Startup watch      : {startup_hits} suspicious startup/persistence item(s) were found. Clear these so the infection cannot relaunch itself.",
                             "CRITICAL" if startup_hits >= 2 else "WARN",
                         )
+                    if persistence_compare and persistence_compare["reappeared_count"]:
+                        self._log(
+                            f"Post-clean drift   : {persistence_compare['reappeared_count']} startup target(s) came back after cleanup.",
+                            "CRITICAL" if persistence_compare["suspicious_reappeared_count"] else "WARN",
+                        )
+                    if browser_compare and browser_compare["reappeared_count"]:
+                        self._log(
+                            f"Browser aftermath  : {browser_compare['reappeared_count']} suspicious browser-state item(s) came back after cleanup.",
+                            "WARN",
+                        )
                     if self._session_reset_available:
                         self._log("ACCOUNT LOCKDOWN is available for a one-click local browser/Discord session wipe.", "WARN")
                     if self._repair_defaults_available:
@@ -8131,6 +8607,16 @@ class App(tk.Tk):
                         f"Post-clean rescan passed. No threats detected. Local {cleanup['score']}%. Account risk {exposure['score']}%.",
                         GREEN
                     )
+                    if persistence_compare:
+                        self._log(
+                            f"Snapshot compare   : {persistence_compare['cleared_count']} startup target(s) stayed gone, {persistence_compare['reappeared_count']} came back after cleanup.",
+                            "INFO" if not persistence_compare["reappeared_count"] else "WARN",
+                        )
+                    if browser_compare:
+                        self._log(
+                            f"Browser compare    : {browser_compare['cleared_count']} suspicious browser item(s) stayed gone, {browser_compare['reappeared_count']} came back after cleanup.",
+                            "INFO" if not browser_compare["reappeared_count"] else "WARN",
+                        )
                 else:
                     self._count_var.set(f"Clean  |  local {cleanup['score']}%  |  account risk {exposure['score']}%")
                     self._set_status(f"Scan complete. No threats detected. Local {cleanup['score']}%. Account risk {exposure['score']}%.", GREEN)
