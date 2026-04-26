@@ -55,6 +55,8 @@ Based on Reddit cleanup threads through April 26, 2026 and the FRST lines victim
 - scheduled tasks executing payloads from `%AppData%\Roaming\Godot\app_userdata\<id>\`
 - scheduled task arguments pointing at `node_modules.asar` or another `.asar` payload from the same user-writable tree
 - startup scripts or script-host launches that pull from raw IPs, short-lived domains, or downloader-style PowerShell / `mshta` chains
+- at least one April 2026 victim report describing a startup PowerShell script pulling from `45.146.87.17/load`
+- FRST helpers in newer threads also calling out broken or injected browser extensions after the main malware cleanup, including a fake or invalid `Google Docs` extension in Chromium profiles
 
 Important caveat: the `Shenzhen iMyFone Technology Co., Ltd` string is not proof of malware by itself. The suspicious signal is the full combination of:
 
@@ -73,6 +75,7 @@ The big change in the newer Reddit cases is not a completely different loader. I
 - scheduled tasks and startup entries that use throwaway downloader logic instead of a stable family filename
 - more warnings from helpers that the recent waves can include backdoor / RAT behavior, not just one-shot stealer behavior
 - more emphasis on checking browser extensions, Defender posture, and stray startup residue even after AV products say the machine is clean
+- more cases where the first visible symptom is Discord or Gmail account abuse, but the surviving residue is an autorun script, temp launcher, or browser-extension foothold rather than the original `Instaler.exe`
 
 That reinforces the same detection strategy for RenKill:
 

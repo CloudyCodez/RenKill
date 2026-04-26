@@ -624,6 +624,7 @@ STRONG_CAMPAIGN_MARKERS = {
 }
 
 MANUAL_REVIEW_CATEGORIES = {
+    "Active Setup Persistence",
     "Browser Extension Review",
     "Browser Policy Review",
     "Defender Protection Review",
@@ -793,6 +794,19 @@ SUSPICIOUS_EXTENSION_PERMISSIONS = {
     "webRequest",
     "webRequestBlocking",
 }
+OFFICIAL_EXTENSION_UPDATE_URL_MARKERS = (
+    "clients2.google.com/service/update2/crx",
+    "clients2.googleusercontent.com/service/update2/crx",
+    "edge.microsoft.com/extensionwebstorebase/v1/crx",
+    "extension-updates.opera.com",
+)
+IMPERSONATED_EXTENSION_NAMES = {
+    "google docs",
+    "google docs offline",
+    "google drive",
+    "google sheets",
+    "google slides",
+}
 
 SENSITIVE_HOST_MARKERS = {
     "accounts.google.com",
@@ -859,6 +873,7 @@ CHROMIUM_EXTENSION_REVIEW_ROOTS = (
 )
 
 PERSISTENCE_THREAT_CATEGORIES = {
+    "Active Setup Persistence",
     "AppCert Persistence",
     "AppInit Persistence",
     "Disabled Startup Artifact",
@@ -887,6 +902,7 @@ PERSISTENCE_THREAT_CATEGORIES = {
 
 RENLOADER_CORRELATION_CATEGORIES = {
     "Active C2 Connection",
+    "Active Setup Persistence",
     "AppCert Persistence",
     "AppInit Persistence",
     "Campaign IOC Process",
@@ -1123,6 +1139,7 @@ class ScanEngine:
         self._scheduled_task_rows = None
         self._autorun_rows = None
         self._policy_rows = None
+        self._active_setup_rows = None
         self._disabled_startup_rows = None
         self._wmi_rows = None
         self._shell_rows = None
@@ -1768,6 +1785,7 @@ class ScanEngine:
     @staticmethod
     def _report_group_name(category):
         startup_categories = {
+            "Active Setup Persistence",
             "AppCert Persistence",
             "Explorer Hijack Review",
             "KnownDLLs Review",
@@ -1971,6 +1989,7 @@ class ScanEngine:
         generic_stealer_hits = sum(1 for marker in generic_markers if marker in text_blob)
 
         renloader_hits += sum(1 for cat in categories if cat in {
+            "Active Setup Persistence",
             "AppCert Persistence",
             "AppInit Persistence",
             "Explorer Hijack Review",
@@ -2019,6 +2038,7 @@ class ScanEngine:
         })
 
         startup_layers = sum(1 for cat in categories if cat in {
+            "Active Setup Persistence",
             "AppCert Persistence",
             "Startup Correlation Review",
             "Disabled Startup Artifact",
@@ -3209,6 +3229,75 @@ class ScanEngine:
         self._policy_rows = rows
         return rows
 
+    def _collect_active_setup_rows(self):
+        if self._active_setup_rows is not None:
+            return self._active_setup_rows
+
+        rows = []
+        if not WINREG_OK:
+            self._active_setup_rows = rows
+            return rows
+
+        locations = [
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Active Setup\Installed Components", "HKLM"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Active Setup\Installed Components", "HKLM"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Active Setup\Installed Components", "HKCU"),
+        ]
+
+        for hive, subkey, hive_name in locations:
+            try:
+                root = winreg.OpenKey(hive, subkey)
+            except (FileNotFoundError, PermissionError):
+                continue
+
+            index = 0
+            while True:
+                try:
+                    component_name = winreg.EnumKey(root, index)
+                except OSError:
+                    break
+                index += 1
+                component_path = subkey + "\\" + component_name
+                try:
+                    child = winreg.OpenKey(hive, component_path)
+                except (FileNotFoundError, PermissionError):
+                    continue
+
+                try:
+                    try:
+                        stub_path = str(winreg.QueryValueEx(child, "StubPath")[0] or "")
+                    except OSError:
+                        stub_path = ""
+                    try:
+                        component_label = str(winreg.QueryValueEx(child, "")[0] or "")
+                    except OSError:
+                        component_label = ""
+                finally:
+                    try:
+                        winreg.CloseKey(child)
+                    except Exception:
+                        pass
+
+                if stub_path:
+                    rows.append(
+                        {
+                            "Hive": hive,
+                            "HiveName": hive_name,
+                            "Subkey": component_path,
+                            "ComponentName": component_name,
+                            "ComponentLabel": component_label,
+                            "StubPath": stub_path,
+                        }
+                    )
+
+            try:
+                winreg.CloseKey(root)
+            except Exception:
+                pass
+
+        self._active_setup_rows = rows
+        return rows
+
     def _collect_disabled_startup_rows(self):
         if self._disabled_startup_rows is not None:
             return self._disabled_startup_rows
@@ -3697,6 +3786,29 @@ class ScanEngine:
 
         return None
 
+    def _looks_suspicious_active_setup(self, row):
+        raw = self._normalize_cmdline((row or {}).get("StubPath")).strip()
+        if not raw:
+            return None
+
+        target = self._extract_command_target(raw)
+        normalized_target = self._normalized_path(target)
+        component_name = str((row or {}).get("ComponentName") or "")
+        component_label = str((row or {}).get("ComponentLabel") or "")
+        display = component_label or component_name or "Active Setup component"
+
+        if self._value_has_malware_signal(raw):
+            return "HIGH", "Active Setup Persistence", f"Active Setup component launches a suspicious StubPath: {display} -> {raw}"
+        if self._contains_remote_loader_marker(raw):
+            return "HIGH", "Active Setup Persistence", f"Active Setup component references a remote loader or downloader command: {display} -> {raw}"
+        if normalized_target and self._looks_like_temp_stage_launcher(normalized_target):
+            return "HIGH", "Active Setup Persistence", f"Active Setup component launches a temp-stage executable: {display} -> {raw}"
+        if normalized_target and self._path_in_user_writable_exec_zone(normalized_target):
+            stem = os.path.splitext(os.path.basename(normalized_target))[0]
+            if self._looks_random(stem) or self._contains_marker(normalized_target, PROCESS_IOC_MARKERS):
+                return "HIGH", "Active Setup Persistence", f"Active Setup component launches a suspicious user-writable payload: {display} -> {raw}"
+        return None
+
     def _evaluate_scheduled_task_entry(self, task_name, task_path, execute, arguments="", working_directory=""):
         task_name = str(task_name or "")
         task_path = str(task_path or "")
@@ -3896,6 +4008,17 @@ class ScanEngine:
             bucket["sources"].append(f"policy:{location}")
             bucket["reasons"].update(signal["reasons"])
             bucket["reasons"].add("policy-backed autorun")
+
+        for row in self._collect_active_setup_rows():
+            signal = self._startup_signal_for_command(row.get("StubPath"))
+            if not signal:
+                continue
+            location = f"{row.get('HiveName')}\\{row.get('Subkey')}[StubPath]"
+            bucket = correlated.setdefault(signal["identity"], {"score": 0, "sources": [], "target": signal["target"], "reasons": set()})
+            bucket["score"] = max(bucket["score"], signal["score"] + 1)
+            bucket["sources"].append(f"active-setup:{location}")
+            bucket["reasons"].update(signal["reasons"])
+            bucket["reasons"].add("active setup stubpath")
 
         for row in self._collect_logon_persistence_rows():
             target_text = row.get("Value")
@@ -4701,15 +4824,32 @@ class ScanEngine:
             )
             remote_lure_hit = self._contains_marker(blob, {"go.zovo", "mediafire", "mega", "dodi-repacks"})
             risky_permissions = bool(permissions & {perm.lower() for perm in SUSPICIOUS_EXTENSION_PERMISSIONS})
+            update_url = str(
+                manifest.get("update_url")
+                or manifest.get("browser_specific_settings", {}).get("gecko", {}).get("update_url")
+                or ""
+            )
+            update_url_lower = update_url.lower()
+            extension_name = str(manifest.get("name") or os.path.basename(os.path.dirname(manifest_path)))
+            extension_name_lower = extension_name.lower()
+            suspicious_update_url = bool(update_url_lower) and not any(
+                marker in update_url_lower for marker in OFFICIAL_EXTENSION_UPDATE_URL_MARKERS
+            )
+            impersonation_hit = extension_name_lower in IMPERSONATED_EXTENSION_NAMES
 
-            if not (self._has_strong_campaign_context(blob, manifest_path) or remote_lure_hit or (keyword_hit and risky_permissions)):
+            if not (
+                self._has_strong_campaign_context(blob, manifest_path)
+                or remote_lure_hit
+                or (keyword_hit and risky_permissions)
+                or (impersonation_hit and suspicious_update_url)
+                or (suspicious_update_url and risky_permissions and self._contains_remote_loader_marker(update_url_lower))
+            ):
                 continue
 
-            name = manifest.get("name") or os.path.basename(os.path.dirname(manifest_path))
             self._add(
                 "MEDIUM",
                 "Browser Extension Review",
-                f"{label} extension needs review: {name}",
+                f"{label} extension needs review: {extension_name}",
                 manifest_path,
             )
 
@@ -6099,6 +6239,28 @@ class ScanEngine:
                 action,
             )
 
+    def scan_active_setup_persistence(self):
+        self.log("ACTIVE SETUP REVIEW", "SECTION")
+        if not WINREG_OK:
+            self.log("winreg unavailable - Active Setup review skipped", "WARN")
+            return
+
+        for row in self._collect_active_setup_rows():
+            if self._stop:
+                return
+            finding = self._looks_suspicious_active_setup(row)
+            if not finding:
+                continue
+            severity, category, description = finding
+            location = f"{row.get('HiveName')}\\{row.get('Subkey')}[StubPath]"
+            self._add(
+                severity,
+                category,
+                description,
+                location,
+                lambda h=row.get("Hive"), sk=row.get("Subkey"), n="StubPath": self._delete_reg_val(h, sk, n),
+            )
+
     def scan_session_manager_review(self):
         self.log("SESSION MANAGER REVIEW", "SECTION")
         if not WINREG_OK:
@@ -6805,6 +6967,7 @@ class ScanEngine:
         self._scheduled_task_rows = None
         self._autorun_rows = None
         self._policy_rows = None
+        self._active_setup_rows = None
         self._disabled_startup_rows = None
         self._wmi_rows = None
         self._shell_rows = None
@@ -6822,6 +6985,7 @@ class ScanEngine:
         self.scan_scheduled_tasks()
         self.scan_registry()
         self.scan_policy_persistence()
+        self.scan_active_setup_persistence()
         self.scan_session_manager_review()
         self.scan_safeboot_review()
         self.scan_logon_persistence()
@@ -7725,6 +7889,7 @@ class App(tk.Tk):
 
     def _update_post_scan_hint(self, threat_count, cleanup, exposure):
         startup_categories = {
+            "Active Setup Persistence",
             "AppCert Persistence",
             "Explorer Hijack Review",
             "KnownDLLs Review",
@@ -7918,6 +8083,7 @@ class App(tk.Tk):
                 self._btn_sessions.configure(state="normal")
                 self._btn_repair.configure(state="normal")
                 startup_hits = self._threat_count({
+                    "Active Setup Persistence",
                     "AppCert Persistence",
                     "Explorer Hijack Review",
                     "KnownDLLs Review",

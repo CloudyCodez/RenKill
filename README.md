@@ -23,6 +23,8 @@ FRST cleanup threads.
 | Payload decrypt keys (`.key`) and Ren'Py payload scripts | Filename + location |
 | Scheduled task persistence | `schtasks` query + keyword match |
 | Registry autorun / IFEO / AppInit persistence | Registry review |
+| Active Setup, policy autoruns, SafeBoot, logon-script drift | FRST-style startup and policy review |
+| Winlogon Notify / Explorer hook persistence | Legacy logon and Explorer review |
 | WMI persistence | Subscription review |
 | Active C2 connections | Network scan for known bad IPs |
 
@@ -59,7 +61,7 @@ look that tends to trip aggressive AV heuristics.
 2. Click `SCAN SYSTEM`
 3. Read the verdict, confidence readout, and findings
 4. Click `KILL & CLEAN` to remove high-confidence artifacts
-5. If prompted, use `RESET SESSION DATA` to clear local browser and Discord session material
+5. If prompted, use `ACCOUNT LOCKDOWN` to clear local browser and Discord session material
 6. Reboot and run one more scan
 
 ---
