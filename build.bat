@@ -82,7 +82,6 @@ if exist dist\RenKill\RenKill.exe (
 echo.
 echo [*] Cleaning transient build folders...
 if exist build rmdir /s /q build
-if exist dist rmdir /s /q dist
 if exist __pycache__ rmdir /s /q __pycache__
 echo [OK] Clean.
 echo.

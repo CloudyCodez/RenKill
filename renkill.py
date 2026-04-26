@@ -17,7 +17,11 @@ import json
 import re
 import base64
 import csv
+import tempfile
 import traceback
+import urllib.error
+import urllib.request
+import zipfile
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, filedialog
 
@@ -37,8 +41,13 @@ except ImportError:
 
 # IOC definitions
 
-VERSION = "1.4.11"
+VERSION = "1.4.12"
 TOOL_NAME = "RenKill"
+UPDATE_REPO_OWNER = "CloudyCodez"
+UPDATE_REPO_NAME = "RenKill"
+UPDATE_API_URL = f"https://api.github.com/repos/{UPDATE_REPO_OWNER}/{UPDATE_REPO_NAME}/releases/latest"
+UPDATE_RELEASES_URL = f"https://github.com/{UPDATE_REPO_OWNER}/{UPDATE_REPO_NAME}/releases"
+UPDATE_ASSET_SUFFIX = "-windows.zip"
 
 MALICIOUS_FILENAMES = {
     "instaler.exe",
@@ -281,6 +290,7 @@ EXPOSURE_DIRS = (
 
 CHROMIUM_SESSION_SUBPATHS = (
     os.path.join("Network", "Cookies"),
+    os.path.join("Network", "Cookies-journal"),
     "Cookies",
     "Sessions",
     "Session Storage",
@@ -288,10 +298,12 @@ CHROMIUM_SESSION_SUBPATHS = (
     "IndexedDB",
     "Service Worker",
     "WebStorage",
+    "SharedStorage",
 )
 
 DISCORD_SESSION_SUBPATHS = (
     os.path.join("Network", "Cookies"),
+    os.path.join("Network", "Cookies-journal"),
     "Cookies",
     "Local Storage",
     "Session Storage",
@@ -299,6 +311,7 @@ DISCORD_SESSION_SUBPATHS = (
     "Code Cache",
     "GPUCache",
     "Service Worker",
+    "Partitions",
 )
 
 FIREFOX_SESSION_FILES = (
@@ -499,7 +512,9 @@ TRUSTED_VENDOR_PATH_MARKERS = (
     "\\appdata\\local\\google\\chrome\\application\\",
     "\\appdata\\local\\microsoft\\edge\\application\\",
     "\\appdata\\local\\bravesoftware\\brave-browser\\application\\",
+    "\\appdata\\local\\programs\\opera gx\\",
     "\\appdata\\roaming\\opera software\\",
+    "\\programdata\\obs-studio-hook\\",
     "\\program files\\windows defender\\",
 )
 
@@ -520,6 +535,7 @@ TRUSTED_COMPANY_TOKENS = (
     "microsoft",
     "mozilla",
     "nvidia",
+    "obs project",
     "opera",
     "sentinelone",
     "smilegate",
@@ -539,6 +555,7 @@ TRUSTED_FILE_DESCRIPTION_TOKENS = (
     "malwarebytes",
     "microsoft defender",
     "microsoft edge",
+    "obs",
     "onedrive",
     "security agent",
     "sentinel",
@@ -636,6 +653,8 @@ COMMON_USERLAND_EXEC_MARKERS = (
 )
 TEMP_STAGE_DIR_REGEX = re.compile(r"\\(?:appdata\\local\\)?temp\\tmp-\d+-[a-z0-9_-]{6,}\\", re.IGNORECASE)
 DRIVE_PATH_REGEX = re.compile(r"[A-Za-z]:\\[^\"'\r\n]+", re.IGNORECASE)
+IPV4_HTTP_REGEX = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:/[^\s\"']*)?", re.IGNORECASE)
+VERSION_TAG_REGEX = re.compile(r"v?(\d+)\.(\d+)\.(\d+)", re.IGNORECASE)
 GODOT_APP_USERDATA_MARKER = "\\appdata\\roaming\\godot\\app_userdata\\"
 ASAR_ARGUMENT_MARKERS = ("node_modules.asar", ".asar")
 IMYFONE_COMPANY_TOKENS = (
@@ -663,7 +682,27 @@ SCRIPT_LURE_REMOTE_MARKERS = (
     "pastebin",
     "telegram.me",
     "t.me/",
+    "vyroget.com",
 )
+STARTUP_SCRIPT_EXTENSIONS = {".bat", ".cmd", ".exe", ".hta", ".js", ".ps1", ".py", ".pyw", ".url", ".vbs"}
+STARTUP_DOWNLOADER_TOKENS = (
+    "downloadstring",
+    "invoke-webrequest",
+    "iwr ",
+    "start-bitstransfer",
+    "mshta",
+    "powershell",
+    "curl ",
+    "wget ",
+    "/load",
+)
+SUSPICIOUS_STARTUP_BASENAMES = {
+    "discordsetup",
+    "executor_ctrl",
+    "interfacebroker",
+    "server",
+}
+TEMP_STAGE_SIDELOAD_EXTENSIONS = {".asp", ".asar", ".dll", ".eml", ".key", ".txt"}
 SAFE_SCRIPT_CONTENT_MARKERS = (
     "build script",
     "doctype html",
@@ -788,6 +827,23 @@ KNOWN_BROWSER_TARGETS = {
 }
 
 STARTUPAPPROVED_DISABLED_STATES = {0x01, 0x03, 0x09}
+STARTUP_NAME_SAFE_TOKENS = (
+    "amd",
+    "audio",
+    "brave",
+    "chrome",
+    "discord",
+    "edge",
+    "firefox",
+    "microsoft",
+    "onedrive",
+    "opera",
+    "security",
+    "steam",
+    "update",
+    "vertex",
+    "windows",
+)
 
 CHROMIUM_EXTENSION_REVIEW_ROOTS = (
     ("Chrome", os.path.join("AppData", "Local", "Google", "Chrome", "User Data")),
@@ -801,6 +857,7 @@ PERSISTENCE_THREAT_CATEGORIES = {
     "Disabled Startup Artifact",
     "HijackLoader Stage Directory",
     "Suspicious Loader Stage Directory",
+    "Suspicious Temp Stage Directory",
     "IFEO Persistence",
     "Injected/Sideloaded DLL",
     "Loader Container DLL",
@@ -809,6 +866,7 @@ PERSISTENCE_THREAT_CATEGORIES = {
     "Persistence Artifact",
     "Persistence Staging Directory",
     "Registry Persistence",
+    "Startup-Launched Process",
     "Startup Correlation Review",
     "Startup Persistence Artifact",
     "WMI Persistence",
@@ -836,8 +894,10 @@ RENLOADER_CORRELATION_CATEGORIES = {
     "Persistence Staging Directory",
     "Registry Persistence",
     "RenEngine Bundle",
+    "Startup-Launched Process",
     "Stealer Script Host",
     "Suspicious Loader Stage Directory",
+    "Suspicious Temp Stage Directory",
     "Suspicious RenPy Loader Bundle",
     "WMI Persistence",
 }
@@ -855,6 +915,7 @@ PROCESS_REMEDIATION_CATEGORIES = {
     "Paranoid Script Host",
     "Persistence Process",
     "Process in Temp",
+    "Startup-Launched Process",
     "Stealer Script Host",
     "Suspicious Process",
     "Suspicious Userland Process",
@@ -882,11 +943,22 @@ FILE_REMEDIATION_CATEGORIES = {
     "Proxy Configuration Review",
     "RenEngine Bundle",
     "Startup Persistence Artifact",
+    "Suspicious Temp Stage Directory",
 }
 
 CORRELATED_FILE_REMEDIATION_CATEGORIES = {
     "Suspicious Loader Stage Directory",
+    "Suspicious Temp Stage Directory",
     "Suspicious RenPy Loader Bundle",
+}
+
+PROTECTION_REPAIR_CATEGORIES = {
+    "Defender Exclusion",
+    "Defender Policy Review",
+    "Defender Protection Review",
+    "Firewall Rule Review",
+    "Proxy Configuration Review",
+    "WinHTTP Proxy Review",
 }
 
 SUSPICIOUS_REG_PATTERNS = [
@@ -1503,6 +1575,57 @@ class ScanEngine:
             restored_any = self._restore_reg_state(snapshot) or restored_any
         return restored_any
 
+    def _restore_winhttp_proxy_entry(self, entry):
+        mode = str(entry.get("mode") or "").lower()
+        if mode == "direct":
+            result = subprocess.run(
+                ["netsh", "winhttp", "reset", "proxy"],
+                capture_output=True,
+                text=True,
+                timeout=20,
+                creationflags=0x08000000,
+            )
+            return result.returncode == 0
+
+        proxy = str(entry.get("proxy") or "").strip()
+        if not proxy:
+            return False
+
+        command = ["netsh", "winhttp", "set", "proxy", f"proxy-server={proxy}"]
+        bypass = str(entry.get("bypass") or "").strip()
+        if bypass:
+            command.append(f"bypass-list={bypass}")
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=20,
+                creationflags=0x08000000,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    def _restore_defender_pref_entry(self, entry):
+        settings = entry.get("settings") or {}
+        if not settings:
+            return False
+
+        params = []
+        for key in ("DisableRealtimeMonitoring", "DisableIOAVProtection", "DisableScriptScanning"):
+            if key not in settings:
+                continue
+            params.append(f"-{key} ${str(bool(settings.get(key))).lower()}")
+        if not params:
+            return False
+
+        result = self._run_powershell(
+            "try { Set-MpPreference " + " ".join(params) + " -ErrorAction Stop } catch { exit 1 }",
+            timeout=25,
+        )
+        return bool(result is not None and result.returncode == 0)
+
     def revert_last_remediation(self):
         manifest = self._load_latest_recovery_manifest()
         if not manifest:
@@ -1532,8 +1655,12 @@ class ScanEngine:
                 ok = self._restore_reg_state(entry)
             elif kind == "proxy_reset":
                 ok = self._restore_proxy_entry(entry)
+            elif kind == "winhttp_proxy_reset":
+                ok = self._restore_winhttp_proxy_entry(entry)
             elif kind == "defender_exclusion_remove":
                 ok = self._restore_defender_exclusion_entry(entry)
+            elif kind == "defender_pref_restore":
+                ok = self._restore_defender_pref_entry(entry)
             elif kind == "firewall_rule_remove":
                 ok = self._restore_firewall_entry(entry)
             elif kind == "task_delete":
@@ -1620,6 +1747,7 @@ class ScanEngine:
             "Malicious Scheduled Task",
             "Malicious Shortcut",
             "Registry Persistence",
+            "Startup-Launched Process",
             "Startup Correlation Review",
             "Startup Persistence Artifact",
             "WMI Persistence",
@@ -1749,6 +1877,8 @@ class ScanEngine:
             "Persistence Artifact",
             "Persistence Process",
             "Persistence Staging Directory",
+            "Startup-Launched Process",
+            "Suspicious Temp Stage Directory",
             "Suspicious Loader Stage Directory",
             "Malicious Shortcut",
             "Campaign IOC Process",
@@ -1758,6 +1888,8 @@ class ScanEngine:
             "HijackLoader Stage Directory",
             "HijackLoader Stage Artifact",
             "Loader Container DLL",
+            "Startup-Launched Process",
+            "Suspicious Temp Stage Directory",
             "WMI Persistence",
             "Suspicious RenPy Loader Bundle",
         })
@@ -1771,6 +1903,7 @@ class ScanEngine:
             "Stealer Script Host",
             "Paranoid Networked Process",
             "Startup Persistence Artifact",
+            "Startup-Launched Process",
         })
 
         startup_layers = sum(1 for cat in categories if cat in {
@@ -1779,6 +1912,7 @@ class ScanEngine:
             "Malicious Scheduled Task",
             "Malicious Shortcut",
             "Registry Persistence",
+            "Startup-Launched Process",
             "WMI Persistence",
         })
         persistence_layers = sum(1 for cat in categories if cat in PERSISTENCE_THREAT_CATEGORIES)
@@ -1970,6 +2104,63 @@ class ScanEngine:
     def _in_temp(self, path):
         pl = path.lower()
         return any(t in pl for t in self._temp_paths() if t)
+
+    @staticmethod
+    def _startup_persistence_roots():
+        roots = []
+        appdata = os.environ.get("APPDATA", "")
+        programdata = os.environ.get("PROGRAMDATA", "")
+        for candidate in (
+            os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "Startup") if appdata else "",
+            os.path.join(programdata, "Microsoft", "Windows", "Start Menu", "Programs", "Startup") if programdata else "",
+        ):
+            if candidate:
+                roots.append(candidate)
+        return roots
+
+    def _in_startup_persistence_root(self, path):
+        normalized = self._normalized_path(path)
+        if not normalized:
+            return False
+        for root in self._startup_persistence_roots():
+            root_normalized = self._normalized_path(root).rstrip("\\/")
+            if root_normalized and (normalized == root_normalized or normalized.startswith(root_normalized + "\\")):
+                return True
+        return False
+
+    def _looks_like_suspicious_temp_stage_dir(self, dirpath, file_names_lower):
+        normalized = self._normalized_path(dirpath)
+        if not normalized or not self._in_temp(normalized):
+            return False
+
+        names = {str(name or "").lower() for name in (file_names_lower or []) if name}
+        if not names:
+            return False
+        if self._is_local_tool_context(dirpath):
+            return False
+        if self._looks_like_hijackloader_stage_dir(dirpath, names):
+            return True
+
+        exe_names = [name for name in names if name.endswith(".exe")]
+        sidecars = {os.path.splitext(name)[1] for name in names if os.path.splitext(name)[1]}
+        if any(name in CAMPAIGN_FILENAMES or name in HIJACKLOADER_STAGE_FILES for name in names):
+            return True
+        if any(os.path.splitext(name)[0] in SUSPICIOUS_STARTUP_BASENAMES for name in exe_names):
+            return True
+        if self._contains_marker(" ".join(names), PROCESS_IOC_MARKERS):
+            return True
+        if exe_names and sidecars & TEMP_STAGE_SIDELOAD_EXTENSIONS:
+            random_exe = any(self._looks_random(os.path.splitext(name)[0]) for name in exe_names)
+            if random_exe or TEMP_STAGE_DIR_REGEX.search(normalized):
+                return True
+        return False
+
+    @staticmethod
+    def _version_tuple(value):
+        match = VERSION_TAG_REGEX.search(str(value or ""))
+        if not match:
+            return ()
+        return tuple(int(part) for part in match.groups())
 
     @staticmethod
     def _normalize_cmdline(cmdline):
@@ -2288,6 +2479,80 @@ class ScanEngine:
             return False
         return data[0] in STARTUPAPPROVED_DISABLED_STATES
 
+    def _looks_suspicious_startup_item_name(self, item_name):
+        raw = str(item_name or "").strip()
+        if not raw:
+            return False
+        stem_raw = os.path.splitext(os.path.basename(raw))[0]
+        stem = stem_raw.lower()
+        if not stem:
+            return False
+        if any(token in stem for token in STARTUP_NAME_SAFE_TOKENS):
+            return False
+        if self._has_strong_campaign_context(stem):
+            return True
+        if self._looks_random(stem_raw):
+            return True
+        if stem_raw.isalnum() and 7 <= len(stem_raw) <= 16:
+            has_upper = any(char.isupper() for char in stem_raw)
+            has_lower = any(char.islower() for char in stem_raw)
+            vowels = sum(1 for char in stem if char in "aeiou")
+            if has_upper and has_lower and vowels <= max(2, len(stem) // 5):
+                return True
+        return False
+
+    @staticmethod
+    def _contains_remote_loader_marker(text):
+        lowered = str(text or "").lower()
+        if not lowered:
+            return False
+        return any(marker in lowered for marker in SCRIPT_LURE_REMOTE_MARKERS) or bool(IPV4_HTTP_REGEX.search(lowered))
+
+    def _looks_like_startup_script_dropper(self, path):
+        path = str(path or "")
+        ext = os.path.splitext(path)[1].lower()
+        if ext not in STARTUP_SCRIPT_EXTENSIONS:
+            return False
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+                sample = handle.read(8192)
+        except Exception:
+            return False
+
+        lowered = sample.lower()
+        if any(marker in lowered for marker in SAFE_SCRIPT_CONTENT_MARKERS):
+            return False
+        if not self._contains_remote_loader_marker(lowered):
+            return False
+        return any(token in lowered for token in STARTUP_DOWNLOADER_TOKENS) or self._has_strong_campaign_context(lowered)
+
+    def _evaluate_startup_file_entry(self, path):
+        path = str(path or "")
+        if not path:
+            return None
+        name = os.path.basename(path)
+        ext = os.path.splitext(name)[1].lower()
+        stem = os.path.splitext(name)[0]
+        normalized = self._normalized_path(path)
+        if self._is_local_tool_context(path):
+            return None
+        if self._has_strong_campaign_context(path):
+            return "CRITICAL", "Startup Persistence Artifact", f"Startup folder payload references campaign artifacts: {path}"
+        if self._looks_like_startup_script_dropper(path):
+            return "CRITICAL", "Startup Persistence Artifact", f"Startup script or launcher appears to download or launch a remote payload: {path}"
+        if ext in STARTUP_SCRIPT_EXTENSIONS and self._contains_remote_loader_marker(path):
+            return "HIGH", "Startup Persistence Artifact", f"Startup entry contains a remote URL or IP loader marker: {path}"
+        if ext == ".exe":
+            if self._is_safe_process_context(name.lower(), path, allow_metadata=True):
+                return None
+            if (
+                stem.lower() in SUSPICIOUS_STARTUP_BASENAMES
+                or self._looks_random(stem)
+                or self._in_temp(normalized)
+            ):
+                return "HIGH", "Startup Persistence Artifact", f"Direct executable in Startup folder looks suspicious and should be removed: {path}"
+        return None
+
     def _collect_shortcut_rows(self):
         if self._shortcut_scan_rows is not None:
             return self._shortcut_scan_rows
@@ -2356,6 +2621,7 @@ class ScanEngine:
 
         if target_exe in SHORTCUT_SCRIPT_HOSTS and (
             self._has_strong_campaign_context(arguments)
+            or self._contains_remote_loader_marker(arguments)
             or any(marker in args_lower for marker in COMMON_USERLAND_EXEC_MARKERS)
             or any(ext in args_lower for ext in (".bat", ".cmd", ".hta", ".js", ".ps1", ".vbs"))
         ):
@@ -2913,6 +3179,16 @@ class ScanEngine:
                     f"Scheduled task passes .asar payload arguments to a user-writable executable: {task_path}{task_name}",
                 )
 
+        if executable_name in SHORTCUT_SCRIPT_HOSTS:
+            if self._contains_remote_loader_marker(arguments) or any(
+                token in argument_blob for token in STARTUP_DOWNLOADER_TOKENS
+            ):
+                return (
+                    "HIGH",
+                    "Malicious Scheduled Task",
+                    f"Scheduled task launches a script host with remote loader behavior: {task_path}{task_name}",
+                )
+
         return None
 
     def _startup_signal_for_command(self, command_text, arguments="", working_directory=""):
@@ -2937,6 +3213,12 @@ class ScanEngine:
         if self._looks_like_godot_asar_task(target, arguments, working_directory):
             score += 3
             reasons.append("Godot app_userdata + asar payload")
+        if self._contains_remote_loader_marker(blob):
+            score += 3
+            reasons.append("remote URL/IP loader marker")
+        if any(token in blob.lower() for token in STARTUP_DOWNLOADER_TOKENS):
+            score += 2
+            reasons.append("downloader-style startup command")
 
         if normalized_target and self._path_in_user_writable_exec_zone(normalized_target):
             base = os.path.splitext(os.path.basename(normalized_target))[0]
@@ -3477,7 +3759,17 @@ class ScanEngine:
             try:
                 for fname in os.listdir(root):
                     fpath = os.path.join(root, fname)
-                    fl = fname.lower()
+                    finding = self._evaluate_startup_file_entry(fpath)
+                    if finding:
+                        severity, category, description = finding
+                        self._add(
+                            severity,
+                            category,
+                            description,
+                            fpath,
+                            lambda p=fpath: self._delete_file(p),
+                        )
+                        continue
                     if self._is_probable_source_lure(fpath, fname) or self._file_contains_ascii_or_utf16le(
                         fpath, PROCESS_IOC_MARKERS
                     ):
@@ -3616,6 +3908,18 @@ class ScanEngine:
                             ),
                         )
                         break
+                    else:
+                        if self._looks_suspicious_startup_item_name(item_name):
+                            location = f"{subkey}\\{item_name}"
+                            self._add(
+                                "MEDIUM",
+                                "Disabled Startup Artifact",
+                                f"Disabled startup item uses a suspicious random-looking name and should be reviewed: {item_name}",
+                                location,
+                                lambda approved_hive=hive, approved_key=subkey, approved_name=item_name: self._remediate_disabled_startup_entry(
+                                    [(approved_hive, approved_key, approved_name)]
+                                ),
+                            )
 
                 try:
                     winreg.CloseKey(key)
@@ -3811,13 +4115,12 @@ class ScanEngine:
                 suspicious_proxy = self._has_strong_campaign_context(proxy_blob) or any(token in proxy_lower for token in ("127.0.0.1", "localhost"))
                 if proxy_enable and proxy_blob and suspicious_proxy:
                     severity = "HIGH" if self._has_strong_campaign_context(proxy_blob) else "MEDIUM"
-                    action = self._reset_user_proxy_settings if severity == "HIGH" else None
                     self._add(
                         severity,
                         "Proxy Configuration Review",
                         f"Internet proxy setting requires review: {hive_name}\\{subkey} -> {proxy_blob}",
                         f"{hive_name}\\{subkey}",
-                        action,
+                        self._reset_user_proxy_settings,
                     )
 
         try:
@@ -3837,6 +4140,7 @@ class ScanEngine:
                     "WinHTTP Proxy Review",
                     "WinHTTP proxy is configured and should be reviewed after cleanup.",
                     "netsh winhttp show proxy",
+                    self._reset_winhttp_proxy_settings,
                 )
         except Exception as exc:
             self.log(f"WinHTTP proxy review warning: {exc}", "WARN")
@@ -3898,6 +4202,7 @@ class ScanEngine:
                 "Microsoft Defender protections are disabled and should be reviewed: "
                 + ", ".join(disabled_controls),
                 "Get-MpPreference",
+                self._repair_defender_protection_defaults,
             )
 
     def scan_security_posture(self):
@@ -3924,6 +4229,8 @@ class ScanEngine:
                         display_name = str(row.get("displayName") or "").strip()
                         exe_path = str(row.get("pathToSignedProductExe") or "").strip()
                         product_state = str(row.get("productState") or "").strip()
+                        if self._is_benign_security_center_product(display_name, exe_path):
+                            continue
                         if exe_path and not (
                             self._is_trusted_vendor_path(exe_path)
                             or self._is_protected_system_path(exe_path)
@@ -3985,6 +4292,11 @@ class ScanEngine:
                     "Defender Policy Review",
                     f"Windows Defender policy override requires review: {hive_name}\\{subkey} [{value_name}] = {value}",
                     f"{hive_name}\\{subkey}",
+                    lambda action_hive=hive, action_subkey=subkey, action_name=value_name: self._delete_reg_val(
+                        action_hive,
+                        action_subkey,
+                        action_name,
+                    ),
                 )
 
             try:
@@ -4140,13 +4452,23 @@ class ScanEngine:
             return True
         extracted_paths = [self._normalized_path(match.group(0).rstrip(" .,)")) for match in DRIVE_PATH_REGEX.finditer(message)]
         userland_path_hit = any(
-            path and self._path_in_user_writable_exec_zone(path) and not self._is_local_tool_path(path)
+            path
+            and self._path_in_user_writable_exec_zone(path)
+            and not self._is_local_tool_path(path)
+            and not self._is_trusted_vendor_path(path)
+            and not self._is_protected_system_path(path)
             for path in extracted_paths
         )
+        if source_label == "Firewall" and self._is_benign_firewall_event(message_lower, extracted_paths):
+            return False
+        if source_label == "Defender" and self._is_benign_defender_event(message_lower):
+            return False
+        if source_label == "CodeIntegrity" and self._is_benign_code_integrity_event(message_lower):
+            return False
 
         if any(token in message_lower for token in ("127.0.0.1", "localhost")) and source_label in {"Defender", "Firewall", "SecurityCenter"}:
             return True
-        if source_label == "CodeIntegrity" and (userland_path_hit or any(marker in message_lower for marker in USER_WRITABLE_DIR_MARKERS)):
+        if source_label == "CodeIntegrity" and userland_path_hit:
             return True
         if source_label == "Defender" and userland_path_hit:
             return True
@@ -4163,6 +4485,74 @@ class ScanEngine:
         if source_label == "ServiceControlManager" and userland_path_hit and any(
             token in message_lower for token in ("service", "failed", "terminated", "error", "could not")
         ):
+            return True
+        return False
+
+    def _is_benign_security_center_product(self, display_name, exe_path):
+        display_lower = str(display_name or "").strip().lower()
+        exe_lower = str(exe_path or "").strip().lower()
+        if display_lower in {"windows defender", "microsoft defender", "microsoft defender antivirus"}:
+            return True
+        if exe_lower and (
+            self._is_trusted_vendor_path(exe_path)
+            or self._is_protected_system_path(exe_path)
+            or self._has_trusted_file_metadata(exe_path)
+        ):
+            return True
+        if exe_lower and "windows defender" in exe_lower:
+            return True
+        return False
+
+    def _is_benign_firewall_event(self, message_lower, extracted_paths):
+        if not message_lower:
+            return False
+        if self._has_strong_campaign_context(message_lower):
+            return False
+        if any(
+            path
+            and self._path_in_user_writable_exec_zone(path)
+            and not self._is_trusted_vendor_path(path)
+            and not self._is_protected_system_path(path)
+            and not self._is_local_tool_path(path)
+            for path in extracted_paths
+        ):
+            return False
+
+        benign_rule_tokens = (
+            "windefend",
+            "windows defender firewall",
+            "service restriction rule for windefend",
+            "mpssvc",
+        )
+        benign_actor_tokens = (
+            "origin: local",
+            "origin: 0",
+            "modifying user: s-1-5-18",
+            "modifying user: nt authority\\system",
+            "modifying user: system",
+        )
+        has_benign_rule = any(token in message_lower for token in benign_rule_tokens)
+        if not has_benign_rule:
+            return False
+        return any(token in message_lower for token in benign_actor_tokens)
+
+    @staticmethod
+    def _is_benign_defender_event(message_lower):
+        if "microsoft defender antivirus configuration has changed" not in message_lower:
+            return False
+        if "default\\productappdatapath" in message_lower and "\\programdata\\microsoft" in message_lower:
+            return True
+        if "windows defender" in message_lower and "\\programdata\\microsoft\\windows defender" in message_lower:
+            return True
+        return False
+
+    @staticmethod
+    def _is_benign_code_integrity_event(message_lower):
+        if not message_lower:
+            return False
+        if "\\programdata\\obs-studio-hook\\" in message_lower and "we-graphics-hook64.dll" in message_lower:
+            return True
+        if "\\appdata\\local\\programs\\opera gx\\" in message_lower:
             return True
         return False
 
@@ -4438,6 +4828,11 @@ class ScanEngine:
                         self._add("CRITICAL", "HijackLoader Stage Directory",
                                   f"HijackLoader stage directory at: {dp}", dp,
                                   lambda p=dp: self._nuke_directory(p))
+                    elif self._looks_like_suspicious_temp_stage_dir(dirpath, file_names_lower):
+                        dp = dirpath
+                        self._add("HIGH", "Suspicious Temp Stage Directory",
+                                  f"Temp staging directory shows downloader or sideload layout: {dp}", dp,
+                                  lambda p=dp: self._nuke_directory(p))
                     elif self._looks_like_generic_loader_stage_dir(dirpath, file_names_lower):
                         dp = dirpath
                         self._add("HIGH", "Suspicious Loader Stage Directory",
@@ -4617,6 +5012,17 @@ class ScanEngine:
             else:
                 return
         if self._is_protected_shell_host(pname, pexe) and not self._shell_host_has_explicit_malware_target(cmdline):
+            return
+
+        if pexe and self._in_startup_persistence_root(pexe):
+            self._add_process_seed(
+                seeds,
+                pid,
+                "CRITICAL",
+                "Startup-Launched Process",
+                f"Process is running directly from a Windows Startup folder: {pname} (PID {pid})  {pexe}",
+                pexe,
+            )
             return
 
         if pexe and any(temp_root and temp_root in pexe_lower for temp_root in self._temp_paths()):
@@ -5244,6 +5650,46 @@ class ScanEngine:
         self.log(f"Could not remove Defender exclusion: {value}", "WARN")
         return False
 
+    def _capture_defender_pref_state(self):
+        rows = self._run_powershell_json(
+            "try { "
+            "Get-MpPreference -ErrorAction Stop | "
+            "Select-Object DisableRealtimeMonitoring,DisableIOAVProtection,DisableScriptScanning | ConvertTo-Json -Compress "
+            "} catch { }",
+            timeout=25,
+        )
+        if not rows:
+            return None
+
+        row = rows[0]
+        return {
+            "kind": "defender_pref_restore",
+            "settings": {
+                "DisableRealtimeMonitoring": bool(row.get("DisableRealtimeMonitoring")),
+                "DisableIOAVProtection": bool(row.get("DisableIOAVProtection")),
+                "DisableScriptScanning": bool(row.get("DisableScriptScanning")),
+            },
+        }
+
+    def _repair_defender_protection_defaults(self):
+        backup = self._capture_defender_pref_state()
+        result = self._run_powershell(
+            "try { Set-MpPreference "
+            "-DisableRealtimeMonitoring $false "
+            "-DisableIOAVProtection $false "
+            "-DisableScriptScanning $false "
+            "-ErrorAction Stop } catch { exit 1 }",
+            timeout=25,
+        )
+        if result is not None and result.returncode == 0:
+            if backup:
+                self._record_recovery_entry(backup)
+            self.removed += 1
+            self.log("Re-enabled Microsoft Defender protection defaults", "SUCCESS")
+            return True
+        self.log("Could not re-enable Microsoft Defender protection defaults", "WARN")
+        return False
+
     def _remediate_disabled_startup_entry(self, reg_values, shortcut_path=""):
         removed_any = False
         for hive, subkey, name in reg_values:
@@ -5357,6 +5803,69 @@ class ScanEngine:
             return True
         return False
 
+    def _capture_winhttp_proxy_state(self):
+        try:
+            result = subprocess.run(
+                ["netsh", "winhttp", "show", "proxy"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                creationflags=0x08000000,
+            )
+        except Exception:
+            return None
+        output = (result.stdout or "").strip()
+        if result.returncode != 0 or not output:
+            return None
+
+        lowered = output.lower()
+        if "direct access (no proxy server)" in lowered:
+            return {"kind": "winhttp_proxy_reset", "mode": "direct"}
+
+        proxy = ""
+        bypass = ""
+        for raw_line in output.splitlines():
+            line = raw_line.strip()
+            lowered_line = line.lower()
+            if lowered_line.startswith("proxy server"):
+                proxy = line.split(":", 1)[1].strip() if ":" in line else ""
+            elif lowered_line.startswith("bypass list"):
+                bypass = line.split(":", 1)[1].strip() if ":" in line else ""
+
+        if not proxy:
+            return None
+        return {
+            "kind": "winhttp_proxy_reset",
+            "mode": "custom",
+            "proxy": proxy,
+            "bypass": bypass,
+        }
+
+    def _reset_winhttp_proxy_settings(self):
+        backup = self._capture_winhttp_proxy_state()
+        if not backup or str(backup.get("mode") or "").lower() == "direct":
+            return False
+
+        try:
+            result = subprocess.run(
+                ["netsh", "winhttp", "reset", "proxy"],
+                capture_output=True,
+                text=True,
+                timeout=20,
+                creationflags=0x08000000,
+            )
+        except Exception:
+            self.log("Could not reset WinHTTP proxy", "WARN")
+            return False
+
+        if result.returncode == 0:
+            self._record_recovery_entry(backup)
+            self.removed += 1
+            self.log("Reset WinHTTP proxy settings", "SUCCESS")
+            return True
+        self.log("Could not reset WinHTTP proxy", "WARN")
+        return False
+
     # ── Orchestration ───────────────────────────────────────────────────────
 
     def run_full_scan(self):
@@ -5442,6 +5951,34 @@ class ScanEngine:
         return {
             "killed": self.killed,
             "removed": self.removed,
+        }
+
+    def run_protection_repair(self):
+        self._recovery_session = None
+        self._recovery_manifest_path = ""
+        self._recovery_warning_emitted = False
+        self._begin_recovery_session()
+        starting_removed = self.removed
+
+        self.log("── REPAIRING PROTECTION DEFAULTS ─────────────────────", "SECTION")
+        ordered_categories = (
+            "Defender Exclusion",
+            "Defender Policy Review",
+            "Defender Protection Review",
+            "Proxy Configuration Review",
+            "WinHTTP Proxy Review",
+            "Firewall Rule Review",
+        )
+        for category in ordered_categories:
+            self._run_remediation_bucket({category})
+
+        self.log(
+            f"── PROTECTION REPAIR DONE  |  {self.removed - starting_removed} setting(s)/rule(s) repaired ──",
+            "SECTION",
+        )
+        self._log_recovery_snapshot_summary()
+        return {
+            "removed": self.removed - starting_removed,
         }
 
     def generate_report(self) -> str:
@@ -5585,15 +6122,22 @@ class App(tk.Tk):
         self._scanner = None
         self._thread = None
         self._paranoid_var = tk.BooleanVar(value=False)
+        self._action_hint_var = tk.StringVar(
+            value="Scan first to map the infection. ACCOUNT LOCKDOWN is ready any time for a one-click local cookie/session wipe on this PC."
+        )
+        self._repair_defaults_available = False
         self._revert_available = False
         self._session_reset_available = False
         self._last_remediation_ts = 0.0
+        self._update_info = None
+        self._update_check_in_progress = False
 
         self._build()
         self.bind("<Configure>", self._refresh_status_layout)
         self.after(0, self._refresh_status_layout)
         self._check_admin()
         self._startup_msg()
+        self.after(1200, self._check_for_updates_silent)
         summary = self._update_revert_button()
         if summary["available"]:
             self._log(
@@ -5649,9 +6193,12 @@ class App(tk.Tk):
         self._btn_scan = self._btn(primary_actions, "⟳  SCAN SYSTEM", BLUE, self._do_scan)
         self._btn_kill = self._btn(primary_actions, "✕  KILL & CLEAN", RED, self._do_kill)
         self._btn_revert = self._btn(primary_actions, "REVERT LAST CLEAN", BLUE, self._do_revert)
-        self._btn_sessions = self._btn(primary_actions, "⌁  RESET SESSION DATA", AMBER, self._do_reset_sessions)
+        self._btn_sessions = self._btn(primary_actions, "⌁  ACCOUNT LOCKDOWN", AMBER, self._do_reset_sessions)
+        self._btn_repair = self._btn(secondary_actions, "🛡  REPAIR DEFAULTS", GREEN, self._do_repair_defaults)
         self._btn_report = self._btn(secondary_actions, "↓  EXPORT REPORT", GREEN, self._do_report)
         self._btn_clear = self._btn(secondary_actions, "⌫  CLEAR LOG", FG3, self._do_clear)
+
+        self._btn_update = self._btn(secondary_actions, "CHECK UPDATES", BLUE, self._do_update)
 
         self._paranoid_chk = tk.Checkbutton(
             secondary_actions,
@@ -5673,8 +6220,23 @@ class App(tk.Tk):
 
         self._btn_kill.configure(state="disabled")
         self._btn_revert.configure(state="disabled")
-        self._btn_sessions.configure(state="disabled")
+        self._btn_sessions.configure(state="normal")
+        self._btn_repair.configure(state="normal")
         self._btn_report.configure(state="disabled")
+        self._btn_update.configure(state="normal")
+
+        self._action_hint_lbl = tk.Label(
+            self,
+            textvariable=self._action_hint_var,
+            font=(MONO, 9),
+            bg=BG,
+            fg=FG3,
+            anchor="w",
+            justify="left",
+            padx=18,
+            pady=2,
+        )
+        self._action_hint_lbl.pack(fill="x")
 
         # Progress
         self._prog_var = tk.StringVar(value="")
@@ -5719,6 +6281,319 @@ class App(tk.Tk):
                       bd=0, command=cmd)
         b.pack(side="left", padx=(0, 8))
         return b
+
+    @staticmethod
+    def _is_frozen_release():
+        return bool(getattr(sys, "frozen", False))
+
+    @staticmethod
+    def _app_install_dir():
+        anchor = sys.executable if getattr(sys, "frozen", False) else __file__
+        return os.path.dirname(os.path.abspath(anchor))
+
+    def _set_update_button(self, text, color=BLUE, state="normal"):
+        def _apply():
+            if hasattr(self, "_btn_update"):
+                self._btn_update.configure(text=text, fg=color, activebackground=color, state=state)
+        self.after(0, _apply)
+
+    def _fetch_latest_release_info(self):
+        request = urllib.request.Request(
+            UPDATE_API_URL,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": f"{TOOL_NAME}/{VERSION}",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8", "ignore"))
+
+        if not isinstance(payload, dict):
+            raise RuntimeError("GitHub release response was not a JSON object.")
+        if payload.get("draft"):
+            raise RuntimeError("Latest GitHub release is still marked as a draft.")
+
+        tag_name = str(payload.get("tag_name") or "").strip()
+        assets = payload.get("assets") or []
+        asset = None
+        for candidate in assets:
+            name = str(candidate.get("name") or "")
+            if name.lower().endswith(UPDATE_ASSET_SUFFIX):
+                asset = candidate
+                break
+        if not asset:
+            raise RuntimeError("Latest release does not include a Windows package asset.")
+
+        return {
+            "tag_name": tag_name,
+            "version": tag_name.lstrip("v"),
+            "html_url": str(payload.get("html_url") or UPDATE_RELEASES_URL),
+            "published_at": str(payload.get("published_at") or ""),
+            "asset_name": str(asset.get("name") or ""),
+            "download_url": str(asset.get("browser_download_url") or ""),
+        }
+
+    def _has_newer_release(self, release_info):
+        remote_version = ScanEngine._version_tuple(release_info.get("version"))
+        current_version = ScanEngine._version_tuple(VERSION)
+        return bool(remote_version and current_version and remote_version > current_version)
+
+    def _check_for_updates(self, *, silent):
+        if self._update_check_in_progress:
+            return
+
+        self._update_check_in_progress = True
+        if not silent:
+            self._set_update_button("CHECKING…", AMBER, "disabled")
+            self._set_status("Checking GitHub releases for updates…", AMBER)
+
+        def _run():
+            release_info = None
+            error = None
+            try:
+                release_info = self._fetch_latest_release_info()
+            except Exception as exc:
+                error = exc
+
+            def _done():
+                self._update_check_in_progress = False
+                if error:
+                    self._set_update_button("CHECK UPDATES", BLUE, "normal")
+                    if not silent:
+                        self._set_status("Update check failed.", RED)
+                        messagebox.showerror(
+                            "Update Check Failed",
+                            sanitize_for_display(
+                                f"RenKill could not check GitHub releases right now.\n\nError: {error}"
+                            ),
+                        )
+                    return
+
+                if release_info and self._has_newer_release(release_info):
+                    self._update_info = release_info
+                    self._set_update_button(f"UPDATE TO {release_info['version']}", GREEN, "normal")
+                    self._log(
+                        f"Update ready       : GitHub release {release_info['tag_name']} is available.",
+                        "INFO",
+                    )
+                    if silent:
+                        self._set_action_hint(
+                            f"Update available: {release_info['tag_name']} is live on GitHub releases. CHECK UPDATES can pull it down and restart RenKill safely.",
+                            GREEN,
+                        )
+                    else:
+                        self._set_status(
+                            f"Update available: {release_info['tag_name']} is ready to install.",
+                            GREEN,
+                        )
+                        if messagebox.askyesno(
+                            "Update Available",
+                            sanitize_for_display(
+                                f"RenKill {release_info['tag_name']} is available.\n\n"
+                                "Download and apply the update now?"
+                            ),
+                        ):
+                            self._start_update_download(release_info)
+                    return
+
+                self._update_info = None
+                self._set_update_button("CHECK UPDATES", BLUE, "normal")
+                if not silent:
+                    self._set_status("RenKill is already on the latest release.", GREEN)
+                    messagebox.showinfo(
+                        "RenKill Up To Date",
+                        f"RenKill v{VERSION} already matches the latest GitHub release.",
+                    )
+
+            self.after(0, _done)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _check_for_updates_silent(self):
+        self._check_for_updates(silent=True)
+
+    def _download_release_package(self, release_info, progress_cb=None):
+        temp_root = tempfile.mkdtemp(prefix="renkill-update-")
+        zip_path = os.path.join(temp_root, release_info["asset_name"])
+        extract_dir = os.path.join(temp_root, "payload")
+        request = urllib.request.Request(
+            release_info["download_url"],
+            headers={"User-Agent": f"{TOOL_NAME}/{VERSION}"},
+        )
+
+        with urllib.request.urlopen(request, timeout=45) as response, open(zip_path, "wb") as handle:
+            total = int(response.headers.get("Content-Length") or 0)
+            downloaded = 0
+            while True:
+                chunk = response.read(1024 * 256)
+                if not chunk:
+                    break
+                handle.write(chunk)
+                downloaded += len(chunk)
+                if progress_cb:
+                    if total > 0:
+                        percent = max(1, min(100, int(downloaded * 100 / total)))
+                        progress_cb(f"Downloading update… {percent}%")
+                    else:
+                        progress_cb(f"Downloading update… {downloaded // 1024} KB")
+
+        with zipfile.ZipFile(zip_path, "r") as archive:
+            archive.extractall(extract_dir)
+
+        new_exe = os.path.join(extract_dir, "RenKill.exe")
+        if not os.path.isfile(new_exe):
+            raise RuntimeError("Downloaded release package did not contain RenKill.exe.")
+        return temp_root, extract_dir
+
+    def _write_update_apply_script(self, extract_dir):
+        install_dir = self._app_install_dir()
+        current_pid = os.getpid()
+        temp_root = os.path.dirname(extract_dir)
+        script_path = os.path.join(tempfile.gettempdir(), f"renkill-apply-update-{current_pid}.cmd")
+        script_lines = [
+            "@echo off",
+            "setlocal",
+            f'set "RENKILL_PID={current_pid}"',
+            f'set "RENKILL_SRC={extract_dir}"',
+            f'set "RENKILL_DST={install_dir}"',
+            f'set "RENKILL_ROOT={temp_root}"',
+            ":wait_loop",
+            'tasklist /FI "PID eq %RENKILL_PID%" | find "%RENKILL_PID%" >nul',
+            "if not errorlevel 1 (",
+            "  timeout /t 1 /nobreak >nul",
+            "  goto wait_loop",
+            ")",
+            'robocopy "%RENKILL_SRC%" "%RENKILL_DST%" /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NC /NS >nul',
+            'start "" "%RENKILL_DST%\\RenKill.exe"',
+            'rmdir /s /q "%RENKILL_ROOT%" >nul 2>nul',
+            'del "%~f0" >nul 2>nul',
+        ]
+        with open(script_path, "w", encoding="utf-8", newline="\r\n") as handle:
+            handle.write("\r\n".join(script_lines) + "\r\n")
+        return script_path
+
+    def _launch_update_apply_script(self, script_path):
+        creation_flags = 0x08000000
+        try:
+            creation_flags |= subprocess.DETACHED_PROCESS
+        except AttributeError:
+            pass
+        subprocess.Popen(
+            ["cmd.exe", "/c", script_path],
+            creationflags=creation_flags,
+            close_fds=True,
+        )
+
+    def _exit_for_update(self):
+        try:
+            self.destroy()
+        finally:
+            os._exit(0)
+
+    def _start_update_download(self, release_info):
+        if not release_info:
+            return
+        if not self._is_frozen_release():
+            if messagebox.askyesno(
+                "Update Ready",
+                sanitize_for_display(
+                    "Automatic apply works from the packaged RenKill release build.\n\n"
+                    "Open the GitHub releases page instead?"
+                ),
+            ):
+                try:
+                    os.startfile(release_info.get("html_url") or UPDATE_RELEASES_URL)
+                except Exception:
+                    messagebox.showinfo("GitHub Releases", release_info.get("html_url") or UPDATE_RELEASES_URL)
+            return
+
+        self._btn_scan.configure(state="disabled")
+        self._btn_kill.configure(state="disabled")
+        self._btn_repair.configure(state="disabled")
+        self._btn_revert.configure(state="disabled")
+        self._btn_update.configure(state="disabled")
+        self._btn_sessions.configure(state="disabled")
+        self._btn_report.configure(state="disabled")
+        self._set_status(f"Downloading {release_info['tag_name']}…", AMBER)
+
+        def _run():
+            script_path = ""
+            error = None
+            try:
+                _, extract_dir = self._download_release_package(release_info, self._set_progress)
+                script_path = self._write_update_apply_script(extract_dir)
+            except Exception as exc:
+                error = exc
+
+            def _done():
+                self._set_progress("")
+                if error:
+                    self._btn_scan.configure(state="normal")
+                    self._btn_kill.configure(state="normal" if self._scanner and self._scanner.threats else "disabled")
+                    self._btn_repair.configure(state="normal")
+                    self._btn_sessions.configure(state="normal")
+                    self._btn_report.configure(state="normal" if self._scanner else "disabled")
+                    self._update_revert_button()
+                    self._set_update_button("CHECK UPDATES", BLUE, "normal")
+                    self._set_status("Update download failed.", RED)
+                    messagebox.showerror(
+                        "Update Failed",
+                        sanitize_for_display(
+                            f"RenKill could not download or stage the update.\n\nError: {error}"
+                        ),
+                    )
+                    return
+
+                try:
+                    self._launch_update_apply_script(script_path)
+                except Exception as exc:
+                    self._btn_scan.configure(state="normal")
+                    self._btn_kill.configure(state="normal" if self._scanner and self._scanner.threats else "disabled")
+                    self._btn_repair.configure(state="normal")
+                    self._btn_sessions.configure(state="normal")
+                    self._btn_report.configure(state="normal" if self._scanner else "disabled")
+                    self._update_revert_button()
+                    self._set_update_button("CHECK UPDATES", BLUE, "normal")
+                    self._set_status("Update launch failed.", RED)
+                    messagebox.showerror(
+                        "Update Failed",
+                        sanitize_for_display(
+                            f"RenKill staged the update but could not launch the apply step.\n\nError: {exc}"
+                        ),
+                    )
+                    return
+
+                self._set_status(f"Applying {release_info['tag_name']} and restarting…", GREEN)
+                self._log(
+                    f"Updater ready      : applying {release_info['tag_name']} from GitHub releases and restarting RenKill.",
+                    "SUCCESS",
+                )
+                self.after(350, self._exit_for_update)
+
+            self.after(0, _done)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _do_update(self):
+        if self._update_check_in_progress:
+            return
+        if self._update_info and self._has_newer_release(self._update_info):
+            if messagebox.askyesno(
+                "Apply Update",
+                sanitize_for_display(
+                    f"RenKill {self._update_info['tag_name']} is ready.\n\n"
+                    "Download and apply it now?"
+                ),
+            ):
+                self._start_update_download(self._update_info)
+            return
+        self._check_for_updates(silent=False)
+
+    def _restore_update_button_state(self):
+        if self._update_info and self._has_newer_release(self._update_info):
+            self._set_update_button(f"UPDATE TO {self._update_info['version']}", GREEN, "normal")
+            return
+        self._set_update_button("CHECK UPDATES", BLUE, "normal")
 
     @staticmethod
     def _chromium_profile_dirs(root):
@@ -5872,6 +6747,88 @@ class App(tk.Tk):
             return
         wrap = max(320, self.winfo_width() - 72)
         self._status_lbl.configure(wraplength=wrap)
+        if hasattr(self, "_action_hint_lbl"):
+            self._action_hint_lbl.configure(wraplength=wrap)
+
+    def _set_action_hint(self, msg, color=FG3):
+        def _apply():
+            self._action_hint_var.set(msg)
+            if hasattr(self, "_action_hint_lbl"):
+                self._action_hint_lbl.configure(fg=color)
+        self.after(0, _apply)
+
+    def _threat_count(self, categories):
+        if not self._scanner:
+            return 0
+        category_set = set(categories)
+        return sum(1 for threat in self._scanner.threats if threat.category in category_set)
+
+    def _actionable_threat_count(self, categories):
+        if not self._scanner:
+            return 0
+        category_set = set(categories)
+        return sum(
+            1
+            for threat in self._scanner.threats
+            if threat.category in category_set and threat.action and not threat.remediated
+        )
+
+    def _update_post_scan_hint(self, threat_count, cleanup, exposure):
+        startup_categories = {
+            "Disabled Startup Artifact",
+            "Malicious Scheduled Task",
+            "Malicious Shortcut",
+            "Registry Persistence",
+            "Startup-Launched Process",
+            "Startup Correlation Review",
+            "WMI Persistence",
+        }
+        startup_hits = self._threat_count(startup_categories)
+        repair_hits = self._actionable_threat_count(PROTECTION_REPAIR_CATEGORIES)
+        if startup_hits:
+            self._set_action_hint(
+                f"Startup watch: {startup_hits} suspicious startup item(s) were found. Use KILL & CLEAN, then reboot and rescan so hidden startup leftovers cannot relaunch the infection.",
+                RED if startup_hits >= 2 else AMBER,
+            )
+            return
+        if threat_count > 0:
+            if repair_hits and (self._session_reset_available or exposure["score"] >= 50):
+                self._set_action_hint(
+                    "Threats were found. Use KILL & CLEAN for malware traces, REPAIR DEFAULTS for security/proxy drift, then ACCOUNT LOCKDOWN to wipe reusable local sessions on this PC.",
+                    AMBER,
+                )
+            elif repair_hits:
+                self._set_action_hint(
+                    "Threats were found. Use KILL & CLEAN for malware traces, then REPAIR DEFAULTS to restore safe protection and proxy settings.",
+                    AMBER,
+                )
+            elif self._session_reset_available or exposure["score"] >= 50:
+                self._set_action_hint(
+                    "Threats were found. Use KILL & CLEAN for confirmed traces, then use ACCOUNT LOCKDOWN to wipe local browser/Discord sessions on this PC.",
+                    AMBER,
+                )
+            else:
+                self._set_action_hint(
+                    "Threats were found. Use KILL & CLEAN for confirmed traces. REVERT LAST CLEAN stays available for reversible changes.",
+                    AMBER,
+                )
+            return
+        if exposure["score"] >= 50:
+            self._set_action_hint(
+                f"This scan looks locally clean, but account risk is still {exposure['score']}%. ACCOUNT LOCKDOWN can wipe local sessions here; password/session recovery still belongs on a clean device.",
+                AMBER,
+            )
+            return
+        if cleanup["score"] < 100:
+            self._set_action_hint(
+                "No active threats were found, but a reboot and one more rescan will raise confidence that local persistence is fully gone.",
+                FG3,
+            )
+            return
+        self._set_action_hint(
+            "Scan came back clean. ACCOUNT LOCKDOWN still stays ready if you want a one-click local browser/Discord sign-out on this PC.",
+            FG3,
+        )
 
     def _set_progress(self, msg):
         self.after(0, lambda: self._prog_var.set(sanitize_for_display(msg)))
@@ -5901,6 +6858,7 @@ class App(tk.Tk):
         self._log(f"winreg            : {'OK' if WINREG_OK else 'MISSING'}", "INFO" if WINREG_OK else "WARN")
         self._log(f"Admin             : {'YES — full scan' if is_admin() else 'NO — limited scan'}", "INFO" if is_admin() else "WARN")
         self._log("Scan mode         : Standard", "INFO")
+        self._log("Containment tool   : ACCOUNT LOCKDOWN is ready for a one-click local cookie/session wipe.", "WARN")
         self._log("Press SCAN SYSTEM to begin.", "DEFAULT")
 
     def _load_recovery_summary(self):
@@ -5945,6 +6903,7 @@ class App(tk.Tk):
         self._btn_revert.configure(state="disabled")
         self._btn_sessions.configure(state="disabled")
         self._btn_report.configure(state="disabled")
+        self._btn_update.configure(state="disabled")
         self._count_var.set("Scanning…")
         scan_mode = "PARANOID" if self._paranoid_var.get() else "STANDARD"
         self._set_status(f"Scanning system ({scan_mode})…", BLUE)
@@ -5965,8 +6924,10 @@ class App(tk.Tk):
                     self._btn_scan.configure(state="normal")
                     self._update_revert_button()
                     self._btn_report.configure(state="normal")
+                    self._restore_update_button_state()
                     self._btn_kill.configure(state="disabled")
-                    self._btn_sessions.configure(state="disabled")
+                    self._btn_repair.configure(state="normal")
+                    self._btn_sessions.configure(state="normal")
                     self._count_var.set("Scan error")
                     self._set_status("Scan failed — see log for the exact error.", RED)
                 self.after(0, _fail)
@@ -5981,9 +6942,21 @@ class App(tk.Tk):
                 self._set_progress("")
                 self._btn_scan.configure(state="normal")
                 self._btn_report.configure(state="normal")
+                self._restore_update_button_state()
                 self._update_revert_button()
                 self._session_reset_available = bool(self._scanner.exposure_notes)
-                self._btn_sessions.configure(state="normal" if self._session_reset_available else "disabled")
+                self._repair_defaults_available = self._actionable_threat_count(PROTECTION_REPAIR_CATEGORIES) > 0
+                self._btn_sessions.configure(state="normal")
+                self._btn_repair.configure(state="normal")
+                startup_hits = self._threat_count({
+                    "Disabled Startup Artifact",
+                    "Malicious Scheduled Task",
+                    "Malicious Shortcut",
+                    "Registry Persistence",
+                    "Startup-Launched Process",
+                    "Startup Correlation Review",
+                    "WMI Persistence",
+                })
                 if n > 0:
                     self._btn_kill.configure(state="normal")
                     self._count_var.set(f"{n} threats  |  local {cleanup['score']}%  |  account risk {exposure['score']}%")
@@ -5991,8 +6964,17 @@ class App(tk.Tk):
                         f"Scan complete. {summary['label']}. Local {cleanup['score']}%. Account risk {exposure['score']}%. Use KILL & CLEAN to remediate.",
                         summary["color"]
                     )
+                    if startup_hits:
+                        self._log(
+                            f"Startup watch      : {startup_hits} suspicious startup/persistence item(s) were found. Clear these so the infection cannot relaunch itself.",
+                            "CRITICAL" if startup_hits >= 2 else "WARN",
+                        )
                     if self._session_reset_available:
-                        self._log("RESET SESSION DATA is available for local browser/Discord session wipe.", "WARN")
+                        self._log("ACCOUNT LOCKDOWN is available for a one-click local browser/Discord session wipe.", "WARN")
+                    if self._repair_defaults_available:
+                        self._log("REPAIR DEFAULTS is available for Defender, proxy, and actionable firewall drift.", "INFO")
+                    else:
+                        self._log("REPAIR DEFAULTS found nothing actionable in this scan. It stays available for scans that surface real Defender/proxy/firewall drift.", "INFO")
                 elif self._scanner.post_cleanup_scan and not self._scanner.rebooted_after_cleanup:
                     self._count_var.set(f"Clean  |  local {cleanup['score']}%  |  account risk {exposure['score']}%")
                     self._set_status(
@@ -6008,6 +6990,7 @@ class App(tk.Tk):
                 else:
                     self._count_var.set(f"Clean  |  local {cleanup['score']}%  |  account risk {exposure['score']}%")
                     self._set_status(f"Scan complete. No threats detected. Local {cleanup['score']}%. Account risk {exposure['score']}%.", GREEN)
+                self._update_post_scan_hint(n, cleanup, exposure)
             self.after(0, _done)
 
         self._thread = threading.Thread(target=_run, daemon=True)
@@ -6028,7 +7011,9 @@ class App(tk.Tk):
             return
 
         self._btn_kill.configure(state="disabled")
+        self._btn_repair.configure(state="disabled")
         self._btn_revert.configure(state="disabled")
+        self._btn_update.configure(state="disabled")
         self._set_status("Executing remediation…", AMBER)
 
         self._btn_scan.configure(state="disabled")
@@ -6042,6 +7027,7 @@ class App(tk.Tk):
                 def _fail():
                     self._btn_scan.configure(state="normal")
                     self._btn_kill.configure(state="normal" if self._scanner and self._scanner.threats else "disabled")
+                    self._restore_update_button_state()
                     self._update_revert_button()
                     self._set_status("Cleanup failed - see log for details.", RED)
                     self._log(f"Cleanup error: {exc}", "CRITICAL")
@@ -6095,6 +7081,92 @@ class App(tk.Tk):
                     f"Run SCAN SYSTEM again to verify clean."
                 )
                 self._btn_scan.configure(state="normal")
+                self._restore_update_button_state()
+            self.after(0, _done)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _do_repair_defaults(self):
+        if not self._scanner:
+            return
+
+        repair_count = self._actionable_threat_count(PROTECTION_REPAIR_CATEGORIES)
+        if repair_count <= 0:
+            messagebox.showinfo(
+                "Repair Defaults",
+                "No actionable protection or proxy drift is queued right now."
+            )
+            return
+
+        if not messagebox.askyesno(
+            "Confirm Repair Defaults",
+            "RenKill will repair the safe, reversible protection drift it already detected.\n\n"
+            "This includes items like:\n"
+            "  - suspicious Defender exclusions\n"
+            "  - Defender policy overrides\n"
+            "  - disabled Defender protection flags\n"
+            "  - suspicious proxy settings\n"
+            "  - actionable suspicious firewall rules\n\n"
+            "RenKill will record recovery data for reversible changes when possible.\n\n"
+            "Continue?"
+        ):
+            return
+
+        self._btn_scan.configure(state="disabled")
+        self._btn_kill.configure(state="disabled")
+        self._btn_repair.configure(state="disabled")
+        self._btn_revert.configure(state="disabled")
+        self._btn_update.configure(state="disabled")
+        self._set_status("Repairing protection defaults…", AMBER)
+
+        def _run():
+            try:
+                result = self._scanner.run_protection_repair()
+            except Exception as exc:
+                diag_path = self._write_diagnostic_log("REPAIR DEFAULTS crash")
+
+                def _fail():
+                    self._btn_scan.configure(state="normal")
+                    self._btn_kill.configure(state="normal" if self._scanner and self._scanner.threats else "disabled")
+                    self._btn_repair.configure(state="normal" if self._repair_defaults_available else "disabled")
+                    self._restore_update_button_state()
+                    self._update_revert_button()
+                    self._set_status("Repair Defaults failed — see log for the exact error.", RED)
+                    if diag_path:
+                        self._log(f"Diagnostic log written to: {diag_path}", "WARN")
+                    self._log(f"Repair Defaults crash: {exc}", "CRITICAL")
+                self.after(0, _fail)
+                return
+
+            def _done():
+                repaired = int(result.get("removed", 0))
+                self._btn_scan.configure(state="normal")
+                self._btn_kill.configure(state="normal" if self._scanner and self._scanner.threats else "disabled")
+                self._restore_update_button_state()
+                summary = self._update_revert_button()
+                self._set_status(
+                    f"Repair Defaults finished — {repaired} protection setting(s)/rule(s) repaired. Run SCAN SYSTEM again to confirm.",
+                    GREEN if repaired else AMBER,
+                )
+                self._repair_defaults_available = False
+                self._btn_repair.configure(state="disabled")
+                self._set_action_hint(
+                    "Repair Defaults finished. Run SCAN SYSTEM again to verify the posture drift is gone and only real malware findings remain.",
+                    FG3,
+                )
+                if summary["available"]:
+                    self._log(
+                        f"Recovery snapshot available: {summary['reversible_count']} reversible change(s) ready to restore.",
+                        "INFO",
+                    )
+                messagebox.showinfo(
+                    "RenKill — Repair Defaults Complete",
+                    f"Protection items repaired: {repaired}\n\n"
+                    "Next step:\n"
+                    "  - Run SCAN SYSTEM again\n"
+                    "  - Confirm the Defender/proxy/firewall noise is gone\n"
+                    "  - Use REVERT LAST CLEAN if you need to undo a reversible settings change"
+                )
             self.after(0, _done)
 
         threading.Thread(target=_run, daemon=True).start()
@@ -6120,6 +7192,7 @@ class App(tk.Tk):
         self._btn_revert.configure(state="disabled")
         self._btn_scan.configure(state="disabled")
         self._btn_kill.configure(state="disabled")
+        self._btn_update.configure(state="disabled")
         self._set_status("Reverting last cleanup snapshot...", AMBER)
 
         def _run():
@@ -6130,6 +7203,7 @@ class App(tk.Tk):
                 self._set_progress("")
                 self._btn_scan.configure(state="normal")
                 self._btn_kill.configure(state="disabled")
+                self._restore_update_button_state()
                 self._update_revert_button()
                 restored = result["restored"]
                 failed = result["failed"]
@@ -6153,24 +7227,19 @@ class App(tk.Tk):
         threading.Thread(target=_run, daemon=True).start()
 
     def _do_reset_sessions(self):
-        if not self._session_reset_available:
-            messagebox.showinfo(
-                "Reset Session Data",
-                "Run a scan first. This button becomes available when RenKill sees browser or Discord exposure indicators."
-            )
-            return
-
         if not messagebox.askyesno(
-            "Confirm Session Reset",
-            "RenKill will close Discord and supported browsers, then delete local session/cookie/token storage.\n\n"
-            "This will sign the user out locally and may remove site/app session state.\n"
+            "Confirm Account Lockdown",
+            "RenKill will close Discord and supported browsers, then wipe local cookies, session tokens, and web-session storage.\n\n"
+            "Use this when you want to cut off any currently reusable local sessions on the infected PC.\n"
+            "This will sign the user out locally and may remove app/site session state.\n"
             "This does NOT replace password changes or remote session revocation from a clean device.\n\n"
             "Continue?"
         ):
             return
 
         self._btn_sessions.configure(state="disabled")
-        self._set_status("Resetting local session data…", AMBER)
+        self._btn_update.configure(state="disabled")
+        self._set_status("Running account lockdown…", AMBER)
 
         def _run():
             killed = 0
@@ -6190,24 +7259,25 @@ class App(tk.Tk):
                     self._log(f"Cleared local session data: {path}", "SUCCESS")
 
             def _done():
-                self._session_reset_available = False
                 app_list = ", ".join(sorted(touched_apps)) if touched_apps else "none found"
                 self._set_status(
-                    f"Local session reset complete — {removed} storage item(s) cleared.",
+                    f"Account lockdown complete — {removed} storage item(s) cleared.",
                     GREEN if removed else AMBER
                 )
                 messagebox.showinfo(
-                    "RenKill — Session Reset Complete",
+                    "RenKill — Account Lockdown Complete",
                     f"Processes closed : {killed}\n"
                     f"Storage items wiped: {removed}\n"
                     f"Apps affected    : {app_list}\n\n"
-                    f"This only clears LOCAL sessions on this PC.\n"
+                    f"This clears LOCAL cookies, sessions, and token-style storage on this PC.\n"
                     f"You still need to do the following from a CLEAN device:\n"
                     f"  • Change passwords\n"
                     f"  • Revoke remote sessions\n"
                     f"  • Review Discord Authorized Apps\n"
                     f"  • Move crypto to fresh wallet addresses\n"
                 )
+                self._btn_sessions.configure(state="normal")
+                self._restore_update_button_state()
             self.after(0, _done)
 
         threading.Thread(target=_run, daemon=True).start()

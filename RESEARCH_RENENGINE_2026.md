@@ -1,6 +1,6 @@
 # RenEngine / "RenLoader" Notes
 
-Last updated: 2026-04-18
+Last updated: 2026-04-26
 
 ## Snapshot
 
@@ -45,14 +45,16 @@ Those names are not all globally unique on every system. They matter most when t
 
 ## FRST Patterns Showing Up In Reddit Cleanup Threads
 
-Based on April 18, 2026 Reddit cleanup threads and the FRST lines victims shared, helpers are now seeing a persistence shape that is less dependent on fixed filenames and more dependent on where and how the payload is launched:
+Based on Reddit cleanup threads through April 26, 2026 and the FRST lines victims shared, helpers are now seeing a persistence shape that is less dependent on fixed filenames and more dependent on where and how the payload is launched:
 
 - `Startup` shortcuts in `%AppData%\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\`
+- direct executable drops in the Startup folder, including names that try to look familiar like `DiscordSetup.exe`
 - `ShortcutTarget` values pointing into `%LocalAppData%\Temp\tmp-<digits>-<random>\`
 - randomly named temporary EXEs launched from those temp subfolders
 - signer/company metadata on some of those temp EXEs reading `Shenzhen iMyFone Technology Co., Ltd`
 - scheduled tasks executing payloads from `%AppData%\Roaming\Godot\app_userdata\<id>\`
 - scheduled task arguments pointing at `node_modules.asar` or another `.asar` payload from the same user-writable tree
+- startup scripts or script-host launches that pull from raw IPs, short-lived domains, or downloader-style PowerShell / `mshta` chains
 
 Important caveat: the `Shenzhen iMyFone Technology Co., Ltd` string is not proof of malware by itself. The suspicious signal is the full combination of:
 
@@ -62,6 +64,21 @@ Important caveat: the `Shenzhen iMyFone Technology Co., Ltd` string is not proof
 - `.asar` payload handoff or other loader-style arguments
 
 That combination is strong enough to score on structure even if the executable names rotate.
+
+## What Looks Different In The Newer Cases
+
+The big change in the newer Reddit cases is not a completely different loader. It is more that the cleanup stories keep showing broader persistence and a messier post-infection machine state:
+
+- startup folder payloads that are direct `.exe` files, not only `.lnk` shortcuts
+- scheduled tasks and startup entries that use throwaway downloader logic instead of a stable family filename
+- more warnings from helpers that the recent waves can include backdoor / RAT behavior, not just one-shot stealer behavior
+- more emphasis on checking browser extensions, Defender posture, and stray startup residue even after AV products say the machine is clean
+
+That reinforces the same detection strategy for RenKill:
+
+- care less about exact filenames
+- care more about execution surface, launch chain, and persistence overlap
+- keep startup, task, WMI, extension, Defender, firewall, and session aftermath in the same investigation loop
 
 ## What FRST.txt And Addition.txt Actually Show
 
