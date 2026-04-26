@@ -118,6 +118,7 @@ What it looks for:
 - See [`RESEARCH_RENENGINE_2026.md`](./RESEARCH_RENENGINE_2026.md) for campaign notes,
   cleanup patterns, and the sources behind the current detection coverage.
 - See [`ROADMAP_1_5_0.md`](./ROADMAP_1_5_0.md) for the next release target and the FRST-style parity work planned for it.
+- See [`ROADMAP_2_0.md`](./ROADMAP_2_0.md) for the bigger Account Recovery Center / FRST parity / finding-separation push.
 
 ---
 

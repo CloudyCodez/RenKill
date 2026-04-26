@@ -628,16 +628,22 @@ MANUAL_REVIEW_CATEGORIES = {
     "Browser Policy Review",
     "Defender Protection Review",
     "Defender Policy Review",
+    "Explorer Hijack Review",
     "Firewall Rule Review",
     "Hosts Tampering Review",
     "Installed Program Review",
+    "KnownDLLs Review",
     "Proxy Configuration Review",
+    "SafeBoot Review",
     "Security Center Review",
     "Security Event Review",
+    "Session Manager Review",
+    "Shell Persistence Review",
     "Source Lure Artifact",
     "Startup Correlation Review",
     "Suspicious Loader Stage Directory",
     "Suspicious RenPy Loader Bundle",
+    "Winlogon Notify Review",
     "WinHTTP Proxy Review",
 }
 
@@ -853,52 +859,65 @@ CHROMIUM_EXTENSION_REVIEW_ROOTS = (
 )
 
 PERSISTENCE_THREAT_CATEGORIES = {
+    "AppCert Persistence",
     "AppInit Persistence",
     "Disabled Startup Artifact",
+    "Explorer Hijack Review",
     "HijackLoader Stage Directory",
     "Suspicious Loader Stage Directory",
     "Suspicious Temp Stage Directory",
     "IFEO Persistence",
     "Injected/Sideloaded DLL",
     "Loader Container DLL",
+    "Logon Script Persistence",
     "Malicious Scheduled Task",
     "Malicious Service",
     "Persistence Artifact",
     "Persistence Staging Directory",
+    "Policy Persistence",
     "Registry Persistence",
+    "SafeBoot Review",
+    "Shell Persistence Review",
     "Startup-Launched Process",
     "Startup Correlation Review",
     "Startup Persistence Artifact",
+    "Winlogon Notify Review",
     "WMI Persistence",
 }
 
 RENLOADER_CORRELATION_CATEGORIES = {
     "Active C2 Connection",
+    "AppCert Persistence",
     "AppInit Persistence",
     "Campaign IOC Process",
     "Defender Exclusion",
     "Execution Trace Anomaly",
     "Exact IOC Hash",
+    "Explorer Hijack Review",
     "HijackLoader Stage Artifact",
     "HijackLoader Stage Directory",
     "IFEO Persistence",
     "Injected/Sideloaded DLL",
+    "Logon Script Persistence",
     "Loader Container DLL",
     "Malicious Archive/Script",
     "Malicious File",
     "Malicious Process",
     "Malicious Scheduled Task",
     "Malicious Service",
+    "Policy Persistence",
     "Persistence Artifact",
     "Persistence Process",
     "Persistence Staging Directory",
     "Registry Persistence",
     "RenEngine Bundle",
+    "SafeBoot Review",
     "Startup-Launched Process",
     "Stealer Script Host",
     "Suspicious Loader Stage Directory",
     "Suspicious Temp Stage Directory",
     "Suspicious RenPy Loader Bundle",
+    "Winlogon Notify Review",
     "WMI Persistence",
 }
 
@@ -923,6 +942,7 @@ PROCESS_REMEDIATION_CATEGORIES = {
 }
 
 FILE_REMEDIATION_CATEGORIES = {
+    "AppCert Persistence",
     "AppInit Persistence",
     "Defender Exclusion",
     "Disabled Startup Artifact",
@@ -940,6 +960,7 @@ FILE_REMEDIATION_CATEGORIES = {
     "Payload Key File",
     "Persistence Artifact",
     "Persistence Staging Directory",
+    "Policy Persistence",
     "Proxy Configuration Review",
     "RenEngine Bundle",
     "Startup Persistence Artifact",
@@ -1101,8 +1122,12 @@ class ScanEngine:
         self._shortcut_scan_rows = None
         self._scheduled_task_rows = None
         self._autorun_rows = None
+        self._policy_rows = None
         self._disabled_startup_rows = None
         self._wmi_rows = None
+        self._shell_rows = None
+        self._logon_rows = None
+        self._explorer_hijack_rows = None
         self._reset_recovery_state()
 
     def _add(self, severity, category, description, path=None, action=None):
@@ -1743,13 +1768,22 @@ class ScanEngine:
     @staticmethod
     def _report_group_name(category):
         startup_categories = {
+            "AppCert Persistence",
+            "Explorer Hijack Review",
+            "KnownDLLs Review",
             "Disabled Startup Artifact",
+            "Logon Script Persistence",
             "Malicious Scheduled Task",
             "Malicious Shortcut",
+            "Policy Persistence",
             "Registry Persistence",
+            "SafeBoot Review",
+            "Session Manager Review",
+            "Shell Persistence Review",
             "Startup-Launched Process",
             "Startup Correlation Review",
             "Startup Persistence Artifact",
+            "Winlogon Notify Review",
             "WMI Persistence",
         }
         process_categories = {
@@ -1847,6 +1881,76 @@ class ScanEngine:
             "color": color,
         }
 
+    def finding_breakdown(self):
+        confirmed_categories = PERSISTENCE_THREAT_CATEGORIES | PROCESS_REMEDIATION_CATEGORIES | FILE_REMEDIATION_CATEGORIES
+        confirmed = 0
+        review = 0
+        other = 0
+
+        for threat in self.threats:
+            if threat.category in MANUAL_REVIEW_CATEGORIES:
+                review += 1
+            elif threat.category in confirmed_categories or threat.severity in {"CRITICAL", "HIGH"}:
+                confirmed += 1
+            else:
+                other += 1
+
+        return {
+            "confirmed": confirmed,
+            "review": review,
+            "other": other,
+        }
+
+    def build_account_recovery_plan(self, exposure=None):
+        exposure = exposure or self.assess_account_exposure()
+        notes_blob = " ".join(f"{desc} {path}".lower() for desc, path in self.exposure_notes)
+        touched_discord = "discord" in notes_blob
+        touched_browser = any(token in notes_blob for token in ("chrome", "edge", "firefox", "brave", "opera"))
+        touched_wallet = any(token in notes_blob for token in ("wallet", "metamask", "crypto"))
+
+        lines = [
+            "ACCOUNT RECOVERY PLAN (do this from a CLEAN device)",
+            "",
+            "Core steps:",
+            "  1. Change passwords for anything saved in the browser.",
+            "  2. Revoke active sessions, not just passwords.",
+            "  3. Re-enable MFA after passwords and sessions are reset.",
+            "  4. Reboot the infected PC and run RenKill again before trusting it.",
+        ]
+
+        if touched_browser or exposure["score"] >= 25:
+            lines += [
+                "",
+                "Browser / account steps:",
+                "  1. Review signed-in Google, Microsoft, Steam, and banking sessions.",
+                "  2. Turn off browser sync and clear synced data if suspicious state keeps returning.",
+                "  3. Review extensions and saved payment details before signing back in.",
+            ]
+
+        if touched_discord or exposure["score"] >= 25:
+            lines += [
+                "",
+                "Discord / social steps:",
+                "  1. Revoke Discord sessions and review Authorized Apps.",
+                "  2. Rotate the email passwords tied to Discord, Instagram, and socials.",
+                "  3. Warn friends if spam links were sent from the account.",
+            ]
+
+        if touched_wallet or exposure["score"] >= 50:
+            lines += [
+                "",
+                "Wallet / high-value steps:",
+                "  1. Move assets to a fresh wallet with a new seed phrase.",
+                "  2. Do not reuse the old wallet even if the PC looks clean.",
+            ]
+
+        lines += [
+            "",
+            f"Current account-risk readout: {exposure['score']}% - {exposure['label']}",
+            exposure["detail"],
+        ]
+        return sanitize_for_display("\n".join(lines))
+
     def _threat_confidence_profile(self):
         categories = [t.category for t in self.threats]
         text_blob = " ".join(f"{t.category} {t.description} {t.path}".lower() for t in self.threats)
@@ -1867,16 +1971,23 @@ class ScanEngine:
         generic_stealer_hits = sum(1 for marker in generic_markers if marker in text_blob)
 
         renloader_hits += sum(1 for cat in categories if cat in {
+            "AppCert Persistence",
             "AppInit Persistence",
+            "Explorer Hijack Review",
             "IFEO Persistence",
+            "KnownDLLs Review",
+            "Logon Script Persistence",
             "RenEngine Bundle",
             "Malicious File",
             "Malicious Archive/Script",
             "Malicious Service",
             "Hijacked Module Init",
+            "Policy Persistence",
             "Persistence Artifact",
             "Persistence Process",
             "Persistence Staging Directory",
+            "SafeBoot Review",
+            "Session Manager Review",
             "Startup-Launched Process",
             "Suspicious Temp Stage Directory",
             "Suspicious Loader Stage Directory",
@@ -1890,6 +2001,7 @@ class ScanEngine:
             "Loader Container DLL",
             "Startup-Launched Process",
             "Suspicious Temp Stage Directory",
+            "Winlogon Notify Review",
             "WMI Persistence",
             "Suspicious RenPy Loader Bundle",
         })
@@ -1907,12 +2019,21 @@ class ScanEngine:
         })
 
         startup_layers = sum(1 for cat in categories if cat in {
+            "AppCert Persistence",
             "Startup Correlation Review",
             "Disabled Startup Artifact",
+            "Explorer Hijack Review",
+            "KnownDLLs Review",
+            "Logon Script Persistence",
             "Malicious Scheduled Task",
             "Malicious Shortcut",
+            "Policy Persistence",
             "Registry Persistence",
+            "SafeBoot Review",
+            "Session Manager Review",
+            "Shell Persistence Review",
             "Startup-Launched Process",
+            "Winlogon Notify Review",
             "WMI Persistence",
         })
         persistence_layers = sum(1 for cat in categories if cat in PERSISTENCE_THREAT_CATEGORIES)
@@ -3010,6 +3131,84 @@ class ScanEngine:
         self._autorun_rows = rows
         return rows
 
+    def _collect_policy_persistence_rows(self):
+        if self._policy_rows is not None:
+            return self._policy_rows
+
+        rows = []
+        if not WINREG_OK:
+            self._policy_rows = rows
+            return rows
+
+        explorer_run_locations = [
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run", "HKCU"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run", "HKLM"),
+        ]
+        for hive, subkey, hive_name in explorer_run_locations:
+            try:
+                key = winreg.OpenKey(hive, subkey)
+            except (FileNotFoundError, PermissionError):
+                continue
+
+            index = 0
+            while True:
+                try:
+                    value_name, value, _ = winreg.EnumValue(key, index)
+                except OSError:
+                    break
+                index += 1
+                rows.append(
+                    {
+                        "Kind": "ExplorerRun",
+                        "Hive": hive,
+                        "HiveName": hive_name,
+                        "Subkey": subkey,
+                        "ValueName": str(value_name or ""),
+                        "Value": str(value or ""),
+                    }
+                )
+
+            try:
+                winreg.CloseKey(key)
+            except Exception:
+                pass
+
+        single_value_locations = [
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Command Processor", "Autorun", "CmdAutorun", "HKCU"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Command Processor", "Autorun", "CmdAutorun", "HKLM"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Command Processor", "Autorun", "CmdAutorun", "HKLM"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "Shell", "PolicyShell", "HKLM"),
+        ]
+        for hive, subkey, value_name, kind, hive_name in single_value_locations:
+            try:
+                key = winreg.OpenKey(hive, subkey)
+            except (FileNotFoundError, PermissionError):
+                continue
+
+            try:
+                value = str(winreg.QueryValueEx(key, value_name)[0] or "")
+            except OSError:
+                value = ""
+            finally:
+                try:
+                    winreg.CloseKey(key)
+                except Exception:
+                    pass
+
+            rows.append(
+                {
+                    "Kind": kind,
+                    "Hive": hive,
+                    "HiveName": hive_name,
+                    "Subkey": subkey,
+                    "ValueName": value_name,
+                    "Value": value,
+                }
+            )
+
+        self._policy_rows = rows
+        return rows
+
     def _collect_disabled_startup_rows(self):
         if self._disabled_startup_rows is not None:
             return self._disabled_startup_rows
@@ -3130,6 +3329,374 @@ class ScanEngine:
         self._wmi_rows = rows
         return rows
 
+    def _collect_shell_persistence_rows(self):
+        if self._shell_rows is not None:
+            return self._shell_rows
+
+        rows = []
+        if not WINREG_OK:
+            self._shell_rows = rows
+            return rows
+
+        locations = [
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon", "Shell", "HKLM"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon", "Userinit", "HKLM"),
+            (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows NT\CurrentVersion\Windows", "Load", "HKCU"),
+            (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows NT\CurrentVersion\Windows", "Run", "HKCU"),
+        ]
+
+        for hive, subkey, value_name, hive_name in locations:
+            try:
+                key = winreg.OpenKey(hive, subkey)
+            except (FileNotFoundError, PermissionError):
+                continue
+
+            try:
+                value = str(winreg.QueryValueEx(key, value_name)[0] or "")
+            except OSError:
+                value = ""
+            finally:
+                try:
+                    winreg.CloseKey(key)
+                except Exception:
+                    pass
+
+            rows.append(
+                {
+                    "HiveName": hive_name,
+                    "Subkey": subkey,
+                    "ValueName": value_name,
+                    "Value": value,
+                }
+            )
+
+        self._shell_rows = rows
+        return rows
+
+    def _collect_logon_persistence_rows(self):
+        if self._logon_rows is not None:
+            return self._logon_rows
+
+        rows = []
+        if not WINREG_OK:
+            self._logon_rows = rows
+            return rows
+
+        locations = [
+            (winreg.HKEY_CURRENT_USER, r"Environment", "UserInitMprLogonScript", "UserInitMprLogonScript", "HKCU"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon", "Taskman", "WinlogonTaskman", "HKLM"),
+        ]
+
+        for hive, subkey, value_name, kind, hive_name in locations:
+            try:
+                key = winreg.OpenKey(hive, subkey)
+            except (FileNotFoundError, PermissionError):
+                continue
+
+            try:
+                value = str(winreg.QueryValueEx(key, value_name)[0] or "")
+            except OSError:
+                value = ""
+            finally:
+                try:
+                    winreg.CloseKey(key)
+                except Exception:
+                    pass
+
+            rows.append(
+                {
+                    "Kind": kind,
+                    "Hive": hive,
+                    "HiveName": hive_name,
+                    "Subkey": subkey,
+                    "ValueName": value_name,
+                    "Value": value,
+                }
+            )
+
+        notify_root = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\Notify"
+        try:
+            root = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, notify_root)
+        except (FileNotFoundError, PermissionError):
+            root = None
+
+        if root:
+            try:
+                index = 0
+                while True:
+                    try:
+                        notify_name = winreg.EnumKey(root, index)
+                    except OSError:
+                        break
+                    index += 1
+                    notify_path = notify_root + "\\" + notify_name
+                    try:
+                        child = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, notify_path)
+                    except (FileNotFoundError, PermissionError):
+                        continue
+
+                    try:
+                        try:
+                            dll_name = str(winreg.QueryValueEx(child, "DLLName")[0] or "")
+                        except OSError:
+                            dll_name = ""
+                        if not dll_name:
+                            continue
+                        rows.append(
+                            {
+                                "Kind": "WinlogonNotify",
+                                "Hive": winreg.HKEY_LOCAL_MACHINE,
+                                "HiveName": "HKLM",
+                                "Subkey": notify_path,
+                                "ValueName": "DLLName",
+                                "NotifyName": notify_name,
+                                "Value": dll_name,
+                            }
+                        )
+                    finally:
+                        try:
+                            winreg.CloseKey(child)
+                        except Exception:
+                            pass
+            finally:
+                try:
+                    winreg.CloseKey(root)
+                except Exception:
+                    pass
+
+        self._logon_rows = rows
+        return rows
+
+    def _resolve_clsid_server_path(self, clsid):
+        clsid = str(clsid or "").strip()
+        if not clsid:
+            return ""
+
+        candidate_roots = []
+        if hasattr(winreg, "HKEY_CLASSES_ROOT"):
+            candidate_roots.append((winreg.HKEY_CLASSES_ROOT, rf"CLSID\{clsid}"))
+        candidate_roots.extend([
+            (winreg.HKEY_LOCAL_MACHINE, rf"SOFTWARE\Classes\CLSID\{clsid}"),
+            (winreg.HKEY_LOCAL_MACHINE, rf"SOFTWARE\WOW6432Node\Classes\CLSID\{clsid}"),
+        ])
+
+        for hive, base_key in candidate_roots:
+            for server_key in ("InprocServer32", "LocalServer32"):
+                try:
+                    key = winreg.OpenKey(hive, base_key + "\\" + server_key)
+                except (FileNotFoundError, PermissionError):
+                    continue
+                try:
+                    value = str(winreg.QueryValueEx(key, "")[0] or "").strip()
+                except OSError:
+                    value = ""
+                finally:
+                    try:
+                        winreg.CloseKey(key)
+                    except Exception:
+                        pass
+                if value:
+                    return value
+        return ""
+
+    def _collect_explorer_hijack_rows(self):
+        if self._explorer_hijack_rows is not None:
+            return self._explorer_hijack_rows
+
+        rows = []
+        if not WINREG_OK:
+            self._explorer_hijack_rows = rows
+            return rows
+
+        hook_locations = [
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\ShellExecuteHooks", "ShellExecuteHook", "HKLM"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\ShellExecuteHooks", "ShellExecuteHook", "HKCU"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\ShellServiceObjectDelayLoad", "ShellServiceObjectDelayLoad", "HKLM"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\ShellServiceObjectDelayLoad", "ShellServiceObjectDelayLoad", "HKCU"),
+        ]
+
+        for hive, subkey, kind, hive_name in hook_locations:
+            try:
+                key = winreg.OpenKey(hive, subkey)
+            except (FileNotFoundError, PermissionError):
+                continue
+
+            index = 0
+            while True:
+                try:
+                    value_name, value, _ = winreg.EnumValue(key, index)
+                except OSError:
+                    break
+                index += 1
+                clsid = str(value or "").strip()
+                rows.append(
+                    {
+                        "Kind": kind,
+                        "Hive": hive,
+                        "HiveName": hive_name,
+                        "Subkey": subkey,
+                        "ValueName": str(value_name or ""),
+                        "Value": clsid,
+                        "ResolvedPath": self._resolve_clsid_server_path(clsid),
+                    }
+                )
+
+            try:
+                winreg.CloseKey(key)
+            except Exception:
+                pass
+
+        self._explorer_hijack_rows = rows
+        return rows
+
+    def _looks_suspicious_shell_persistence(self, value_name, value):
+        raw = self._normalize_cmdline(value).strip()
+        if not raw:
+            return None
+
+        name = str(value_name or "")
+        lowered_name = name.lower()
+        lowered_value = raw.lower()
+
+        if lowered_name == "shell":
+            compact = lowered_value.replace(" ", "")
+            if compact in {"explorer.exe", "explorer.exe,"}:
+                return None
+            if self._value_has_malware_signal(raw):
+                return "HIGH", "Shell Persistence Review", f"Winlogon Shell points at suspicious startup command: {raw}"
+            if "explorer.exe" not in lowered_value:
+                return "MEDIUM", "Shell Persistence Review", f"Winlogon Shell was changed from the normal explorer.exe value: {raw}"
+            if "," in lowered_value or self._contains_remote_loader_marker(lowered_value):
+                return "MEDIUM", "Shell Persistence Review", f"Winlogon Shell contains extra startup payload content: {raw}"
+            return None
+
+        if lowered_name == "userinit":
+            normalized = lowered_value.replace(" ", "")
+            if normalized in {
+                r"c:\windows\system32\userinit.exe,",
+                r"%systemroot%\system32\userinit.exe,",
+            }:
+                return None
+            if self._value_has_malware_signal(raw):
+                return "HIGH", "Shell Persistence Review", f"Winlogon Userinit points at suspicious startup command: {raw}"
+            if "," in lowered_value and "userinit.exe" in lowered_value:
+                tail = lowered_value.split(",", 1)[1].strip()
+                if tail:
+                    return "MEDIUM", "Shell Persistence Review", f"Winlogon Userinit contains extra startup payload content: {raw}"
+            return "MEDIUM", "Shell Persistence Review", f"Winlogon Userinit differs from the normal default value: {raw}"
+
+        if lowered_name in {"load", "run"} and self._value_has_malware_signal(raw):
+            return "HIGH", "Shell Persistence Review", f"Legacy Windows startup value {name} points at suspicious command: {raw}"
+
+        return None
+
+    def _looks_suspicious_policy_persistence(self, row):
+        kind = str((row or {}).get("Kind") or "")
+        value_name = str((row or {}).get("ValueName") or "")
+        raw = self._normalize_cmdline((row or {}).get("Value")).strip()
+        if not raw:
+            return None
+
+        target = self._extract_command_target(raw)
+        normalized_target = self._normalized_path(target)
+
+        if kind == "ExplorerRun":
+            if self._value_has_malware_signal(raw):
+                return "HIGH", "Policy Persistence", f"Policies Explorer Run launches a suspicious command: {value_name} = {raw}"
+            if normalized_target and self._looks_like_temp_stage_launcher(normalized_target):
+                return "HIGH", "Policy Persistence", f"Policies Explorer Run launches a temp-stage executable: {value_name} = {raw}"
+            return None
+
+        if kind == "CmdAutorun":
+            if self._value_has_malware_signal(raw):
+                return "HIGH", "Policy Persistence", f"Command Processor Autorun launches a suspicious command: {raw}"
+            if self._contains_remote_loader_marker(raw):
+                return "HIGH", "Policy Persistence", f"Command Processor Autorun references a remote loader or downloader command: {raw}"
+            if normalized_target and any(marker in normalized_target for marker in COMMON_USERLAND_EXEC_MARKERS):
+                if not self._is_safe_process_context(os.path.basename(normalized_target).lower(), target, raw):
+                    return "HIGH", "Policy Persistence", f"Command Processor Autorun launches a user-writable executable or script: {raw}"
+            return None
+
+        if kind == "PolicyShell":
+            lowered = raw.lower().replace(" ", "")
+            if lowered in {"explorer.exe", "explorer.exe,"}:
+                return None
+            if self._value_has_malware_signal(raw):
+                return "HIGH", "Policy Persistence", f"Policies System Shell points at a suspicious shell command: {raw}"
+            if "explorer.exe" not in lowered:
+                return "MEDIUM", "Policy Persistence", f"Policies System Shell overrides the normal explorer.exe shell: {raw}"
+            if "," in raw or self._contains_remote_loader_marker(raw):
+                return "MEDIUM", "Policy Persistence", f"Policies System Shell contains extra startup payload content: {raw}"
+            return None
+
+        return None
+
+    def _looks_suspicious_logon_persistence(self, row):
+        kind = str((row or {}).get("Kind") or "")
+        raw = self._normalize_cmdline((row or {}).get("Value")).strip()
+        if not raw:
+            return None
+
+        target = self._extract_command_target(raw)
+        normalized_target = self._normalized_path(target)
+
+        if kind == "UserInitMprLogonScript":
+            if self._value_has_malware_signal(raw):
+                return "HIGH", "Logon Script Persistence", f"UserInitMprLogonScript launches a suspicious logon command: {raw}"
+            if normalized_target and self._looks_like_temp_stage_launcher(normalized_target):
+                return "HIGH", "Logon Script Persistence", f"UserInitMprLogonScript launches a temp-stage executable: {raw}"
+            if self._contains_remote_loader_marker(raw):
+                return "HIGH", "Logon Script Persistence", f"UserInitMprLogonScript references a remote loader or downloader command: {raw}"
+            if normalized_target and self._path_in_user_writable_exec_zone(normalized_target):
+                stem = os.path.splitext(os.path.basename(normalized_target))[0]
+                if self._looks_random(stem) or self._contains_marker(normalized_target, PROCESS_IOC_MARKERS):
+                    return "HIGH", "Logon Script Persistence", f"UserInitMprLogonScript launches a suspicious user-writable payload: {raw}"
+            return None
+
+        if kind == "WinlogonTaskman":
+            if self._value_has_malware_signal(raw):
+                return "HIGH", "Logon Script Persistence", f"Winlogon Taskman points at a suspicious logon command: {raw}"
+            if normalized_target and self._path_in_user_writable_exec_zone(normalized_target):
+                return "MEDIUM", "Logon Script Persistence", f"Winlogon Taskman points outside the normal system path: {raw}"
+            return None
+
+        if kind == "WinlogonNotify":
+            notify_name = str((row or {}).get("NotifyName") or "")
+            if self._value_has_malware_signal(raw):
+                return "HIGH", "Winlogon Notify Review", f"Winlogon Notify DLL looks suspicious: {notify_name} -> {raw}"
+            if normalized_target and self._path_in_user_writable_exec_zone(normalized_target):
+                return "HIGH", "Winlogon Notify Review", f"Winlogon Notify loads a DLL from a user-writable path: {notify_name} -> {raw}"
+            if normalized_target and not self._is_trusted_vendor_path(normalized_target) and not self._is_protected_system_path(normalized_target):
+                stem = os.path.splitext(os.path.basename(normalized_target))[0]
+                if self._looks_random(stem):
+                    return "MEDIUM", "Winlogon Notify Review", f"Winlogon Notify uses an unusual DLL name or path: {notify_name} -> {raw}"
+            return None
+
+        return None
+
+    def _looks_suspicious_explorer_hijack(self, row):
+        kind = str((row or {}).get("Kind") or "")
+        value_name = str((row or {}).get("ValueName") or "")
+        clsid = self._normalize_cmdline((row or {}).get("Value")).strip()
+        resolved_path = self._normalize_cmdline((row or {}).get("ResolvedPath")).strip()
+
+        if not (clsid or resolved_path):
+            return None
+
+        if self._value_has_malware_signal(clsid) or self._value_has_malware_signal(resolved_path):
+            return "HIGH", "Explorer Hijack Review", f"{kind} resolves to a suspicious Explorer hook: {value_name} -> {resolved_path or clsid}"
+
+        normalized_target = self._normalized_path(self._extract_command_target(resolved_path) or resolved_path)
+        if normalized_target and self._path_in_user_writable_exec_zone(normalized_target):
+            return "HIGH", "Explorer Hijack Review", f"{kind} resolves to a user-writable Explorer hook DLL: {value_name} -> {resolved_path}"
+
+        if normalized_target and not self._is_trusted_vendor_path(normalized_target) and not self._is_protected_system_path(normalized_target):
+            stem = os.path.splitext(os.path.basename(normalized_target))[0]
+            if self._looks_random(stem):
+                return "MEDIUM", "Explorer Hijack Review", f"{kind} resolves to an unusual Explorer hook DLL: {value_name} -> {resolved_path}"
+
+        return None
+
     def _evaluate_scheduled_task_entry(self, task_name, task_path, execute, arguments="", working_directory=""):
         task_name = str(task_name or "")
         task_path = str(task_path or "")
@@ -3246,10 +3813,41 @@ class ScanEngine:
             "reasons": reasons,
         }
 
+    def _iter_startup_file_rows(self):
+        for root in self._startup_persistence_roots():
+            if not os.path.isdir(root):
+                continue
+            try:
+                for entry in os.listdir(root):
+                    full = os.path.join(root, entry)
+                    if os.path.isfile(full) and not entry.lower().endswith(".lnk"):
+                        yield {
+                            "Path": full,
+                            "Name": entry,
+                            "WorkingDirectory": os.path.dirname(full),
+                        }
+            except Exception:
+                continue
+
     def scan_startup_correlations(self):
         self.log("STARTUP CORRELATION REVIEW", "SECTION")
 
         correlated = {}
+
+        for row in self._iter_startup_file_rows():
+            signal = self._startup_signal_for_command(
+                row.get("Path"),
+                "",
+                row.get("WorkingDirectory"),
+            )
+            if not signal:
+                continue
+            location = str(row.get("Path") or "")
+            bucket = correlated.setdefault(signal["identity"], {"score": 0, "sources": [], "target": signal["target"], "reasons": set()})
+            bucket["score"] = max(bucket["score"], signal["score"] + 1)
+            bucket["sources"].append(f"startup-file:{location}")
+            bucket["reasons"].update(signal["reasons"])
+            bucket["reasons"].add("direct startup folder payload")
 
         for row in self._collect_shortcut_rows():
             signal = self._startup_signal_for_command(
@@ -3288,6 +3886,43 @@ class ScanEngine:
             bucket["sources"].append(f"autorun:{location}")
             bucket["reasons"].update(signal["reasons"])
 
+        for row in self._collect_policy_persistence_rows():
+            signal = self._startup_signal_for_command(row.get("Value"))
+            if not signal:
+                continue
+            location = f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]"
+            bucket = correlated.setdefault(signal["identity"], {"score": 0, "sources": [], "target": signal["target"], "reasons": set()})
+            bucket["score"] = max(bucket["score"], signal["score"] + 1)
+            bucket["sources"].append(f"policy:{location}")
+            bucket["reasons"].update(signal["reasons"])
+            bucket["reasons"].add("policy-backed autorun")
+
+        for row in self._collect_logon_persistence_rows():
+            target_text = row.get("Value")
+            if row.get("Kind") == "WinlogonNotify":
+                target_text = row.get("Value")
+            signal = self._startup_signal_for_command(target_text)
+            if not signal:
+                continue
+            location = f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]"
+            bucket = correlated.setdefault(signal["identity"], {"score": 0, "sources": [], "target": signal["target"], "reasons": set()})
+            bucket["score"] = max(bucket["score"], signal["score"] + 1)
+            bucket["sources"].append(f"logon:{location}")
+            bucket["reasons"].update(signal["reasons"])
+            bucket["reasons"].add("legacy logon persistence")
+
+        for row in self._collect_explorer_hijack_rows():
+            target_text = row.get("ResolvedPath") or row.get("Value")
+            signal = self._startup_signal_for_command(target_text)
+            if not signal:
+                continue
+            location = f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]"
+            bucket = correlated.setdefault(signal["identity"], {"score": 0, "sources": [], "target": signal["target"], "reasons": set()})
+            bucket["score"] = max(bucket["score"], signal["score"] + 1)
+            bucket["sources"].append(f"explorer-hook:{location}")
+            bucket["reasons"].update(signal["reasons"])
+            bucket["reasons"].add("legacy explorer hook")
+
         for row in self._collect_disabled_startup_rows():
             signal = self._startup_signal_for_command(
                 row.get("Command"),
@@ -3303,20 +3938,44 @@ class ScanEngine:
             bucket["reasons"].update(signal["reasons"])
             bucket["reasons"].add("disabled startup residue")
 
+        for row in self._collect_shell_persistence_rows():
+            signal = self._startup_signal_for_command(row.get("Value"))
+            if not signal:
+                continue
+            location = f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]"
+            bucket = correlated.setdefault(signal["identity"], {"score": 0, "sources": [], "target": signal["target"], "reasons": set()})
+            bucket["score"] = max(bucket["score"], signal["score"] + 1)
+            bucket["sources"].append(f"shell:{location}")
+            bucket["reasons"].update(signal["reasons"])
+            bucket["reasons"].add("shell/winlogon startup value")
+
         for row in self._collect_wmi_persistence_rows():
             class_name = str(row.get("ClassName") or "")
-            if class_name != "CommandLineEventConsumer":
+            if class_name == "CommandLineEventConsumer":
+                command = str(row.get("CommandLineTemplate") or row.get("ExecutablePath") or "")
+                signal = self._startup_signal_for_command(command)
+                if not signal:
+                    continue
+                name = str(row.get("Name") or class_name)
+                bucket = correlated.setdefault(signal["identity"], {"score": 0, "sources": [], "target": signal["target"], "reasons": set()})
+                bucket["score"] = max(bucket["score"], signal["score"] + 2)
+                bucket["sources"].append(f"wmi:{name}")
+                bucket["reasons"].update(signal["reasons"])
+                bucket["reasons"].add("WMI command consumer")
                 continue
-            command = str(row.get("CommandLineTemplate") or row.get("ExecutablePath") or "")
+
+            if class_name != "ActiveScriptEventConsumer":
+                continue
+            command = str(row.get("ScriptText") or "")
             signal = self._startup_signal_for_command(command)
             if not signal:
                 continue
             name = str(row.get("Name") or class_name)
             bucket = correlated.setdefault(signal["identity"], {"score": 0, "sources": [], "target": signal["target"], "reasons": set()})
             bucket["score"] = max(bucket["score"], signal["score"] + 2)
-            bucket["sources"].append(f"wmi:{name}")
+            bucket["sources"].append(f"wmi-script:{name}")
             bucket["reasons"].update(signal["reasons"])
-            bucket["reasons"].add("WMI command consumer")
+            bucket["reasons"].add("WMI script consumer")
 
         for bucket in correlated.values():
             unique_sources = sorted(set(bucket["sources"]))
@@ -5415,6 +6074,271 @@ class ScanEngine:
             except Exception:
                 pass
 
+    def scan_policy_persistence(self):
+        self.log("POLICY PERSISTENCE REVIEW", "SECTION")
+        if not WINREG_OK:
+            self.log("winreg unavailable - policy persistence review skipped", "WARN")
+            return
+
+        for row in self._collect_policy_persistence_rows():
+            if self._stop:
+                return
+            finding = self._looks_suspicious_policy_persistence(row)
+            if not finding:
+                continue
+            severity, category, description = finding
+            location = f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]"
+            action = None
+            if severity == "HIGH":
+                action = lambda h=row.get("Hive"), sk=row.get("Subkey"), n=row.get("ValueName"): self._delete_reg_val(h, sk, n)
+            self._add(
+                severity,
+                category,
+                description,
+                location,
+                action,
+            )
+
+    def scan_session_manager_review(self):
+        self.log("SESSION MANAGER REVIEW", "SECTION")
+        if not WINREG_OK:
+            self.log("winreg unavailable - session manager review skipped", "WARN")
+            return
+
+        try:
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager")
+        except (FileNotFoundError, PermissionError):
+            key = None
+
+        if key:
+            try:
+                try:
+                    boot_execute = winreg.QueryValueEx(key, "BootExecute")[0]
+                except OSError:
+                    boot_execute = []
+                boot_values = boot_execute if isinstance(boot_execute, (list, tuple)) else [boot_execute]
+                normalized_boot = [self._normalize_cmdline(item).strip() for item in boot_values if str(item or "").strip()]
+                if normalized_boot and [item.lower() for item in normalized_boot] != ["autocheck autochk *"]:
+                    joined = " | ".join(normalized_boot)
+                    severity = "HIGH" if self._value_has_malware_signal(joined) else "MEDIUM"
+                    self._add(
+                        severity,
+                        "Session Manager Review",
+                        f"BootExecute differs from the normal autocheck value: {joined}",
+                        r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager[BootExecute]",
+                    )
+
+                try:
+                    excluded_known_dlls = str(winreg.QueryValueEx(key, "ExcludeFromKnownDlls")[0] or "")
+                except OSError:
+                    excluded_known_dlls = ""
+                if excluded_known_dlls and self._value_has_malware_signal(excluded_known_dlls):
+                    self._add(
+                        "HIGH",
+                        "Session Manager Review",
+                        f"ExcludeFromKnownDlls contains suspicious DLL names: {excluded_known_dlls}",
+                        r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager[ExcludeFromKnownDlls]",
+                    )
+            finally:
+                try:
+                    winreg.CloseKey(key)
+                except Exception:
+                    pass
+
+        try:
+            known_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs")
+        except (FileNotFoundError, PermissionError):
+            known_key = None
+
+        if known_key:
+            try:
+                try:
+                    dll_directory = str(winreg.QueryValueEx(known_key, "DllDirectory")[0] or "")
+                except OSError:
+                    dll_directory = ""
+                if dll_directory:
+                    normalized_dir = self._normalized_path(dll_directory)
+                    if self._value_has_malware_signal(dll_directory) or (
+                        normalized_dir
+                        and "\\system32" not in normalized_dir
+                        and "\\syswow64" not in normalized_dir
+                        and "%systemroot%" not in dll_directory.lower()
+                    ):
+                        self._add(
+                            "HIGH",
+                            "KnownDLLs Review",
+                            f"KnownDLLs DllDirectory points outside normal system DLL paths: {dll_directory}",
+                            r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs[DllDirectory]",
+                        )
+
+                index = 0
+                while True:
+                    try:
+                        value_name, value, _ = winreg.EnumValue(known_key, index)
+                    except OSError:
+                        break
+                    index += 1
+                    if str(value_name or "").lower() in {"dlldirectory"}:
+                        continue
+                    raw = self._normalize_cmdline(value).strip()
+                    if not raw:
+                        continue
+                    lowered = raw.lower()
+                    if self._value_has_malware_signal(raw) or any(token in lowered for token in ("\\", "/", ":")):
+                        self._add(
+                            "HIGH",
+                            "KnownDLLs Review",
+                            f"KnownDLLs entry {value_name} points at an unusual DLL target: {raw}",
+                            rf"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs[{value_name}]",
+                        )
+            finally:
+                try:
+                    winreg.CloseKey(known_key)
+                except Exception:
+                    pass
+
+        try:
+            appcert_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\AppCertDlls")
+        except (FileNotFoundError, PermissionError):
+            appcert_key = None
+
+        if appcert_key:
+            try:
+                index = 0
+                while True:
+                    try:
+                        value_name, value, _ = winreg.EnumValue(appcert_key, index)
+                    except OSError:
+                        break
+                    index += 1
+                    raw = self._normalize_cmdline(value).strip()
+                    if not raw:
+                        continue
+                    target = self._extract_command_target(raw) or raw
+                    normalized_target = self._normalized_path(target)
+                    if self._value_has_malware_signal(raw) or (
+                        normalized_target
+                        and any(marker in normalized_target for marker in COMMON_USERLAND_EXEC_MARKERS)
+                        and not self._is_trusted_vendor_path(normalized_target)
+                    ):
+                        self._add(
+                            "HIGH",
+                            "AppCert Persistence",
+                            f"AppCertDlls entry injects a suspicious DLL: {value_name} = {raw}",
+                            rf"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\AppCertDlls[{value_name}]",
+                            lambda n=value_name: self._delete_reg_val(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\AppCertDlls", n),
+                        )
+            finally:
+                try:
+                    winreg.CloseKey(appcert_key)
+                except Exception:
+                    pass
+
+    def scan_safeboot_review(self):
+        self.log("SAFEBOOT REVIEW", "SECTION")
+        if not WINREG_OK:
+            self.log("winreg unavailable - SafeBoot review skipped", "WARN")
+            return
+
+        try:
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\SafeBoot")
+        except (FileNotFoundError, PermissionError):
+            return
+
+        try:
+            try:
+                alternate_shell = str(winreg.QueryValueEx(key, "AlternateShell")[0] or "")
+            except OSError:
+                alternate_shell = ""
+        finally:
+            try:
+                winreg.CloseKey(key)
+            except Exception:
+                pass
+
+        if not alternate_shell:
+            return
+
+        normalized = self._normalize_cmdline(alternate_shell).strip()
+        lowered = normalized.lower().replace(" ", "")
+        if lowered in {"cmd.exe", r"%systemroot%\system32\cmd.exe", r"c:\windows\system32\cmd.exe"}:
+            return
+
+        severity = "HIGH" if self._value_has_malware_signal(normalized) else "MEDIUM"
+        self._add(
+            severity,
+            "SafeBoot Review",
+            f"SafeBoot AlternateShell differs from the normal cmd.exe value: {normalized}",
+            r"HKLM\SYSTEM\CurrentControlSet\Control\SafeBoot[AlternateShell]",
+        )
+
+    def scan_logon_persistence(self):
+        self.log("LOGON PERSISTENCE REVIEW", "SECTION")
+        if not WINREG_OK:
+            self.log("winreg unavailable - logon persistence review skipped", "WARN")
+            return
+
+        for row in self._collect_logon_persistence_rows():
+            if self._stop:
+                return
+            finding = self._looks_suspicious_logon_persistence(row)
+            if not finding:
+                continue
+            severity, category, description = finding
+            location = f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]"
+            action = None
+            if category == "Logon Script Persistence" and severity == "HIGH":
+                action = lambda h=row.get("Hive"), sk=row.get("Subkey"), n=row.get("ValueName"): self._delete_reg_val(h, sk, n)
+            self._add(
+                severity,
+                category,
+                description,
+                location,
+                action,
+            )
+
+    def scan_explorer_hijacks(self):
+        self.log("EXPLORER HIJACK REVIEW", "SECTION")
+        if not WINREG_OK:
+            self.log("winreg unavailable - Explorer hijack review skipped", "WARN")
+            return
+
+        for row in self._collect_explorer_hijack_rows():
+            if self._stop:
+                return
+            finding = self._looks_suspicious_explorer_hijack(row)
+            if not finding:
+                continue
+            severity, category, description = finding
+            location = f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]"
+            self._add(
+                severity,
+                category,
+                description,
+                location,
+            )
+
+    def scan_shell_persistence(self):
+        self.log("SHELL PERSISTENCE REVIEW", "SECTION")
+        if not WINREG_OK:
+            self.log("winreg unavailable - shell persistence review skipped", "WARN")
+            return
+
+        for row in self._collect_shell_persistence_rows():
+            if self._stop:
+                return
+            finding = self._looks_suspicious_shell_persistence(row.get("ValueName"), row.get("Value"))
+            if not finding:
+                continue
+            severity, category, description = finding
+            location = f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]"
+            self._add(
+                severity,
+                category,
+                description,
+                location,
+            )
+
     # Remediation helpers
 
     def _kill_pid(self, pid):
@@ -5880,8 +6804,12 @@ class ScanEngine:
         self._shortcut_scan_rows = None
         self._scheduled_task_rows = None
         self._autorun_rows = None
+        self._policy_rows = None
         self._disabled_startup_rows = None
         self._wmi_rows = None
+        self._shell_rows = None
+        self._logon_rows = None
+        self._explorer_hijack_rows = None
         self.scan_network()
         self.scan_processes()
         self.scan_process_modules()
@@ -5893,6 +6821,12 @@ class ScanEngine:
         self.scan_wmi_persistence()
         self.scan_scheduled_tasks()
         self.scan_registry()
+        self.scan_policy_persistence()
+        self.scan_session_manager_review()
+        self.scan_safeboot_review()
+        self.scan_logon_persistence()
+        self.scan_explorer_hijacks()
+        self.scan_shell_persistence()
         self.scan_startup_correlations()
         self.scan_system_tampering()
         self.scan_defender_posture()
@@ -5909,12 +6843,14 @@ class ScanEngine:
         cleanup = self.assess_cleanup_state()
         self.scan_exposure_surface()
         exposure = self.assess_account_exposure()
+        breakdown = self.finding_breakdown()
         self.log(
             f"-- SCAN COMPLETE  |  {len(self.threats)} threat(s) found  -  {crit} CRITICAL  {high} HIGH --",
             "SECTION"
         )
         self.log(f"Summary verdict   : {summary['label']}", "CRITICAL" if summary["confidence"] == "high" else "WARN" if summary["confidence"] == "medium" else "INFO")
         self.log(f"Assessment        : {summary['detail']}", "INFO")
+        self.log(f"Confirmed items   : {breakdown['confirmed']}  |  Review-first: {breakdown['review']}  |  Other: {breakdown['other']}", "INFO")
         self.log(f"Local confidence  : {cleanup['score']}%  -  {cleanup['label']}", "WARN" if cleanup["score"] < 90 else "INFO")
         self.log(f"Confidence note   : {cleanup['detail']}", "INFO")
         self.log(f"Account risk      : {exposure['score']}%  -  {exposure['label']}", "CRITICAL" if exposure["score"] >= 70 else "WARN")
@@ -5989,6 +6925,8 @@ class ScanEngine:
         summary = self.last_summary or self.summarize_threats()
         cleanup = self.cleanup_assessment or self.assess_cleanup_state()
         exposure = self.assess_account_exposure()
+        breakdown = self.finding_breakdown()
+        recovery_plan = self.build_account_recovery_plan(exposure).splitlines()
 
         grouped = {}
         for threat in self.threats:
@@ -6005,6 +6943,9 @@ class ScanEngine:
             f"Tool ver  : {VERSION}",
             "",
             f"Threats found   : {len(self.threats)}  ({crit} CRITICAL, {high} HIGH)",
+            f"Confirmed items : {breakdown['confirmed']}",
+            f"Review-first    : {breakdown['review']}",
+            f"Other findings  : {breakdown['other']}",
             f"Processes killed: {self.killed}",
             f"Files removed   : {self.removed}",
             f"Recovery undo   : {'Available' if recovery['available'] else 'Not available'}",
@@ -6053,6 +6994,14 @@ class ScanEngine:
                     f"       Remediated: {'Yes' if threat.remediated else 'No - MANUAL ACTION REQUIRED'}",
                 ]
                 item_index += 1
+
+        lines += [
+            "",
+            "=" * 64,
+            "RECOVERY CENTER",
+            "=" * 64,
+        ]
+        lines.extend(recovery_plan)
 
         lines += [
             "",
@@ -6199,6 +7148,7 @@ class App(tk.Tk):
         self._btn_clear = self._btn(secondary_actions, "⌫  CLEAR LOG", FG3, self._do_clear)
 
         self._btn_update = self._btn(secondary_actions, "CHECK UPDATES", BLUE, self._do_update)
+        self._btn_recovery = self._btn(secondary_actions, "ACCOUNT RECOVERY", AMBER, self._do_recovery_plan)
 
         self._paranoid_chk = tk.Checkbutton(
             secondary_actions,
@@ -6775,16 +7725,26 @@ class App(tk.Tk):
 
     def _update_post_scan_hint(self, threat_count, cleanup, exposure):
         startup_categories = {
+            "AppCert Persistence",
+            "Explorer Hijack Review",
+            "KnownDLLs Review",
             "Disabled Startup Artifact",
+            "Logon Script Persistence",
             "Malicious Scheduled Task",
             "Malicious Shortcut",
+            "Policy Persistence",
             "Registry Persistence",
+            "SafeBoot Review",
+            "Session Manager Review",
+            "Shell Persistence Review",
             "Startup-Launched Process",
             "Startup Correlation Review",
+            "Winlogon Notify Review",
             "WMI Persistence",
         }
         startup_hits = self._threat_count(startup_categories)
         repair_hits = self._actionable_threat_count(PROTECTION_REPAIR_CATEGORIES)
+        breakdown = self._scanner.finding_breakdown() if self._scanner else {"confirmed": 0, "review": 0, "other": 0}
         if startup_hits:
             self._set_action_hint(
                 f"Startup watch: {startup_hits} suspicious startup item(s) were found. Use KILL & CLEAN, then reboot and rescan so hidden startup leftovers cannot relaunch the infection.",
@@ -6792,6 +7752,12 @@ class App(tk.Tk):
             )
             return
         if threat_count > 0:
+            if breakdown["confirmed"] and breakdown["review"]:
+                self._set_action_hint(
+                    f"{breakdown['confirmed']} confirmed malware-style item(s) and {breakdown['review']} review-first finding(s) were surfaced. Clean the confirmed traces, then use ACCOUNT RECOVERY and REPAIR DEFAULTS as needed.",
+                    AMBER,
+                )
+                return
             if repair_hits and (self._session_reset_available or exposure["score"] >= 50):
                 self._set_action_hint(
                     "Threats were found. Use KILL & CLEAN for malware traces, REPAIR DEFAULTS for security/proxy drift, then ACCOUNT LOCKDOWN to wipe reusable local sessions on this PC.",
@@ -6883,13 +7849,16 @@ class App(tk.Tk):
         )
 
     @staticmethod
-    def _kill_confirmation_text(process_count, file_count):
+    def _kill_confirmation_text(process_count, file_count, breakdown):
         return (
             "RenKill will:\n\n"
             f"  Kill {process_count} process(es) / connection(s)\n"
-            f"  Delete {file_count} file(s) / task(s) / registry entry(ies)\n\n"
+            f"  Delete {file_count} file(s) / task(s) / registry entry(ies)\n"
+            f"  Confirmed malware-style findings: {breakdown['confirmed']}\n"
+            f"  Review-first findings left for judgment: {breakdown['review']}\n\n"
             "RenKill will quarantine or back up reversible file, task, registry, firewall, "
             "and proxy changes when possible.\n"
+            "Review-first findings are not blindly deleted unless they also map to a confirmed cleanup action.\n"
             "Process kills, service removals, WMI removals, and session resets are not fully reversible.\n\n"
             "Continue?"
         )
@@ -6949,12 +7918,21 @@ class App(tk.Tk):
                 self._btn_sessions.configure(state="normal")
                 self._btn_repair.configure(state="normal")
                 startup_hits = self._threat_count({
+                    "AppCert Persistence",
+                    "Explorer Hijack Review",
+                    "KnownDLLs Review",
                     "Disabled Startup Artifact",
+                    "Logon Script Persistence",
                     "Malicious Scheduled Task",
                     "Malicious Shortcut",
+                    "Policy Persistence",
                     "Registry Persistence",
+                    "SafeBoot Review",
+                    "Session Manager Review",
+                    "Shell Persistence Review",
                     "Startup-Launched Process",
                     "Startup Correlation Review",
+                    "Winlogon Notify Review",
                     "WMI Persistence",
                 })
                 if n > 0:
@@ -7003,10 +7981,11 @@ class App(tk.Tk):
         live = [t for t in self._scanner.threats if not t.remediated]
         procs = sum(1 for t in live if "Process" in t.category or "Connection" in t.category)
         files = len(live) - procs
+        breakdown = self._scanner.finding_breakdown()
 
         if not messagebox.askyesno(
             "Confirm KILL & CLEAN",
-            self._kill_confirmation_text(procs, files)
+            self._kill_confirmation_text(procs, files, breakdown)
         ):
             return
 
@@ -7281,6 +8260,17 @@ class App(tk.Tk):
             self.after(0, _done)
 
         threading.Thread(target=_run, daemon=True).start()
+
+    def _do_recovery_plan(self):
+        scanner = self._scanner or ScanEngine(lambda *_: None, lambda *_: None)
+        exposure = scanner.assess_account_exposure() if self._scanner else {
+            "score": 0,
+            "label": "General recovery guidance",
+            "detail": "Run a scan first for a tailored recovery plan. This is the generic clean-device checklist.",
+            "color": FG3,
+        }
+        plan_text = scanner.build_account_recovery_plan(exposure)
+        messagebox.showinfo("RenKill — Account Recovery", plan_text)
 
     def _do_report(self):
         if not self._scanner:
