@@ -41,7 +41,7 @@ except ImportError:
 
 # IOC definitions
 
-VERSION = "1.4.12"
+VERSION = "1.4.14"
 TOOL_NAME = "RenKill"
 UPDATE_REPO_OWNER = "CloudyCodez"
 UPDATE_REPO_NAME = "RenKill"
@@ -7956,6 +7956,7 @@ class App(tk.Tk):
         self._last_remediation_ts = 0.0
         self._update_info = None
         self._update_check_in_progress = False
+        self._startup_update_prompted = set()
 
         self._build()
         self.bind("<Configure>", self._refresh_status_layout)
@@ -8207,6 +8208,7 @@ class App(tk.Tk):
                             f"Update available: {release_info['tag_name']} is live on GitHub releases. CHECK UPDATES can pull it down and restart RenKill safely.",
                             GREEN,
                         )
+                        self._prompt_startup_update(release_info)
                     else:
                         self._set_status(
                             f"Update available: {release_info['tag_name']} is ready to install.",
@@ -8237,6 +8239,24 @@ class App(tk.Tk):
 
     def _check_for_updates_silent(self):
         self._check_for_updates(silent=True)
+
+    def _prompt_startup_update(self, release_info):
+        if not release_info:
+            return
+        tag_name = str(release_info.get("tag_name") or "").strip()
+        if not tag_name or tag_name in self._startup_update_prompted:
+            return
+        self._startup_update_prompted.add(tag_name)
+        if not self._is_frozen_release():
+            return
+        if messagebox.askyesno(
+            "Update Available",
+            sanitize_for_display(
+                f"RenKill {tag_name} is available.\n\n"
+                "Download and apply the update now?"
+            ),
+        ):
+            self._start_update_download(release_info)
 
     def _download_release_package(self, release_info, progress_cb=None):
         temp_root = tempfile.mkdtemp(prefix="renkill-update-")
