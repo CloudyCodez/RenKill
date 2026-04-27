@@ -79,6 +79,20 @@ The big change in the newer Reddit cases is not a completely different loader. I
 
 That reinforces the same detection strategy for RenKill:
 
+## FRST Helper Habits Worth Mirroring Safely
+
+The strongest pattern in the current Reddit/FRST cases is not that helpers are chasing one magic filename. They are checking a repeat set of surfaces, fixing the clearly bad entries, then rescanning until the machine stays clean after reboot.
+
+The parts that make sense to mirror in RenKill are:
+
+- create a restore point before destructive cleanup when Windows allows it
+- treat disabled startup leftovers and StartupApproved residue as important, not harmless noise
+- review shell and Explorer hook surfaces that can live in `HKCU` as well as `HKLM`
+- keep an eye on odd browser-extension state, fake unpacked helper folders, and browser policy drift after the main malware files are gone
+- use `EmptyTemp`-style thinking carefully: the important part is not blindly wiping everything, it is making sure temp-stage launchers and loader residue do not come back after reboot
+- review odd Alternate Data Streams on already suspicious startup or temp-stage files, but keep that review-first instead of auto-deleting streams blindly
+- call out overlapping AV products or browser helper junk when they can interfere with cleanup, even if they are not the original RenEngine payload
+
 - care less about exact filenames
 - care more about execution surface, launch chain, and persistence overlap
 - keep startup, task, WMI, extension, Defender, firewall, and session aftermath in the same investigation loop

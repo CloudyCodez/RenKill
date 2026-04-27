@@ -41,13 +41,14 @@ except ImportError:
 
 # IOC definitions
 
-VERSION = "1.4.14"
+VERSION = "1.4.15"
 TOOL_NAME = "RenKill"
 UPDATE_REPO_OWNER = "CloudyCodez"
 UPDATE_REPO_NAME = "RenKill"
 UPDATE_API_URL = f"https://api.github.com/repos/{UPDATE_REPO_OWNER}/{UPDATE_REPO_NAME}/releases/latest"
 UPDATE_RELEASES_URL = f"https://github.com/{UPDATE_REPO_OWNER}/{UPDATE_REPO_NAME}/releases"
 UPDATE_ASSET_SUFFIX = "-windows.zip"
+UPDATE_STATE_FILE = "update_state.txt"
 
 MALICIOUS_FILENAMES = {
     "instaler.exe",
@@ -653,6 +654,7 @@ STRONG_CAMPAIGN_MARKERS = {
 
 MANUAL_REVIEW_CATEGORIES = {
     "Active Setup Persistence",
+    "Alternate Data Stream Review",
     "Browser Extension Review",
     "Browser Policy Review",
     "Defender Protection Review",
@@ -730,6 +732,28 @@ STARTUP_DOWNLOADER_TOKENS = (
     "curl ",
     "wget ",
     "/load",
+)
+SUSPICIOUS_STREAM_NAME_MARKERS = (
+    "appdata",
+    "asar",
+    "bat",
+    "cmd",
+    "dll",
+    "download",
+    "exe",
+    "hta",
+    "js",
+    "key",
+    "loader",
+    "payload",
+    "ps1",
+    "rar",
+    "rpa",
+    "rpyc",
+    "run",
+    "start",
+    "vbs",
+    "zip",
 )
 SUSPICIOUS_STARTUP_BASENAMES = {
     "discordsetup",
@@ -1422,6 +1446,7 @@ class ScanEngine:
                 "session_id": "",
                 "reversible_count": 0,
                 "note_count": 0,
+                "restore_point": {},
             }
         return {
             "available": True,
@@ -1429,6 +1454,7 @@ class ScanEngine:
             "session_id": str(manifest.get("session_id") or ""),
             "reversible_count": len(manifest.get("entries") or []),
             "note_count": len(manifest.get("notes") or []),
+            "restore_point": manifest.get("restore_point") or {},
         }
 
     def compare_post_cleanup_persistence(self):
@@ -2228,11 +2254,24 @@ class ScanEngine:
             return
         reversible_count = len(self._recovery_session.get("entries") or [])
         note_count = len(self._recovery_session.get("notes") or [])
+        restore_point = self._recovery_session.get("restore_point") or {}
         quarantine = self._quarantine_summary(self._recovery_session)
         self.log(
             f"Recovery snapshot recorded {reversible_count} reversible change(s) and {note_count} note(s).",
             "INFO",
         )
+        if restore_point:
+            status = str(restore_point.get("status") or "")
+            if status == "created":
+                self.log("System Restore point is available for this cleanup session.", "INFO")
+            elif status == "recently_created":
+                self.log("Windows already had a recent System Restore point, so no new one was created.", "INFO")
+            elif status == "unavailable":
+                detail = str(restore_point.get("detail") or "")
+                message = "System Restore point was unavailable for this cleanup session."
+                if detail:
+                    message += f" {detail}"
+                self.log(message, "WARN")
         if quarantine["items"]:
             self.log(
                 f"Quarantine summary  : {quarantine['items']} item(s) isolated - {quarantine['files']} file(s), {quarantine['dirs']} directorie(s), {quarantine['neutralized']} inert payload copy/copies.",
@@ -2290,6 +2329,7 @@ class ScanEngine:
             "WinHTTP Proxy Review",
         }
         filesystem_categories = {
+            "Alternate Data Stream Review",
             "Exact IOC Hash",
             "HijackLoader Stage Artifact",
             "HijackLoader Stage Directory",
@@ -2804,6 +2844,17 @@ class ScanEngine:
         return tuple(int(part) for part in match.groups())
 
     @staticmethod
+    def _sha256_file(path):
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+        return digest.hexdigest().lower()
+
+    @staticmethod
     def _normalize_cmdline(cmdline):
         if not cmdline:
             return ""
@@ -2969,6 +3020,103 @@ class ScanEngine:
         except json.JSONDecodeError:
             return []
         return data if isinstance(data, list) else [data]
+
+    def _try_create_restore_point(self, label):
+        if not is_admin():
+            self.log("System Restore point skipped - administrator rights are required.", "WARN")
+            return False
+
+        description = f"{TOOL_NAME} {label}".strip()
+        if len(description) > 60:
+            description = description[:60]
+
+        script = (
+            "try { "
+            f"Checkpoint-Computer -Description {self._powershell_quote(description)} "
+            "-RestorePointType 'MODIFY_SETTINGS' -ErrorAction Stop; "
+            "'OK' "
+            "} catch { "
+            "$msg = $_.Exception.Message; "
+            "if (-not $msg) { $msg = $_.ToString() }; "
+            "Write-Output $msg; "
+            "exit 1 "
+            "}"
+        )
+        result = self._run_powershell(script, timeout=120)
+        if result is None:
+            self.log("System Restore point could not be created because PowerShell was unavailable.", "WARN")
+            self._record_recovery_note("system restore point was unavailable before cleanup")
+            return False
+
+        output = " ".join(
+            part.strip()
+            for part in ((result.stdout or "").strip(), (result.stderr or "").strip())
+            if part and part.strip()
+        )
+        output_lower = output.lower()
+        if result.returncode == 0:
+            self.log("System Restore point created before changes.", "INFO")
+            if self._recovery_session is not None:
+                self._recovery_session["restore_point"] = {
+                    "status": "created",
+                    "description": description,
+                    "recorded_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                }
+                self._persist_recovery_session()
+            return True
+
+        if "already been created within the past" in output_lower:
+            self.log("System Restore point was skipped because Windows recently created one already.", "INFO")
+            if self._recovery_session is not None:
+                self._recovery_session["restore_point"] = {
+                    "status": "recently_created",
+                    "description": description,
+                    "detail": output,
+                    "recorded_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                }
+                self._persist_recovery_session()
+            return False
+
+        detail = output or "unknown Windows error"
+        self.log(f"System Restore point could not be created: {detail}", "WARN")
+        self._record_recovery_note(f"system restore point unavailable before cleanup: {detail}")
+        if self._recovery_session is not None:
+            self._recovery_session["restore_point"] = {
+                "status": "unavailable",
+                "description": description,
+                "detail": detail,
+                "recorded_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            self._persist_recovery_session()
+        return False
+
+    def _list_file_streams(self, path):
+        quoted = self._powershell_quote(path)
+        rows = self._run_powershell_json(
+            "Get-Item -LiteralPath "
+            + quoted
+            + " -Stream * -ErrorAction SilentlyContinue | "
+              "Select-Object Stream,Length | ConvertTo-Json -Compress",
+            timeout=20,
+        )
+        if rows is None:
+            return None
+        streams = []
+        for row in rows:
+            name = str(row.get("Stream") or "").strip()
+            if not name:
+                continue
+            lowered = name.lower()
+            if lowered in {"::$data", "$data"}:
+                continue
+            if lowered.startswith("zone.identifier"):
+                continue
+            try:
+                length = int(row.get("Length") or 0)
+            except Exception:
+                length = 0
+            streams.append({"name": name, "length": length})
+        return streams
 
     def _file_metadata(self, path):
         normalized = self._normalized_path(path)
@@ -4161,6 +4309,7 @@ class ScanEngine:
         if hasattr(winreg, "HKEY_CLASSES_ROOT"):
             candidate_roots.append((winreg.HKEY_CLASSES_ROOT, rf"CLSID\{clsid}"))
         candidate_roots.extend([
+            (winreg.HKEY_CURRENT_USER, rf"SOFTWARE\Classes\CLSID\{clsid}"),
             (winreg.HKEY_LOCAL_MACHINE, rf"SOFTWARE\Classes\CLSID\{clsid}"),
             (winreg.HKEY_LOCAL_MACHINE, rf"SOFTWARE\WOW6432Node\Classes\CLSID\{clsid}"),
         ])
@@ -4760,6 +4909,80 @@ class ScanEngine:
                 f"Suspicious startup target is reused across {len(unique_sources)} surfaces ({source_list}): {bucket['target']} [{reason_text}]",
                 bucket["target"],
             )
+
+    def _stream_review_candidate_paths(self):
+        candidates = []
+        seen = set()
+        interesting_categories = {
+            "Dropped Executable",
+            "Exact IOC Hash",
+            "HijackLoader Stage Artifact",
+            "Loader Container DLL",
+            "Malicious Archive/Script",
+            "Malicious File",
+            "Payload Key File",
+            "Persistence Artifact",
+            "Startup Persistence Artifact",
+        }
+        for threat in self.threats:
+            if threat.category not in interesting_categories:
+                continue
+            path = self._normalized_path(threat.path)
+            if not path or path in seen:
+                continue
+            if not os.path.isfile(path):
+                continue
+            if self._is_local_tool_path(path):
+                continue
+            lowered = path.lower()
+            if not (
+                self._path_in_user_writable_exec_zone(path)
+                or self._in_temp(path)
+                or "\\start menu\\programs\\startup\\" in lowered
+            ):
+                continue
+            seen.add(path)
+            candidates.append(path)
+        return candidates
+
+    def scan_alternate_data_streams(self):
+        self.log("ALTERNATE DATA STREAM REVIEW", "SECTION")
+        candidates = self._stream_review_candidate_paths()
+        if not candidates:
+            return
+
+        for path in candidates:
+            if self._stop:
+                return
+            streams = self._list_file_streams(path)
+            if streams is None:
+                self.log("PowerShell unavailable - alternate data stream review skipped", "WARN")
+                return
+            for stream in streams:
+                name = str(stream.get("name") or "")
+                lowered = name.lower()
+                size = int(stream.get("length") or 0)
+                suspicious = (
+                    self._has_strong_campaign_context(name, path)
+                    or self._contains_remote_loader_marker(name)
+                    or any(marker in lowered for marker in SUSPICIOUS_STREAM_NAME_MARKERS)
+                )
+                severity = "HIGH" if suspicious else "MEDIUM"
+                detail = f"{path} -> {name} ({size} byte(s))"
+                if suspicious:
+                    self._add(
+                        severity,
+                        "Alternate Data Stream Review",
+                        f"Hidden stream on a suspicious file looks loader-like: {detail}",
+                        path,
+                    )
+                else:
+                    self._add(
+                        severity,
+                        "Alternate Data Stream Review",
+                        f"Suspicious file carries a non-default alternate data stream: {detail}",
+                        path,
+                    )
 
     @staticmethod
     def _chromium_profile_dirs(root):
@@ -5624,6 +5847,7 @@ class ScanEngine:
             timeout=30,
         )
         if rows is not None:
+            trusted_products = []
             if not rows:
                 self._add(
                     "MEDIUM",
@@ -5638,6 +5862,8 @@ class ScanEngine:
                         exe_path = str(row.get("pathToSignedProductExe") or "").strip()
                         product_state = str(row.get("productState") or "").strip()
                         if self._is_benign_security_center_product(display_name, exe_path):
+                            label = display_name or os.path.basename(exe_path) or "unknown"
+                            trusted_products.append(label)
                             continue
                         if exe_path and not (
                             self._is_trusted_vendor_path(exe_path)
@@ -5659,6 +5885,21 @@ class ScanEngine:
                             )
                     except Exception as exc:
                         self.log(f"Security Center review warning: {exc}", "WARN")
+
+            non_defender_products = []
+            for product in trusted_products:
+                lowered = str(product or "").strip().lower()
+                if lowered in {"windows defender", "microsoft defender", "microsoft defender antivirus"}:
+                    continue
+                if lowered and lowered not in non_defender_products:
+                    non_defender_products.append(lowered)
+            if len(non_defender_products) >= 2:
+                self._add(
+                    "MEDIUM",
+                    "Security Center Review",
+                    "Multiple antivirus products are registered. Review overlapping real-time protection so cleanup tools do not fight each other.",
+                    "root/SecurityCenter2:AntiVirusProduct",
+                )
 
         if not WINREG_OK:
             return
@@ -7673,6 +7914,7 @@ class ScanEngine:
         self.scan_explorer_hijacks()
         self.scan_shell_persistence()
         self.scan_startup_correlations()
+        self.scan_alternate_data_streams()
         self.scan_system_tampering()
         self.scan_defender_posture()
         self.scan_security_posture()
@@ -7712,6 +7954,7 @@ class ScanEngine:
         self._recovery_manifest_path = ""
         self._recovery_warning_emitted = False
         self._begin_recovery_session()
+        self._try_create_restore_point("cleanup")
         self._capture_pre_cleanup_snapshot()
 
         file_cleanup_categories = self._active_file_remediation_categories()
@@ -7746,6 +7989,7 @@ class ScanEngine:
         self._recovery_manifest_path = ""
         self._recovery_warning_emitted = False
         self._begin_recovery_session()
+        self._try_create_restore_point("repair")
         starting_removed = self.removed
 
         self.log("── REPAIRING PROTECTION DEFAULTS ─────────────────────", "SECTION")
@@ -7783,6 +8027,7 @@ class ScanEngine:
         recovery_plan = self.build_account_recovery_plan(exposure).splitlines()
         latest_manifest = self._load_latest_recovery_manifest() or {}
         quarantine = self._quarantine_summary(self._recovery_session or latest_manifest)
+        restore_point = recovery.get("restore_point") or {}
 
         grouped = {}
         for threat in self.threats:
@@ -7830,6 +8075,15 @@ class ScanEngine:
                 f"Recovery items  : {recovery['reversible_count']} reversible change(s), "
                 f"{recovery['note_count']} non-reversible note(s)"
             )
+        if restore_point:
+            status = str(restore_point.get("status") or "")
+            if status == "created":
+                lines.append("Restore point   : Created before cleanup")
+            elif status == "recently_created":
+                lines.append("Restore point   : Windows already had a recent restore point")
+            elif status == "unavailable":
+                detail = str(restore_point.get("detail") or "")
+                lines.append("Restore point   : Not available" + (f" ({detail})" if detail else ""))
         if quarantine["items"]:
             lines += [
                 "",
@@ -7963,6 +8217,7 @@ class App(tk.Tk):
         self.after(0, self._refresh_status_layout)
         self._check_admin()
         self._startup_msg()
+        self._report_update_state()
         self.after(1200, self._check_for_updates_silent)
         summary = self._update_revert_button()
         if summary["available"]:
@@ -8118,11 +8373,79 @@ class App(tk.Tk):
         anchor = sys.executable if getattr(sys, "frozen", False) else __file__
         return os.path.dirname(os.path.abspath(anchor))
 
+    @classmethod
+    def _update_state_path(cls):
+        return os.path.join(cls._app_install_dir(), UPDATE_STATE_FILE)
+
     def _set_update_button(self, text, color=BLUE, state="normal"):
         def _apply():
             if hasattr(self, "_btn_update"):
                 self._btn_update.configure(text=text, fg=color, activebackground=color, state=state)
         self.after(0, _apply)
+
+    def _read_update_state(self):
+        path = self._update_state_path()
+        if not os.path.isfile(path):
+            return {}
+        state = {}
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+                for raw_line in handle:
+                    line = raw_line.strip()
+                    if not line or "=" not in line:
+                        continue
+                    key, value = line.split("=", 1)
+                    state[key.strip().lower()] = value.strip()
+        except Exception:
+            return {}
+        return state
+
+    def _clear_update_state(self):
+        path = self._update_state_path()
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except Exception:
+            pass
+
+    def _report_update_state(self):
+        state = self._read_update_state()
+        if not state:
+            return
+
+        status = str(state.get("status") or "").strip().lower()
+        expected_version = str(state.get("version") or "").strip()
+        detail = str(state.get("detail") or "").strip()
+        expected_tuple = ScanEngine._version_tuple(expected_version)
+        current_tuple = ScanEngine._version_tuple(VERSION)
+        version_mismatch = bool(expected_tuple and current_tuple and current_tuple < expected_tuple)
+
+        if status == "applied" and not version_mismatch:
+            message = f"Updater verified RenKill {expected_version or VERSION} successfully."
+            self._log(message, "SUCCESS")
+            self._set_status(message, GREEN)
+        else:
+            failure_detail = detail or "the installed files did not match the expected release"
+            message = (
+                f"Updater warning    : expected RenKill {expected_version or 'newer release'}, "
+                f"but this copy is still v{VERSION}. {failure_detail}"
+            )
+            self._log(message, "WARN")
+            self._set_status("Last update attempt did not finish cleanly.", AMBER)
+            self._set_action_hint(
+                "Updater could not confirm the new version. If this keeps happening, redownload the latest GitHub release package manually.",
+                AMBER,
+            )
+            messagebox.showwarning(
+                "Update Verification Warning",
+                sanitize_for_display(
+                    f"RenKill expected to update to {expected_version or 'a newer release'}, but this copy is still v{VERSION}.\n\n"
+                    f"Detail: {failure_detail}\n\n"
+                    "If the updater keeps looping, download the latest release package manually."
+                ),
+            )
+
+        self._clear_update_state()
 
     def _fetch_latest_release_info(self):
         request = urllib.request.Request(
@@ -8295,14 +8618,30 @@ class App(tk.Tk):
         install_dir = self._app_install_dir()
         current_pid = os.getpid()
         temp_root = os.path.dirname(extract_dir)
+        expected_version = self._update_info.get("version") if isinstance(self._update_info, dict) else VERSION
+        source_exe = os.path.join(extract_dir, "RenKill.exe")
+        expected_hash = ""
+        try:
+            expected_hash = self._sha256_file(source_exe)
+        except Exception:
+            expected_hash = ""
+        if not expected_hash:
+            raise RuntimeError("RenKill could not hash the downloaded update package.")
         script_path = os.path.join(tempfile.gettempdir(), f"renkill-apply-update-{current_pid}.cmd")
         script_lines = [
             "@echo off",
-            "setlocal",
+            "setlocal EnableExtensions EnableDelayedExpansion",
             f'set "RENKILL_PID={current_pid}"',
             f'set "RENKILL_SRC={extract_dir}"',
             f'set "RENKILL_DST={install_dir}"',
             f'set "RENKILL_ROOT={temp_root}"',
+            f'set "RENKILL_EXPECTED_VERSION={expected_version}"',
+            f'set "RENKILL_EXPECTED_HASH={expected_hash}"',
+            'set "RENKILL_DST_EXE=%RENKILL_DST%\\RenKill.exe"',
+            'set "RENKILL_STATE=%RENKILL_DST%\\' + UPDATE_STATE_FILE + '"',
+            '> "%RENKILL_STATE%" echo status=starting',
+            '>> "%RENKILL_STATE%" echo version=%RENKILL_EXPECTED_VERSION%',
+            '>> "%RENKILL_STATE%" echo package_root=%RENKILL_ROOT%',
             ":wait_loop",
             'tasklist /FI "PID eq %RENKILL_PID%" | find "%RENKILL_PID%" >nul',
             "if not errorlevel 1 (",
@@ -8310,8 +8649,34 @@ class App(tk.Tk):
             "  goto wait_loop",
             ")",
             'robocopy "%RENKILL_SRC%" "%RENKILL_DST%" /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NC /NS >nul',
+            'set "RENKILL_RC=!ERRORLEVEL!"',
+            "if !RENKILL_RC! GEQ 8 goto copy_failed",
+            'if not exist "%RENKILL_DST_EXE%" goto verify_failed',
+            'for /f "usebackq delims=" %%H in (`"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -Command "(Get-FileHash -LiteralPath $env:RENKILL_DST_EXE -Algorithm SHA256).Hash.ToLower()"`) do set "RENKILL_DST_HASH=%%H"',
+            'if /I not "!RENKILL_DST_HASH!"=="%RENKILL_EXPECTED_HASH%" goto verify_failed',
+            '> "%RENKILL_STATE%" echo status=applied',
+            '>> "%RENKILL_STATE%" echo version=%RENKILL_EXPECTED_VERSION%',
+            '>> "%RENKILL_STATE%" echo detail=verified file copy and hash match',
             'start "" "%RENKILL_DST%\\RenKill.exe"',
             'rmdir /s /q "%RENKILL_ROOT%" >nul 2>nul',
+            'del "%~f0" >nul 2>nul',
+            "goto :eof",
+            ":copy_failed",
+            '> "%RENKILL_STATE%" echo status=failed',
+            '>> "%RENKILL_STATE%" echo version=%RENKILL_EXPECTED_VERSION%',
+            '>> "%RENKILL_STATE%" echo detail=robocopy failed with exit code !RENKILL_RC!',
+            '>> "%RENKILL_STATE%" echo package_root=%RENKILL_ROOT%',
+            '"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show(\'RenKill could not apply the update automatically. Please download the latest release package manually.\', \'RenKill Update Failed\')" >nul 2>nul',
+            'if exist "%RENKILL_DST_EXE%" start "" "%RENKILL_DST_EXE%"',
+            'del "%~f0" >nul 2>nul',
+            "goto :eof",
+            ":verify_failed",
+            '> "%RENKILL_STATE%" echo status=failed',
+            '>> "%RENKILL_STATE%" echo version=%RENKILL_EXPECTED_VERSION%',
+            '>> "%RENKILL_STATE%" echo detail=updated files did not verify against the downloaded package',
+            '>> "%RENKILL_STATE%" echo package_root=%RENKILL_ROOT%',
+            '"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show(\'RenKill could not verify the updated files. Please download the latest release package manually.\', \'RenKill Update Failed\')" >nul 2>nul',
+            'if exist "%RENKILL_DST_EXE%" start "" "%RENKILL_DST_EXE%"',
             'del "%~f0" >nul 2>nul',
         ]
         with open(script_path, "w", encoding="utf-8", newline="\r\n") as handle:
