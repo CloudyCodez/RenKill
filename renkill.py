@@ -146,6 +146,32 @@ LOADER_CONTAINER_DLLS = {
     "cc32290mt.dll",
 }
 
+NETSUPPORT_STAGE_FILENAMES = {
+    "client32.exe",
+    "client32.ini",
+    "client32u.ini",
+    "nsm.lic",
+    "htctl32.dll",
+    "pcicl32.dll",
+}
+
+NETSUPPORT_TRUSTED_PATH_MARKERS = (
+    "\\program files\\netsupport\\",
+    "\\program files (x86)\\netsupport\\",
+)
+
+NETSUPPORT_SUSPICIOUS_PATH_MARKERS = (
+    "\\appdata\\roaming\\microsoft\\updates\\local\\",
+    "\\microsoft\\updates\\local\\",
+)
+
+NETSUPPORT_METADATA_TOKENS = (
+    "netsupport ltd",
+    "netsupport manager",
+    "netsupport client application",
+    "client32",
+)
+
 HIJACKLOADER_STAGE_DIR_SIGNATURES = (
     {"dksyvguj.exe", "cc32290mt.dll", "gayal.asp", "dbghelp.dll"},
     {"hap.eml", "pla.dll", "w8cpbgqi.exe", "zt5qwyucfl.txt"},
@@ -516,6 +542,8 @@ TRUSTED_VENDOR_PATH_MARKERS = (
     "\\appdata\\roaming\\opera software\\",
     "\\programdata\\obs-studio-hook\\",
     "\\program files\\windows defender\\",
+    "\\program files\\netsupport\\",
+    "\\program files (x86)\\netsupport\\",
 )
 
 TRUSTED_COMPANY_TOKENS = (
@@ -1041,6 +1069,38 @@ RECOVERY_DIRNAME = "Recovery"
 RECOVERY_SESSIONS_DIR = "sessions"
 RECOVERY_LATEST_FILE = "latest_session.txt"
 RESTORE_CONFLICT_SUFFIX = ".renkill_restore"
+RECOVERY_QUARANTINE_DIR = "quarantine"
+QUARANTINE_NEUTRAL_EXTENSIONS = {
+    ".7z",
+    ".appx",
+    ".appxbundle",
+    ".asar",
+    ".bat",
+    ".cmd",
+    ".com",
+    ".cpl",
+    ".dll",
+    ".exe",
+    ".hta",
+    ".iso",
+    ".js",
+    ".lnk",
+    ".msi",
+    ".msix",
+    ".msixbundle",
+    ".pif",
+    ".ps1",
+    ".py",
+    ".pyc",
+    ".pyo",
+    ".rar",
+    ".rpa",
+    ".rpyc",
+    ".scr",
+    ".vbs",
+    ".zip",
+}
+QUARANTINE_INERT_SUFFIX = ".renkill-quarantine"
 
 if WINREG_OK:
     HIVE_NAME_TO_CONST = {
@@ -1234,6 +1294,7 @@ class ScanEngine:
         try:
             os.makedirs(os.path.join(session_dir, "paths"), exist_ok=True)
             os.makedirs(os.path.join(session_dir, "tasks"), exist_ok=True)
+            os.makedirs(os.path.join(session_dir, RECOVERY_QUARANTINE_DIR), exist_ok=True)
         except Exception:
             if not self._recovery_warning_emitted:
                 self.log("Recovery snapshot could not be created. Revert will be unavailable for this cleanup.", "WARN")
@@ -1622,33 +1683,105 @@ class ScanEngine:
         base = os.path.basename(os.path.normpath(path or "")) or "item"
         return re.sub(r"[^A-Za-z0-9._-]+", "_", base)
 
-    def _move_path_to_recovery(self, path):
+    @staticmethod
+    def _needs_inert_quarantine_name(path, *, is_dir=False):
+        if is_dir:
+            return True
+        ext = os.path.splitext(str(path or ""))[1].lower()
+        return ext in QUARANTINE_NEUTRAL_EXTENSIONS
+
+    def _build_quarantine_backup_name(self, path, counter):
+        safe_name = self._safe_backup_name(path)
+        is_dir = os.path.isdir(path)
+        if self._needs_inert_quarantine_name(path, is_dir=is_dir):
+            safe_name += QUARANTINE_INERT_SUFFIX
+        return f"{counter:04d}_{safe_name}"
+
+    @staticmethod
+    def _harden_quarantine_path(path):
+        try:
+            subprocess.run(
+                ["attrib", "+r", "+h", "+s", path],
+                capture_output=True,
+                creationflags=0x08000000,
+                timeout=10,
+            )
+        except Exception:
+            return False
+        return True
+
+    def _quarantine_summary(self, session=None):
+        session = session or self._recovery_session or {}
+        entries = session.get("entries") or []
+        quarantined = [entry for entry in entries if entry.get("kind") == "path_move"]
+        neutralized = sum(
+            1 for entry in quarantined
+            if str(entry.get("backup_name") or "").lower().endswith(QUARANTINE_INERT_SUFFIX)
+        )
+        return {
+            "items": len(quarantined),
+            "files": sum(1 for entry in quarantined if not entry.get("is_dir")),
+            "dirs": sum(1 for entry in quarantined if entry.get("is_dir")),
+            "neutralized": neutralized,
+        }
+
+    @staticmethod
+    def _format_removal_failure(action, path, reason):
+        path = str(path or "")
+        reason = str(reason or "unknown reason")
+        return f"Could not {action}: {path} ({reason})"
+
+    @staticmethod
+    def _result_failure_reason(result, fallback="operation failed"):
+        if result is None:
+            return fallback
+        parts = []
+        stdout = str(getattr(result, "stdout", "") or "").strip()
+        stderr = str(getattr(result, "stderr", "") or "").strip()
+        if stderr:
+            parts.append(stderr)
+        if stdout and stdout not in parts:
+            parts.append(stdout)
+        if not parts:
+            parts.append(f"exit code {getattr(result, 'returncode', 'unknown')}")
+        return "; ".join(parts)
+
+    def _try_move_path_to_recovery(self, path):
         if not os.path.exists(path):
-            return None
+            return None, "path no longer exists"
         if not self._begin_recovery_session():
-            return None
+            return None, "recovery snapshot is unavailable"
         session_dir = self._session_dir(self._recovery_session["session_id"])
         counter = len(self._recovery_session["entries"]) + 1
-        backup_name = f"{counter:04d}_{self._safe_backup_name(path)}"
-        backup_path = os.path.join(session_dir, "paths", backup_name)
+        backup_name = self._build_quarantine_backup_name(path, counter)
+        backup_path = os.path.join(session_dir, RECOVERY_QUARANTINE_DIR, backup_name)
         try:
             shutil.move(path, backup_path)
         except PermissionError:
             try:
                 subprocess.run(["attrib", "-r", "-s", "-h", path], capture_output=True, creationflags=0x08000000)
                 shutil.move(path, backup_path)
-            except Exception:
-                return None
-        except Exception:
-            return None
+            except PermissionError:
+                return None, "access denied or file is locked by another process"
+            except Exception as exc:
+                return None, str(exc)
+        except Exception as exc:
+            return None, str(exc)
 
+        self._harden_quarantine_path(backup_path)
         entry = {
             "kind": "path_move",
             "original_path": path,
             "backup_path": backup_path,
             "is_dir": bool(os.path.isdir(backup_path)),
+            "quarantined": True,
+            "backup_name": backup_name,
         }
         self._record_recovery_entry(entry)
+        return backup_path, ""
+
+    def _move_path_to_recovery(self, path):
+        backup_path, _reason = self._try_move_path_to_recovery(path)
         return backup_path
 
     @staticmethod
@@ -1854,6 +1987,15 @@ class ScanEngine:
             target_path = candidate
 
         try:
+            try:
+                subprocess.run(
+                    ["attrib", "-r", "-s", "-h", backup_path],
+                    capture_output=True,
+                    creationflags=0x08000000,
+                    timeout=10,
+                )
+            except Exception:
+                pass
             os.makedirs(os.path.dirname(target_path), exist_ok=True)
             shutil.move(backup_path, target_path)
             return True, target_path
@@ -2086,10 +2228,16 @@ class ScanEngine:
             return
         reversible_count = len(self._recovery_session.get("entries") or [])
         note_count = len(self._recovery_session.get("notes") or [])
+        quarantine = self._quarantine_summary(self._recovery_session)
         self.log(
             f"Recovery snapshot recorded {reversible_count} reversible change(s) and {note_count} note(s).",
             "INFO",
         )
+        if quarantine["items"]:
+            self.log(
+                f"Quarantine summary  : {quarantine['items']} item(s) isolated - {quarantine['files']} file(s), {quarantine['dirs']} directorie(s), {quarantine['neutralized']} inert payload copy/copies.",
+                "INFO",
+            )
 
     @staticmethod
     def _report_group_name(category):
@@ -2684,6 +2832,9 @@ class ScanEngine:
         }
         if getattr(sys, "executable", ""):
             candidates.add(os.path.dirname(os.path.abspath(sys.executable)))
+        recovery_root = self._recovery_root()
+        if recovery_root:
+            candidates.add(recovery_root)
 
         roots = []
         for candidate in candidates:
@@ -2887,6 +3038,29 @@ class ScanEngine:
     def _is_trusted_vendor_path(self, path):
         pl = self._normalized_path(path)
         return bool(pl) and any(marker in pl for marker in TRUSTED_VENDOR_PATH_MARKERS)
+
+    def _is_legit_netsupport_install_path(self, path):
+        normalized = self._normalized_path(path)
+        return bool(normalized) and any(marker in normalized for marker in NETSUPPORT_TRUSTED_PATH_MARKERS)
+
+    def _looks_like_suspicious_netsupport_path(self, path, allow_metadata=False):
+        normalized = self._normalized_path(path)
+        if not normalized:
+            return False
+        if self._is_legit_netsupport_install_path(normalized):
+            return False
+
+        base = os.path.basename(normalized).lower()
+        metadata_hit = bool(allow_metadata and self._file_metadata_matches(path, NETSUPPORT_METADATA_TOKENS))
+        name_hit = base in NETSUPPORT_STAGE_FILENAMES or "netsupport" in normalized
+        if not name_hit and not metadata_hit:
+            return False
+
+        suspicious_location = (
+            any(marker in normalized for marker in NETSUPPORT_SUSPICIOUS_PATH_MARKERS)
+            or self._path_in_user_writable_exec_zone(normalized)
+        )
+        return suspicious_location
 
     def _is_protected_system_path(self, path):
         pl = self._normalized_path(path)
@@ -3329,6 +3503,8 @@ class ScanEngine:
                     return True
         if GODOT_APP_USERDATA_MARKER in normalized_target and any(marker in lowered for marker in ASAR_ARGUMENT_MARKERS):
             return True
+        if normalized_target and self._looks_like_suspicious_netsupport_path(normalized_target, allow_metadata=True):
+            return True
         if self._looks_like_temp_stage_launcher(normalized_target):
             return True
         return any(pattern in lowered for pattern in SUSPICIOUS_REG_PATTERNS)
@@ -3397,6 +3573,8 @@ class ScanEngine:
             return "CRITICAL", "Malicious Service", f"Service references RenLoader/HijackLoader artifacts: {service_name} -> {path_name}"
         if not executable or self._is_safe_process_context(service_name.lower(), executable, path_name) or self._has_trusted_file_metadata(executable):
             return None
+        if self._looks_like_suspicious_netsupport_path(executable, allow_metadata=True):
+            return "HIGH", "Malicious Service", f"Service points at a NetSupport-style remote-control payload in a suspicious location: {service_name} -> {path_name}"
         if any(marker in normalized_executable for marker in COMMON_USERLAND_EXEC_MARKERS) and (
             self._looks_random(base) or self._contains_marker(normalized_executable, PROCESS_IOC_MARKERS)
         ):
@@ -4345,6 +4523,9 @@ class ScanEngine:
         if any(token in blob.lower() for token in STARTUP_DOWNLOADER_TOKENS):
             score += 2
             reasons.append("downloader-style startup command")
+        if normalized_target and self._looks_like_suspicious_netsupport_path(normalized_target, allow_metadata=True):
+            score += 3
+            reasons.append("NetSupport RAT path")
 
         if normalized_target and self._path_in_user_writable_exec_zone(normalized_target):
             base = os.path.splitext(os.path.basename(normalized_target))[0]
@@ -4635,6 +4816,8 @@ class ScanEngine:
         if ext not in SOURCE_LURE_EXTENSIONS:
             return False
         if ext == ".exe":
+            if self._is_trusted_vendor_path(path) or self._has_trusted_file_metadata(path):
+                return False
             return self._contains_marker(name_lower, SOURCE_LURE_FILENAME_STRONG)
         if self._contains_marker(name_lower, SOURCE_LURE_KEYWORDS) and ext not in {".html", ".htm", ".url"}:
             return True
@@ -4828,6 +5011,26 @@ class ScanEngine:
         )
         return suspicious_dll or random_like >= 2
 
+    def _looks_like_netsupport_stage_dir(self, dirpath, file_names_lower):
+        normalized = self._normalized_path(dirpath)
+        if not normalized or self._is_legit_netsupport_install_path(normalized):
+            return False
+
+        suspicious_context = (
+            any(marker in normalized for marker in NETSUPPORT_SUSPICIOUS_PATH_MARKERS)
+            or self._path_in_user_writable_exec_zone(normalized)
+        )
+        if not suspicious_context:
+            return False
+
+        names = {str(name or "").lower() for name in (file_names_lower or []) if name}
+        if not names:
+            return False
+
+        has_core_pair = {"client32.ini", "nsm.lic"} <= names
+        has_payload = bool(names & ({"client32.exe", "client32u.ini"} | {"htctl32.dll", "pcicl32.dll"}))
+        return (has_core_pair and has_payload) or len(names & NETSUPPORT_STAGE_FILENAMES) >= 3
+
     def _matches_exact_ioc_hash(self, path, fname):
         fl = fname.lower()
         ext = os.path.splitext(fl)[1]
@@ -4845,9 +5048,10 @@ class ScanEngine:
             return None
         return KNOWN_SHA256_IOCS.get(digest)
 
-    @staticmethod
-    def _should_skip_walk_dir(dirpath):
+    def _should_skip_walk_dir(self, dirpath):
         dpl = dirpath.lower()
+        if self._is_local_tool_context(dirpath):
+            return True
         return any(marker in dpl for marker in BENIGN_HEAVY_SUBTREES)
 
     def scan_exposure_surface(self):
@@ -5569,6 +5773,12 @@ class ScanEngine:
                     continue
 
                 seen.add(lowered_name)
+                location_blob = self._normalized_path(install_location or uninstall_string)
+                if "netsupport" in lowered_name and (
+                    self._is_legit_netsupport_install_path(location_blob)
+                    or "\\program files\\" in location_blob
+                ):
+                    continue
                 details = " | ".join(part for part in (display_name, publisher, install_location or uninstall_string) if part)
                 self._add(
                     "MEDIUM",
@@ -6045,6 +6255,11 @@ class ScanEngine:
                         self._add("CRITICAL", "HijackLoader Stage Directory",
                                   f"HijackLoader stage directory at: {dp}", dp,
                                   lambda p=dp: self._nuke_directory(p))
+                    elif self._looks_like_netsupport_stage_dir(dirpath, file_names_lower):
+                        dp = dirpath
+                        self._add("HIGH", "Suspicious Loader Stage Directory",
+                                  f"NetSupport-style RAT staging directory detected in a suspicious location: {dp}", dp,
+                                  lambda p=dp: self._nuke_directory(p))
                     elif self._looks_like_suspicious_temp_stage_dir(dirpath, file_names_lower):
                         dp = dirpath
                         self._add("HIGH", "Suspicious Temp Stage Directory",
@@ -6077,6 +6292,16 @@ class ScanEngine:
                         elif fl in ("archive.rpa", "script.rpyc") and self._in_temp(dirpath):
                             self._add("HIGH", "Malicious Archive/Script",
                                       f"RenEngine payload in temp: {fpath}", fpath,
+                                      lambda p=fpath: self._delete_file(p))
+
+                        elif fl in NETSUPPORT_STAGE_FILENAMES and self._looks_like_suspicious_netsupport_path(fpath, allow_metadata=True):
+                            category = "Dropped Executable" if fl.endswith((".exe", ".dll")) else "Persistence Artifact"
+                            description = (
+                                f"NetSupport-style RAT component found in a suspicious location: {fpath}"
+                                if category == "Dropped Executable"
+                                else f"NetSupport-style RAT configuration or license artifact found in a suspicious location: {fpath}"
+                            )
+                            self._add("HIGH", category, description, fpath,
                                       lambda p=fpath: self._delete_file(p))
 
                         elif fl == "__init__.py" and "renpy" in dirpath.lower() and self._in_temp(dirpath):
@@ -6261,6 +6486,17 @@ class ScanEngine:
                 "Malicious Process",
                 f"Known RenEngine process: {pname} (PID {pid})  {pexe or cmdline}",
                 pexe or cmdline,
+            )
+            return
+
+        if pexe and self._looks_like_suspicious_netsupport_path(pexe, allow_metadata=True):
+            self._add_process_seed(
+                seeds,
+                pid,
+                "CRITICAL" if pid in connected_pids else "HIGH",
+                "Malicious Process",
+                f"NetSupport-style remote-control payload is running from a suspicious path: {pname} (PID {pid})  {pexe}",
+                pexe,
             )
             return
 
@@ -7036,13 +7272,13 @@ class ScanEngine:
         if self._should_block_path_remediation(path):
             self._log_safety_block("delete protected or trusted file", path)
             return False
-        backup_path = self._move_path_to_recovery(path)
+        backup_path, quarantine_reason = self._try_move_path_to_recovery(path)
         if backup_path:
             self.removed += 1
-            self.log(f"Quarantined: {path}", "SUCCESS")
+            self.log(f"Quarantined and neutralized: {path}", "SUCCESS")
             return True
         if self._is_user_visible_root(path):
-            self.log(f"Cannot quarantine user-visible file safely: {path}", "WARN")
+            self.log(self._format_removal_failure("quarantine user-visible file safely", path, "the file sits in a user-visible root and recovery snapshot quarantine failed"), "WARN")
             return False
         try:
             os.remove(path)
@@ -7058,9 +7294,11 @@ class ScanEngine:
                 self.log(f"Deleted (forced, no recovery snapshot): {path}", "WARN")
                 return True
             except Exception as exc:
-                self.log(f"Cannot delete {path}: {exc}", "WARN")
+                reason = quarantine_reason or "access denied or file is locked by another process"
+                self.log(self._format_removal_failure("remove file", path, f"{reason}; forced delete also failed: {exc}"), "WARN")
         except Exception as exc:
-            self.log(f"Cannot delete {path}: {exc}", "WARN")
+            reason = quarantine_reason or "quarantine failed"
+            self.log(self._format_removal_failure("remove file", path, f"{reason}; delete failed: {exc}"), "WARN")
         return False
 
     def _nuke_directory(self, path):
@@ -7069,13 +7307,13 @@ class ScanEngine:
         if self._should_block_path_remediation(path, is_dir=True):
             self._log_safety_block("remove protected or broad directory", path)
             return False
-        backup_path = self._move_path_to_recovery(path)
+        backup_path, quarantine_reason = self._try_move_path_to_recovery(path)
         if backup_path:
             self.removed += 1
             self.log(f"Quarantined directory: {path}", "SUCCESS")
             return True
         if self._is_user_visible_root(path):
-            self.log(f"Cannot quarantine user-visible directory safely: {path}", "WARN")
+            self.log(self._format_removal_failure("quarantine user-visible directory safely", path, "the directory sits in a user-visible root and recovery snapshot quarantine failed"), "WARN")
             return False
         try:
             shutil.rmtree(path, ignore_errors=True)
@@ -7083,7 +7321,8 @@ class ScanEngine:
             self.log(f"Removed directory (no recovery snapshot): {path}", "WARN")
             return True
         except Exception as exc:
-            self.log(f"Cannot remove dir {path}: {exc}", "WARN")
+            reason = quarantine_reason or "quarantine failed"
+            self.log(self._format_removal_failure("remove directory", path, f"{reason}; directory delete failed: {exc}"), "WARN")
         return False
 
     def _delete_task(self, task_name):
@@ -7099,9 +7338,9 @@ class ScanEngine:
                 self.removed += 1
                 self.log(f"Deleted scheduled task: {task_name}", "SUCCESS")
                 return True
-            self.log(f"Task delete failed: {r.stderr.strip()}", "WARN")
+            self.log(self._format_removal_failure("delete scheduled task", task_name, self._result_failure_reason(r, "task delete failed")), "WARN")
         except Exception as exc:
-            self.log(f"Cannot delete task {task_name}: {exc}", "WARN")
+            self.log(self._format_removal_failure("delete scheduled task", task_name, exc), "WARN")
         return False
 
     def _delete_service(self, service_name):
@@ -7127,9 +7366,9 @@ class ScanEngine:
                 self.removed += 1
                 self.log(f"Deleted service: {service_name}", "SUCCESS")
                 return True
-            self.log(f"Service delete failed: {result.stderr.strip() or result.stdout.strip()}", "WARN")
+            self.log(self._format_removal_failure("delete service", service_name, self._result_failure_reason(result, "service delete failed")), "WARN")
         except Exception as exc:
-            self.log(f"Cannot delete service {service_name}: {exc}", "WARN")
+            self.log(self._format_removal_failure("delete service", service_name, exc), "WARN")
         return False
 
     def _delete_firewall_rule(self, rule_name):
@@ -7147,7 +7386,7 @@ class ScanEngine:
             self.removed += 1
             self.log(f"Removed firewall rule: {rule_name}", "SUCCESS")
             return True
-        self.log(f"Could not remove firewall rule: {rule_name}", "WARN")
+        self.log(self._format_removal_failure("remove firewall rule", rule_name, self._result_failure_reason(result, "firewall rule removal failed")), "WARN")
         return False
 
     def _remove_defender_exclusion(self, kind, value):
@@ -7173,7 +7412,7 @@ class ScanEngine:
             self.removed += 1
             self.log(f"Removed Defender exclusion: {value}", "SUCCESS")
             return True
-        self.log(f"Could not remove Defender exclusion: {value}", "WARN")
+        self.log(self._format_removal_failure("remove Defender exclusion", value, self._result_failure_reason(result, "Defender exclusion removal failed")), "WARN")
         return False
 
     def _capture_defender_pref_state(self):
@@ -7213,7 +7452,7 @@ class ScanEngine:
             self.removed += 1
             self.log("Re-enabled Microsoft Defender protection defaults", "SUCCESS")
             return True
-        self.log("Could not re-enable Microsoft Defender protection defaults", "WARN")
+        self.log(self._format_removal_failure("re-enable Microsoft Defender protection defaults", "Defender", self._result_failure_reason(result, "Defender protection repair failed")), "WARN")
         return False
 
     def _remediate_disabled_startup_entry(self, reg_values, shortcut_path=""):
@@ -7238,7 +7477,7 @@ class ScanEngine:
             self.log(f"Deleted registry value: {name}", "SUCCESS")
             return True
         except Exception as exc:
-            self.log(f"Cannot delete reg value {name}: {exc}", "WARN")
+            self.log(self._format_removal_failure("delete registry value", f"{subkey}[{name}]", exc), "WARN")
         return False
 
     def _delete_wmi_subscription(self, filter_name="", consumer_name="", consumer_class=""):
@@ -7281,7 +7520,7 @@ class ScanEngine:
             target = filter_name or consumer_name
             self.log(f"Removed WMI persistence: {target}", "SUCCESS")
             return True
-        self.log(f"Could not remove WMI persistence: {filter_name or consumer_name}", "WARN")
+        self.log(self._format_removal_failure("remove WMI persistence", filter_name or consumer_name, self._result_failure_reason(result, "WMI removal failed")), "WARN")
         return False
 
     def _reset_user_proxy_settings(self):
@@ -7542,6 +7781,8 @@ class ScanEngine:
         persistence_compare = self.post_cleanup_persistence_summary or self.compare_post_cleanup_persistence()
         browser_compare = self.post_cleanup_browser_summary or self.compare_post_cleanup_browser_state()
         recovery_plan = self.build_account_recovery_plan(exposure).splitlines()
+        latest_manifest = self._load_latest_recovery_manifest() or {}
+        quarantine = self._quarantine_summary(self._recovery_session or latest_manifest)
 
         grouped = {}
         for threat in self.threats:
@@ -7589,6 +7830,15 @@ class ScanEngine:
                 f"Recovery items  : {recovery['reversible_count']} reversible change(s), "
                 f"{recovery['note_count']} non-reversible note(s)"
             )
+        if quarantine["items"]:
+            lines += [
+                "",
+                "Quarantine:",
+                f"Quarantine items: {quarantine['items']} isolated",
+                f"Quarantine files: {quarantine['files']}",
+                f"Quarantine dirs : {quarantine['dirs']}",
+                f"Neutralized     : {quarantine['neutralized']} inert payload copy/copies",
+            ]
 
         lines += ["", "Exposure notes:"]
         if self.exposure_notes:
@@ -8681,6 +8931,7 @@ class App(tk.Tk):
                 r = self._scanner.removed
                 self._last_remediation_ts = time.time()
                 recovery = self._update_revert_button()
+                quarantine = self._scanner._quarantine_summary()
                 exposure_blurb = ""
                 if self._scanner.exposure_notes:
                     exposure_blurb = (
@@ -8698,6 +8949,8 @@ class App(tk.Tk):
                     "RenKill - Remediation Complete",
                     f"Processes killed     : {k}\n"
                     f"Files/entries removed: {r}\n\n"
+                    f"Quarantined items    : {quarantine['items']} total\n"
+                    f"Inert payload copies : {quarantine['neutralized']}\n\n"
                     f"Local cleanup state  : reboot and rescan needed\n"
                     f"Account risk         : {exposure['score']}% - {exposure['label']}\n\n"
                     f"NEXT STEP ON THIS PC:\n"
