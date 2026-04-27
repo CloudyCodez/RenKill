@@ -41,7 +41,7 @@ except ImportError:
 
 # IOC definitions
 
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 TOOL_NAME = "RenKill"
 UPDATE_REPO_OWNER = "CloudyCodez"
 UPDATE_REPO_NAME = "RenKill"
@@ -8495,6 +8495,10 @@ class App(tk.Tk):
         return bool(getattr(sys, "frozen", False))
 
     @staticmethod
+    def _sha256_file(path):
+        return ScanEngine._sha256_file(path)
+
+    @staticmethod
     def _app_install_dir():
         anchor = sys.executable if getattr(sys, "frozen", False) else __file__
         return os.path.dirname(os.path.abspath(anchor))
@@ -8735,17 +8739,34 @@ class App(tk.Tk):
         with zipfile.ZipFile(zip_path, "r") as archive:
             archive.extractall(extract_dir)
 
-        new_exe = os.path.join(extract_dir, "RenKill.exe")
+        new_exe = self._find_update_payload_exe(extract_dir)
         if not os.path.isfile(new_exe):
             raise RuntimeError("Downloaded release package did not contain RenKill.exe.")
-        return temp_root, extract_dir
+        payload_dir = os.path.dirname(new_exe)
+        return temp_root, payload_dir, new_exe
 
-    def _write_update_apply_script(self, extract_dir):
+    @staticmethod
+    def _find_update_payload_exe(extract_dir):
+        direct_path = os.path.join(extract_dir, "RenKill.exe")
+        if os.path.isfile(direct_path):
+            return direct_path
+        nested_path = os.path.join(extract_dir, "RenKill", "RenKill.exe")
+        if os.path.isfile(nested_path):
+            return nested_path
+        try:
+            for dirpath, _, filenames in os.walk(extract_dir):
+                for filename in filenames:
+                    if filename.lower() == "renkill.exe":
+                        return os.path.join(dirpath, filename)
+        except Exception:
+            return direct_path
+        return direct_path
+
+    def _write_update_apply_script(self, extract_dir, source_exe):
         install_dir = self._app_install_dir()
         current_pid = os.getpid()
         temp_root = os.path.dirname(extract_dir)
         expected_version = self._update_info.get("version") if isinstance(self._update_info, dict) else VERSION
-        source_exe = os.path.join(extract_dir, "RenKill.exe")
         expected_hash = ""
         try:
             expected_hash = self._sha256_file(source_exe)
@@ -8857,8 +8878,8 @@ class App(tk.Tk):
             script_path = ""
             error = None
             try:
-                _, extract_dir = self._download_release_package(release_info, self._set_progress)
-                script_path = self._write_update_apply_script(extract_dir)
+                _, extract_dir, source_exe = self._download_release_package(release_info, self._set_progress)
+                script_path = self._write_update_apply_script(extract_dir, source_exe)
             except Exception as exc:
                 error = exc
 
