@@ -41,7 +41,7 @@ except ImportError:
 
 # IOC definitions
 
-VERSION = "1.4.15"
+VERSION = "1.5.0"
 TOOL_NAME = "RenKill"
 UPDATE_REPO_OWNER = "CloudyCodez"
 UPDATE_REPO_NAME = "RenKill"
@@ -318,7 +318,17 @@ EXPOSURE_DIRS = (
 CHROMIUM_SESSION_SUBPATHS = (
     os.path.join("Network", "Cookies"),
     os.path.join("Network", "Cookies-journal"),
+    os.path.join("Network", "Network Persistent State"),
+    os.path.join("Network", "Trust Tokens"),
     "Cookies",
+    "Cache",
+    "Code Cache",
+    "DawnWebGPUCache",
+    "GPUCache",
+    "File System",
+    "blob_storage",
+    "Extension State",
+    "Local Extension Settings",
     "Sessions",
     "Session Storage",
     "Local Storage",
@@ -331,12 +341,20 @@ CHROMIUM_SESSION_SUBPATHS = (
 DISCORD_SESSION_SUBPATHS = (
     os.path.join("Network", "Cookies"),
     os.path.join("Network", "Cookies-journal"),
+    os.path.join("Network", "Network Persistent State"),
+    os.path.join("Network", "Trust Tokens"),
     "Cookies",
     "Local Storage",
     "Session Storage",
+    "IndexedDB",
+    "WebStorage",
+    "SharedStorage",
     "Cache",
     "Code Cache",
     "GPUCache",
+    "DawnWebGPUCache",
+    "File System",
+    "blob_storage",
     "Service Worker",
     "Partitions",
 )
@@ -391,6 +409,19 @@ SESSION_RESET_APPS = (
         "processes": {"opera.exe"},
         "roots": (os.path.join("AppData", "Roaming", "Opera Software", "Opera Stable"),),
         "subpaths": CHROMIUM_SESSION_SUBPATHS,
+    },
+    {
+        "label": "Opera GX",
+        "kind": "flat",
+        "processes": {"opera.exe", "opera_gx.exe"},
+        "roots": (os.path.join("AppData", "Roaming", "Opera Software", "Opera GX Stable"),),
+        "subpaths": CHROMIUM_SESSION_SUBPATHS,
+    },
+    {
+        "label": "WebView2",
+        "kind": "chromium",
+        "processes": {"msedgewebview2.exe"},
+        "roots": (os.path.join("AppData", "Local", "Microsoft", "EdgeWebView", "User Data"),),
     },
     {
         "label": "Firefox",
@@ -707,6 +738,35 @@ LOCAL_TOOL_CONTEXT_MARKERS = (
     "renkill.spec",
     "renengine_hunter.py",
     "build.bat",
+)
+LOCAL_TOOL_TEMP_PREFIXES = (
+    "renkill-update-",
+    "_mei",
+)
+BENIGN_FIREWALL_RULE_PREFIXES = (
+    "corenet-",
+    "remoteassistance-",
+    "netdis-",
+    "playto-",
+    "wifidirect-",
+    "dial-protocol-server-",
+)
+BENIGN_FIREWALL_RULE_TOKENS = (
+    "allow-allcapabilities",
+    "allow-servercapability",
+    "query user{",
+    "windefend",
+)
+BENIGN_FIREWALL_EVENT_RULE_TOKENS = BENIGN_FIREWALL_RULE_TOKENS + BENIGN_FIREWALL_RULE_PREFIXES
+BENIGN_FIREWALL_ACTOR_TOKENS = (
+    "origin: local",
+    "origin: 0",
+    "modifying user: s-1-5-18",
+    "modifying user: nt authority\\system",
+    "modifying user: system",
+)
+BENIGN_FIREWALL_PROVIDER_PATH_TOKENS = (
+    "\\appdata\\local\\programs\\opera gx\\opera.exe",
 )
 SCRIPT_LURE_REMOTE_MARKERS = (
     "http://",
@@ -1044,6 +1104,7 @@ CORRELATED_FILE_REMEDIATION_CATEGORIES = {
 }
 
 PROTECTION_REPAIR_CATEGORIES = {
+    "Browser Policy Review",
     "Defender Exclusion",
     "Defender Policy Review",
     "Defender Protection Review",
@@ -2883,6 +2944,8 @@ class ScanEngine:
         }
         if getattr(sys, "executable", ""):
             candidates.add(os.path.dirname(os.path.abspath(sys.executable)))
+        if getattr(sys, "_MEIPASS", ""):
+            candidates.add(str(getattr(sys, "_MEIPASS")))
         recovery_root = self._recovery_root()
         if recovery_root:
             candidates.add(recovery_root)
@@ -2894,10 +2957,23 @@ class ScanEngine:
                 roots.append(normalized)
         return tuple(sorted(set(roots)))
 
+    @staticmethod
+    def _is_local_tool_temp_path(path):
+        normalized = ScanEngine._normalized_path(path).rstrip("\\/")
+        if not normalized:
+            return False
+        temp_root = ScanEngine._normalized_path(tempfile.gettempdir()).rstrip("\\/")
+        if temp_root and normalized.startswith(temp_root + "\\"):
+            tail = normalized[len(temp_root) + 1:]
+            return any(tail.startswith(prefix) for prefix in LOCAL_TOOL_TEMP_PREFIXES)
+        return False
+
     def _is_local_tool_path(self, path):
         normalized = self._normalized_path(path).rstrip("\\/")
         if not normalized:
             return False
+        if self._is_local_tool_temp_path(normalized):
+            return True
         return any(normalized == root or normalized.startswith(root + "\\") for root in self._tool_roots)
 
     def _is_local_tool_context(self, *values):
@@ -2906,6 +2982,8 @@ class ScanEngine:
             raw = str(value or "").lower()
             if not raw:
                 continue
+            if any(prefix in raw for prefix in LOCAL_TOOL_TEMP_PREFIXES):
+                return True
             if any(root and root in raw for root in normalized_roots):
                 return True
             if any(marker in raw for marker in LOCAL_TOOL_CONTEXT_MARKERS):
@@ -3214,11 +3292,19 @@ class ScanEngine:
         pl = self._normalized_path(path)
         return bool(pl) and any(marker in pl for marker in PROTECTED_SYSTEM_PATH_MARKERS)
 
+    def _is_trusted_path_context(self, path, *, allow_metadata=False):
+        normalized = self._normalized_path(path)
+        if not normalized:
+            return False
+        if self._is_trusted_vendor_path(normalized) or self._is_protected_system_path(normalized):
+            return True
+        return bool(allow_metadata and self._has_trusted_file_metadata(path))
+
     def _should_consider_metadata_trust(self, path):
         normalized = self._normalized_path(path)
         if not normalized or self._has_strong_campaign_context(normalized):
             return False
-        if self._is_trusted_vendor_path(normalized) or self._is_protected_system_path(normalized):
+        if self._is_trusted_path_context(normalized):
             return False
         return any(marker in normalized for marker in COMMON_USERLAND_EXEC_MARKERS)
 
@@ -3260,6 +3346,8 @@ class ScanEngine:
 
     def _should_block_path_remediation(self, path, *, is_dir=False):
         if not path:
+            return True
+        if self._is_local_tool_path(path):
             return True
         if is_dir and self._is_broad_directory_target(path):
             return True
@@ -4547,6 +4635,13 @@ class ScanEngine:
             normalized_target.endswith("\\installer\\chrmstp.exe")
             and self._has_trusted_file_metadata(target)
             and any(token in raw_lower for token in ("--configure-user-settings", "--system-level"))
+        ):
+            return None
+        if (
+            normalized_target
+            and not self._contains_remote_loader_marker(raw)
+            and not self._has_strong_campaign_context(raw, normalized_target, component_name, component_label)
+            and self._is_trusted_path_context(target, allow_metadata=True)
         ):
             return None
 
@@ -6087,6 +6182,11 @@ class ScanEngine:
                         "Browser Policy Review",
                         f"{browser_label} policy requires review: {value_name} = {value_text}",
                         f"{hive_name}\\{subkey}",
+                        lambda action_hive=hive, action_subkey=subkey, action_name=value_name: self._delete_reg_val(
+                            action_hive,
+                            action_subkey,
+                            action_name,
+                        ),
                     )
 
                 try:
@@ -6164,19 +6264,14 @@ class ScanEngine:
         if self._has_strong_campaign_context(message_lower):
             return False
         if extracted_paths and all(
-            path and (
-                self._is_trusted_vendor_path(path)
-                or self._is_protected_system_path(path)
-                or self._has_trusted_file_metadata(path)
-            )
+            path and self._is_trusted_path_context(path, allow_metadata=True)
             for path in extracted_paths
         ):
             return True
         if any(
             path
             and self._path_in_user_writable_exec_zone(path)
-            and not self._is_trusted_vendor_path(path)
-            and not self._is_protected_system_path(path)
+            and not self._is_trusted_path_context(path)
             and not self._is_local_tool_path(path)
             for path in extracted_paths
         ):
@@ -6188,17 +6283,29 @@ class ScanEngine:
             "service restriction rule for windefend",
             "mpssvc",
         )
-        benign_actor_tokens = (
-            "origin: local",
-            "origin: 0",
-            "modifying user: s-1-5-18",
-            "modifying user: nt authority\\system",
-            "modifying user: system",
-        )
         has_benign_rule = any(token in message_lower for token in benign_rule_tokens)
-        if has_benign_rule and any(token in message_lower for token in benign_actor_tokens):
+        if has_benign_rule and any(token in message_lower for token in BENIGN_FIREWALL_ACTOR_TOKENS):
             return True
-        if "\\appdata\\local\\programs\\opera gx\\opera.exe" in message_lower:
+        if any(token in message_lower for token in BENIGN_FIREWALL_EVENT_RULE_TOKENS):
+            return True
+        if any(token in message_lower for token in BENIGN_FIREWALL_PROVIDER_PATH_TOKENS):
+            return True
+        return False
+
+    @staticmethod
+    def _is_guid_like_name(value):
+        return bool(re.fullmatch(r"\{[0-9a-fA-F-]{36}\}", str(value or "").strip()))
+
+    def _is_benign_firewall_rule_name(self, rule_name, display_name):
+        name_blob = " ".join(part for part in (str(rule_name or ""), str(display_name or "")) if part).strip()
+        lowered = name_blob.lower()
+        if not lowered:
+            return False
+        if self._is_guid_like_name(name_blob):
+            return True
+        if any(lowered.startswith(prefix) for prefix in BENIGN_FIREWALL_RULE_PREFIXES):
+            return True
+        if any(token in lowered for token in BENIGN_FIREWALL_RULE_TOKENS):
             return True
         return False
 
@@ -6274,6 +6381,13 @@ class ScanEngine:
         if not normalized_program:
             return None
 
+        if self._is_local_tool_path(normalized_program):
+            return None
+        if self._is_benign_firewall_rule_name(rule_name, display_name):
+            return None
+        if self._is_trusted_path_context(normalized_program):
+            return None
+
         program_name = os.path.basename(normalized_program)
         base_name = os.path.splitext(program_name)[0]
         strong = self._has_strong_campaign_context(rule_name, display_name, program)
@@ -6297,10 +6411,8 @@ class ScanEngine:
             suspicious_score += 2
         if self._in_temp(normalized_program):
             suspicious_score += 2
-        if self.paranoid and any(marker in normalized_program for marker in COMMON_USERLAND_EXEC_MARKERS):
-            suspicious_score += 1
 
-        threshold = 1 if self.paranoid else 2
+        threshold = 2
         if suspicious_score < threshold:
             return None
 
@@ -7804,10 +7916,23 @@ class ScanEngine:
                     "kind": "proxy_reset",
                     "snapshots": snapshots,
                 })
+            self._broadcast_internet_settings_change()
             self.removed += 1
             self.log("Reset Internet proxy settings", "SUCCESS")
             return True
         return False
+
+    @staticmethod
+    def _broadcast_internet_settings_change():
+        try:
+            INTERNET_OPTION_SETTINGS_CHANGED = 39
+            INTERNET_OPTION_REFRESH = 37
+            wininet = ctypes.windll.wininet
+            wininet.InternetSetOptionW(0, INTERNET_OPTION_SETTINGS_CHANGED, 0, 0)
+            wininet.InternetSetOptionW(0, INTERNET_OPTION_REFRESH, 0, 0)
+            return True
+        except Exception:
+            return False
 
     def _capture_winhttp_proxy_state(self):
         try:
@@ -7872,7 +7997,7 @@ class ScanEngine:
         self.log("Could not reset WinHTTP proxy", "WARN")
         return False
 
-    # ── Orchestration ───────────────────────────────────────────────────────
+    # Scan orchestration
 
     def run_full_scan(self):
         self.threats.clear()
@@ -7968,7 +8093,7 @@ class ScanEngine:
 
         for threat in sorted(self.threats):
             if threat.category in MANUAL_REVIEW_CATEGORIES and not threat.remediated:
-                self.log(f"Review manually before deleting user file: {threat.path or threat.description}", "WARN")
+                self.log(f"Review manually before changing: {threat.path or threat.description}", "WARN")
 
         self._run_remediation_bucket({"Malicious Scheduled Task", "Registry Persistence"})
 
@@ -7994,6 +8119,7 @@ class ScanEngine:
 
         self.log("── REPAIRING PROTECTION DEFAULTS ─────────────────────", "SECTION")
         ordered_categories = (
+            "Browser Policy Review",
             "Defender Exclusion",
             "Defender Policy Review",
             "Defender Protection Review",
@@ -8828,6 +8954,8 @@ class App(tk.Tk):
     def _delete_path_force(self, path):
         if not os.path.exists(path):
             return False
+        if self._scanner and self._scanner._is_local_tool_path(path):
+            return False
         try:
             if os.path.isdir(path):
                 shutil.rmtree(path, ignore_errors=False)
@@ -8903,6 +9031,22 @@ class App(tk.Tk):
                                 yield app["label"], os.path.join(profile_dir, sub)
                     except Exception:
                         continue
+
+    @staticmethod
+    def _flush_dns_cache():
+        try:
+            result = subprocess.run(
+                ["ipconfig", "/flushdns"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                creationflags=0x08000000,
+            )
+        except Exception:
+            return False, "ipconfig was unavailable"
+        if result.returncode == 0:
+            return True, ""
+        return False, ScanEngine._result_failure_reason(result, "DNS cache flush failed")
 
     def _log(self, msg, level="DEFAULT"):
         def _w():
@@ -9371,6 +9515,7 @@ class App(tk.Tk):
             "Confirm Repair Defaults",
             "RenKill will repair the safe, reversible protection drift it already detected.\n\n"
             "This includes items like:\n"
+            "  - suspicious browser policy overrides\n"
             "  - suspicious Defender exclusions\n"
             "  - Defender policy overrides\n"
             "  - disabled Defender protection flags\n"
@@ -9433,7 +9578,7 @@ class App(tk.Tk):
                     f"Protection items repaired: {repaired}\n\n"
                     "Next step:\n"
                     "  - Run SCAN SYSTEM again\n"
-                    "  - Confirm the Defender/proxy/firewall noise is gone\n"
+                    "  - Confirm the Defender/browser policy/proxy/firewall noise is gone\n"
                     "  - Use REVERT LAST CLEAN if you need to undo a reversible settings change"
                 )
             self.after(0, _done)
@@ -9513,6 +9658,8 @@ class App(tk.Tk):
         def _run():
             killed = 0
             removed = 0
+            dns_flushed = False
+            dns_detail = ""
             touched_apps = set()
             process_names = set()
             for app in SESSION_RESET_APPS:
@@ -9527,6 +9674,12 @@ class App(tk.Tk):
                     touched_apps.add(label)
                     self._log(f"Cleared local session data: {path}", "SUCCESS")
 
+            dns_flushed, dns_detail = self._flush_dns_cache()
+            if dns_flushed:
+                self._log("Flushed Windows DNS cache after local session wipe.", "SUCCESS")
+            else:
+                self._log(f"Could not flush Windows DNS cache: {dns_detail}", "WARN")
+
             def _done():
                 app_list = ", ".join(sorted(touched_apps)) if touched_apps else "none found"
                 self._set_status(
@@ -9537,6 +9690,7 @@ class App(tk.Tk):
                     "RenKill — Account Lockdown Complete",
                     f"Processes closed : {killed}\n"
                     f"Storage items wiped: {removed}\n"
+                    f"DNS cache flushed: {'yes' if dns_flushed else 'no'}\n"
                     f"Apps affected    : {app_list}\n\n"
                     f"This clears LOCAL cookies, sessions, and token-style storage on this PC.\n"
                     f"You still need to do the following from a CLEAN device:\n"
