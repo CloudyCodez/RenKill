@@ -79,6 +79,30 @@ The big change in the newer Reddit cases is not a completely different loader. I
 
 That reinforces the same detection strategy for RenKill:
 
+## Trainer-Sample Behavior Worth Tracking
+
+A late-April 2026 Hybrid Analysis report for `Pragmata_Trainer.exe` shows the same general post-compromise symptom pattern victims keep reporting with the fake Ren'Py loaders, including Discord spam/account abuse afterward, but with a different execution surface.
+
+What stands out in that sample is not a stable filename. It is the behavior:
+
+- hidden `powershell.exe` launched with `-NoProfile -NonInteractive -WindowStyle Hidden`
+- repeated `Get-CimInstance` / `WMIC` hardware profiling against classes like `Win32_BIOS`, `Win32_ComputerSystem`, `Win32_DiskDrive`, `Win32_PnPEntity`, `Win32_PhysicalMemory`, and `Win32_SoundDevice`
+- an inline `Add-Type -MemberDefinition` block calling `EnumSystemFirmwareTables` / `GetSystemFirmwareTable`
+- a temporary compile workspace under `%TEMP%\<random>\` containing a repeated random basename across:
+  - `<name>.cmdline`
+  - `<name>.0.cs`
+  - `<name>.dll`
+  - optional `.out`, `.err`, `.tmp`, or `.pdb`
+- `csc.exe` launched against `@\"%TEMP%\<random>\<random>.cmdline\"`
+
+That matters because it gives RenKill another durable signature to watch for:
+
+- hidden PowerShell profiling chains
+- temp C# compiler staging in a random workspace
+- repeated basename temp build residue that survives long enough to be cleaned
+
+Even if the lure is a trainer instead of a fake Ren'Py bundle, that behavior is strong enough to treat as a likely related delivery or follow-on stage when it appears next to the same account-hijack symptoms.
+
 ## FRST Helper Habits Worth Mirroring Safely
 
 The strongest pattern in the current Reddit/FRST cases is not that helpers are chasing one magic filename. They are checking a repeat set of surfaces, fixing the clearly bad entries, then rescanning until the machine stays clean after reboot.
@@ -221,6 +245,7 @@ The payload families in this ecosystem steal browser credentials, cookies, auth 
 ## Sources
 
 - Cyderes, "RenEngine Loader and HijackLoader: Dual-Stage Attack Chain Fueling Stealer Campaigns" (2026-02-04): https://www.cyderes.com/howler-cell/renengine-loader-hijackloader-attack-chain
+- Hybrid Analysis, "`Pragmata_Trainer.exe` sample analysis" (accessed 2026-04-30): https://hybrid-analysis.com/sample/8ade9f572270406bf61ac260e9c5b7abfa2d9a6f8eb7d849d8fa8464990d9665/69f38093b50262e6c80460d4
 - Kaspersky Securelist, "The game is over: when 'free' comes at too high a price. What we know about RenEngine" (2026-02-11): https://securelist.com/renengine-campaign-with-hijackloader-lumma-and-acr-stealer/118891/
 - Kaspersky Press Release, "Kaspersky identifies RenEngine loader distributed through pirated games and software" (2026-02-23): https://me-en.kaspersky.com/about/press-releases/kaspersky-identifies-renengine-loader-distributed-through-pirated-games-and-software
 - AhnLab ASEC, "February 2026 Infostealer Trend Report" (2026-03-11): https://asec.ahnlab.com/en/92902/

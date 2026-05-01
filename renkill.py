@@ -41,7 +41,7 @@ except ImportError:
 
 # IOC definitions
 
-VERSION = "1.5.1"
+VERSION = "1.5.3"
 TOOL_NAME = "RenKill"
 UPDATE_REPO_OWNER = "CloudyCodez"
 UPDATE_REPO_NAME = "RenKill"
@@ -101,6 +101,7 @@ PROCESS_IOC_MARKERS = {
     "lumma",
     "rhadamanthys",
     "vidar",
+    "silent-harvester.cc",
     "doppelgang",
     "doppelganging",
     "cc32290mt.dll",
@@ -184,10 +185,12 @@ KNOWN_SHA256_IOCS = {
     "7123e1514b939b165985560057fe3c761440a9fff9783a3b84e861fd2888d4ab": "Cyderes sample exploited Instaler.exe",
     "326ec5aeeafc4c31c234146dc604a849f20f1445e2f973466682cb33889b4e4c": "Cyderes sample d3dx9_43.dll",
     "db4ccd0e8f03c6d282726bfb4ee9aa15aa41e7a5edcb49e13fbd0001452cdfa2": "Cyderes sample VSDebugScriptAgent170.dll",
+    "8ade9f572270406bf61ac260e9c5b7abfa2d9a6f8eb7d849d8fa8464990d9665": "Hybrid Analysis Pragmata_Trainer.exe sample",
 }
 
 HASH_CANDIDATE_NAMES = {
     "instaler.exe",
+    "pragmata_trainer.exe",
     "d3dx9_43.dll",
     "vsdebugscriptagent170.dll",
 }
@@ -244,6 +247,7 @@ SOURCE_LURE_KEYWORDS = {
     "mediafire",
     "mega",
     "go.zovo",
+    "silent-harvester",
     "coreldraw",
     "artistapirata",
     "awdescargas",
@@ -316,6 +320,10 @@ EXPOSURE_DIRS = (
 )
 
 CHROMIUM_SESSION_SUBPATHS = (
+    "Current Session",
+    "Current Tabs",
+    "Last Session",
+    "Last Tabs",
     os.path.join("Network", "Cookies"),
     os.path.join("Network", "Cookies-journal"),
     os.path.join("Network", "Network Persistent State"),
@@ -329,16 +337,19 @@ CHROMIUM_SESSION_SUBPATHS = (
     "blob_storage",
     "Extension State",
     "Local Extension Settings",
+    "Platform Notifications",
     "Sessions",
     "Session Storage",
     "Local Storage",
     "IndexedDB",
     "Service Worker",
+    "Shared Dictionary",
     "WebStorage",
     "SharedStorage",
 )
 
 DISCORD_SESSION_SUBPATHS = (
+    "Local State",
     os.path.join("Network", "Cookies"),
     os.path.join("Network", "Cookies-journal"),
     os.path.join("Network", "Network Persistent State"),
@@ -355,6 +366,7 @@ DISCORD_SESSION_SUBPATHS = (
     "DawnWebGPUCache",
     "File System",
     "blob_storage",
+    "Platform Notifications",
     "Service Worker",
     "Partitions",
 )
@@ -756,6 +768,7 @@ BENIGN_FIREWALL_RULE_TOKENS = (
     "allow-servercapability",
     "query user{",
     "windefend",
+    "windows firewall",
 )
 BENIGN_FIREWALL_EVENT_RULE_TOKENS = BENIGN_FIREWALL_RULE_TOKENS + BENIGN_FIREWALL_RULE_PREFIXES
 BENIGN_FIREWALL_ACTOR_TOKENS = (
@@ -768,6 +781,19 @@ BENIGN_FIREWALL_ACTOR_TOKENS = (
 BENIGN_FIREWALL_PROVIDER_PATH_TOKENS = (
     "\\appdata\\local\\programs\\opera gx\\opera.exe",
 )
+BENIGN_TEMP_STAGE_DIR_BASENAMES = {
+    "reshade",
+}
+BENIGN_FIREWALL_PROGRAM_ROOT_TOKENS = (
+    "\\windowsapps\\",
+    "\\appdata\\local\\microsoft\\windowsapps\\",
+)
+BENIGN_ACTIVE_SETUP_SWITCHES = (
+    "--application-host=",
+    "--configure-user-settings",
+    "--system-level",
+    "--verbose-logging",
+)
 SCRIPT_LURE_REMOTE_MARKERS = (
     "http://",
     "https://",
@@ -777,12 +803,14 @@ SCRIPT_LURE_REMOTE_MARKERS = (
     "mediafire",
     "mega",
     "pastebin",
+    "silent-harvester.cc",
     "telegram.me",
     "t.me/",
     "vyroget.com",
 )
 STARTUP_SCRIPT_EXTENSIONS = {".bat", ".cmd", ".exe", ".hta", ".js", ".ps1", ".py", ".pyw", ".url", ".vbs"}
 STARTUP_DOWNLOADER_TOKENS = (
+    "api.ipify.org",
     "downloadstring",
     "invoke-webrequest",
     "iwr ",
@@ -822,6 +850,25 @@ SUSPICIOUS_STARTUP_BASENAMES = {
     "server",
 }
 TEMP_STAGE_SIDELOAD_EXTENSIONS = {".asp", ".asar", ".dll", ".eml", ".key", ".txt"}
+TEMP_COMPILE_STAGE_OPTIONAL_SUFFIXES = {".dll", ".err", ".out", ".pdb", ".tmp"}
+POWERSHELL_VM_PROFILE_MARKERS = (
+    "add-type -memberdefinition",
+    "enumsystemfirmwaretables(",
+    "getsystemfirmwaretable(",
+    "get-ciminstance -classname win32_baseboard",
+    "get-ciminstance -classname win32_bios",
+    "get-ciminstance -classname win32_computersystem",
+    "get-ciminstance -classname win32_diskdrive",
+    "get-ciminstance -classname win32_physicalmemory",
+    "get-ciminstance -classname win32_pnpentity",
+    "get-ciminstance -classname win32_sounddevice",
+    "wmic sounddev get name",
+)
+POWERSHELL_STEALTH_SWITCHES = (
+    "-noprofile",
+    "-noninteractive",
+    "-windowstyle hidden",
+)
 SAFE_SCRIPT_CONTENT_MARKERS = (
     "build script",
     "doctype html",
@@ -989,6 +1036,7 @@ PERSISTENCE_THREAT_CATEGORIES = {
     "AppCert Persistence",
     "AppInit Persistence",
     "Disabled Startup Artifact",
+    "Compiled Temp Stage Directory",
     "Explorer Hijack Review",
     "HijackLoader Stage Directory",
     "Suspicious Loader Stage Directory",
@@ -1043,7 +1091,10 @@ RENLOADER_CORRELATION_CATEGORIES = {
     "RenEngine Bundle",
     "SafeBoot Review",
     "Startup-Launched Process",
+    "Stealth Profiling Script Host",
     "Stealer Script Host",
+    "Compiler Stage Process",
+    "Compiled Temp Stage Directory",
     "Suspicious Loader Stage Directory",
     "Suspicious Temp Stage Directory",
     "Suspicious RenPy Loader Bundle",
@@ -1054,6 +1105,7 @@ RENLOADER_CORRELATION_CATEGORIES = {
 PROCESS_REMEDIATION_CATEGORIES = {
     "Active C2 Connection",
     "Campaign IOC Process",
+    "Compiler Stage Process",
     "Execution Trace Anomaly",
     "Injected/Sideloaded DLL",
     "Malicious Child Process",
@@ -1065,6 +1117,7 @@ PROCESS_REMEDIATION_CATEGORIES = {
     "Persistence Process",
     "Process in Temp",
     "Startup-Launched Process",
+    "Stealth Profiling Script Host",
     "Stealer Script Host",
     "Suspicious Process",
     "Suspicious Userland Process",
@@ -1092,9 +1145,9 @@ FILE_REMEDIATION_CATEGORIES = {
     "Persistence Staging Directory",
     "Policy Persistence",
     "Proxy Configuration Review",
+    "Compiled Temp Stage Directory",
     "RenEngine Bundle",
     "Startup Persistence Artifact",
-    "Suspicious Temp Stage Directory",
 }
 
 CORRELATED_FILE_REMEDIATION_CATEGORIES = {
@@ -1295,9 +1348,15 @@ class ScanEngine:
         self._shell_rows = None
         self._logon_rows = None
         self._explorer_hijack_rows = None
+        self._threat_keys = set()
         self._reset_recovery_state()
 
     def _add(self, severity, category, description, path=None, action=None):
+        normalized_path = self._normalized_path(path) if path else ""
+        threat_key = (category, str(description or "").strip(), normalized_path)
+        if threat_key in self._threat_keys:
+            return None
+        self._threat_keys.add(threat_key)
         t = Threat(severity, category, description, path, action)
         self.threats.append(t)
         self.log(f"{description}", severity)
@@ -2365,6 +2424,7 @@ class ScanEngine:
         process_categories = {
             "Active C2 Connection",
             "Campaign IOC Process",
+            "Compiler Stage Process",
             "Execution Trace Anomaly",
             "Injected/Sideloaded DLL",
             "Malicious Child Process",
@@ -2372,6 +2432,7 @@ class ScanEngine:
             "Paranoid Networked Process",
             "Paranoid Script Host",
             "Process in Temp",
+            "Stealth Profiling Script Host",
             "Suspicious Process",
             "Suspicious Userland Process",
         }
@@ -2391,6 +2452,7 @@ class ScanEngine:
         }
         filesystem_categories = {
             "Alternate Data Stream Review",
+            "Compiled Temp Stage Directory",
             "Exact IOC Hash",
             "HijackLoader Stage Artifact",
             "HijackLoader Stage Directory",
@@ -2572,6 +2634,8 @@ class ScanEngine:
             "Suspicious Loader Stage Directory",
             "Malicious Shortcut",
             "Campaign IOC Process",
+            "Compiler Stage Process",
+            "Compiled Temp Stage Directory",
             "Injected/Sideloaded DLL",
             "Execution Trace Anomaly",
             "Exact IOC Hash",
@@ -2583,6 +2647,7 @@ class ScanEngine:
             "Winlogon Notify Review",
             "WMI Persistence",
             "Suspicious RenPy Loader Bundle",
+            "Stealth Profiling Script Host",
         })
         generic_stealer_hits += sum(1 for cat in categories if cat in {
             "Active C2 Connection",
@@ -2880,10 +2945,16 @@ class ScanEngine:
             return False
         if self._is_local_tool_context(dirpath):
             return False
+        if os.path.basename(normalized).lower() in BENIGN_TEMP_STAGE_DIR_BASENAMES:
+            return False
         if self._looks_like_hijackloader_stage_dir(dirpath, names):
             return True
 
         exe_names = [name for name in names if name.endswith(".exe")]
+        script_names = [
+            name for name in names
+            if os.path.splitext(name)[1] in {".bat", ".cmd", ".hta", ".js", ".ps1", ".py", ".pyc", ".pyo", ".vbs"}
+        ]
         sidecars = {os.path.splitext(name)[1] for name in names if os.path.splitext(name)[1]}
         if any(name in CAMPAIGN_FILENAMES or name in HIJACKLOADER_STAGE_FILES for name in names):
             return True
@@ -2891,10 +2962,72 @@ class ScanEngine:
             return True
         if self._contains_marker(" ".join(names), PROCESS_IOC_MARKERS):
             return True
-        if exe_names and sidecars & TEMP_STAGE_SIDELOAD_EXTENSIONS:
-            random_exe = any(self._looks_random(os.path.splitext(name)[0]) for name in exe_names)
-            if random_exe or TEMP_STAGE_DIR_REGEX.search(normalized):
+        payload_names = exe_names + script_names
+        if payload_names and sidecars & TEMP_STAGE_SIDELOAD_EXTENSIONS:
+            random_payload = any(self._looks_random(os.path.splitext(name)[0]) for name in payload_names)
+            if random_payload:
                 return True
+            if TEMP_STAGE_DIR_REGEX.search(normalized) and len(sidecars & TEMP_STAGE_SIDELOAD_EXTENSIONS) >= 2:
+                return True
+        return False
+
+    def _looks_like_compiled_temp_stage_dir(self, dirpath, file_names_lower):
+        normalized = self._normalized_path(dirpath)
+        if not normalized or not self._in_temp(normalized) or self._is_local_tool_context(dirpath):
+            return False
+
+        names = {str(name or "").lower() for name in (file_names_lower or []) if name}
+        if not names:
+            return False
+
+        stem_parts = {}
+        for name in names:
+            suffix = ""
+            stem = ""
+            if name.endswith(".cmdline"):
+                stem = name[:-len(".cmdline")]
+                suffix = ".cmdline"
+            elif name.endswith(".0.cs"):
+                stem = name[:-len(".0.cs")]
+                suffix = ".0.cs"
+            else:
+                stem, ext = os.path.splitext(name)
+                if ext in TEMP_COMPILE_STAGE_OPTIONAL_SUFFIXES:
+                    suffix = ext
+            if not stem or not suffix:
+                continue
+            stem_parts.setdefault(stem, set()).add(suffix)
+
+        for stem, suffixes in stem_parts.items():
+            if not self._looks_random(stem):
+                continue
+            if not {".cmdline", ".0.cs"} <= suffixes:
+                continue
+            if not (".dll" in suffixes or len(suffixes & TEMP_COMPILE_STAGE_OPTIONAL_SUFFIXES) >= 2):
+                continue
+
+            cmdline_path = os.path.join(dirpath, f"{stem}.cmdline")
+            content = ""
+            try:
+                with open(cmdline_path, "r", encoding="utf-8", errors="ignore") as handle:
+                    content = handle.read(4096).lower()
+            except Exception:
+                content = ""
+
+            if not content:
+                return True
+            if any(
+                marker in content
+                for marker in (
+                    "system.management.automation.dll",
+                    ".0.cs",
+                    f"{stem}.dll",
+                    "/out:",
+                    "/target:library",
+                )
+            ):
+                return True
+
         return False
 
     @staticmethod
@@ -3411,6 +3544,33 @@ class ScanEngine:
             return False
         return any(marker in lowered for marker in SCRIPT_LURE_REMOTE_MARKERS) or bool(IPV4_HTTP_REGEX.search(lowered))
 
+    @staticmethod
+    def _looks_like_temp_compiler_cmdline(cmdline):
+        lowered = str(cmdline or "").lower()
+        if not lowered:
+            return False
+        return (
+            "csc.exe" in lowered
+            and ".cmdline" in lowered
+            and "\\temp\\" in lowered
+            and any(token in lowered for token in ("/noconfig", "/fullpaths", "/out:"))
+        )
+
+    @staticmethod
+    def _looks_like_vm_profile_powershell(cmdline):
+        lowered = str(cmdline or "").lower()
+        if not lowered:
+            return False
+        stealth_hits = sum(1 for marker in POWERSHELL_STEALTH_SWITCHES if marker in lowered)
+        if stealth_hits < 2:
+            return False
+        if "add-type -memberdefinition" in lowered and (
+            "enumsystemfirmwaretables(" in lowered or "getsystemfirmwaretable(" in lowered
+        ):
+            return True
+        profile_hits = sum(1 for marker in POWERSHELL_VM_PROFILE_MARKERS if marker in lowered)
+        return profile_hits >= 2
+
     def _looks_like_startup_script_dropper(self, path):
         path = str(path or "")
         ext = os.path.splitext(path)[1].lower()
@@ -3729,6 +3889,10 @@ class ScanEngine:
             return False
         if self._has_strong_campaign_context(raw):
             return True
+        if self._looks_like_temp_compiler_cmdline(raw):
+            return True
+        if self._looks_like_vm_profile_powershell(raw):
+            return True
         if normalized_target and not self._is_trusted_vendor_path(normalized_target) and not self._has_trusted_file_metadata(target):
             if any(marker in normalized_target for marker in COMMON_USERLAND_EXEC_MARKERS):
                 base = os.path.splitext(os.path.basename(normalized_target))[0]
@@ -3807,6 +3971,10 @@ class ScanEngine:
 
         if self._has_strong_campaign_context(blob):
             return "CRITICAL", "Malicious Service", f"Service references RenLoader/HijackLoader artifacts: {service_name} -> {path_name}"
+        if self._looks_like_vm_profile_powershell(blob):
+            return "CRITICAL", "Malicious Service", f"Service launches a hidden hardware/VM profiling PowerShell chain: {service_name} -> {path_name}"
+        if self._looks_like_temp_compiler_cmdline(blob):
+            return "HIGH", "Malicious Service", f"Service launches a temp compiler-stage payload build: {service_name} -> {path_name}"
         if not executable or self._is_safe_process_context(service_name.lower(), executable, path_name) or self._has_trusted_file_metadata(executable):
             return None
         if self._looks_like_suspicious_netsupport_path(executable, allow_metadata=True):
@@ -4569,10 +4737,8 @@ class ScanEngine:
                 return "HIGH", "Logon Script Persistence", f"UserInitMprLogonScript launches a temp-stage executable: {raw}"
             if self._contains_remote_loader_marker(raw):
                 return "HIGH", "Logon Script Persistence", f"UserInitMprLogonScript references a remote loader or downloader command: {raw}"
-            if normalized_target and self._path_in_user_writable_exec_zone(normalized_target):
-                stem = os.path.splitext(os.path.basename(normalized_target))[0]
-                if self._looks_random(stem) or self._contains_marker(normalized_target, PROCESS_IOC_MARKERS):
-                    return "HIGH", "Logon Script Persistence", f"UserInitMprLogonScript launches a suspicious user-writable payload: {raw}"
+            if self._looks_suspicious_userland_payload(normalized_target):
+                return "HIGH", "Logon Script Persistence", f"UserInitMprLogonScript launches a suspicious user-writable payload: {raw}"
             return None
 
         if kind == "WinlogonTaskman":
@@ -4629,13 +4795,8 @@ class ScanEngine:
         component_name = str((row or {}).get("ComponentName") or "")
         component_label = str((row or {}).get("ComponentLabel") or "")
         display = component_label or component_name or "Active Setup component"
-        raw_lower = raw.lower()
 
-        if (
-            normalized_target.endswith("\\installer\\chrmstp.exe")
-            and self._has_trusted_file_metadata(target)
-            and any(token in raw_lower for token in ("--configure-user-settings", "--system-level"))
-        ):
+        if self._is_benign_active_setup_stubpath(target, raw):
             return None
         if (
             normalized_target
@@ -4651,10 +4812,8 @@ class ScanEngine:
             return "HIGH", "Active Setup Persistence", f"Active Setup component references a remote loader or downloader command: {display} -> {raw}"
         if normalized_target and self._looks_like_temp_stage_launcher(normalized_target):
             return "HIGH", "Active Setup Persistence", f"Active Setup component launches a temp-stage executable: {display} -> {raw}"
-        if normalized_target and self._path_in_user_writable_exec_zone(normalized_target):
-            stem = os.path.splitext(os.path.basename(normalized_target))[0]
-            if self._looks_random(stem) or self._contains_marker(normalized_target, PROCESS_IOC_MARKERS):
-                return "HIGH", "Active Setup Persistence", f"Active Setup component launches a suspicious user-writable payload: {display} -> {raw}"
+        if self._looks_suspicious_userland_payload(normalized_target):
+            return "HIGH", "Active Setup Persistence", f"Active Setup component launches a suspicious user-writable payload: {display} -> {raw}"
         return None
 
     def _looks_suspicious_runonceex(self, row):
@@ -4672,11 +4831,13 @@ class ScanEngine:
             return "HIGH", "RunOnceEx Persistence", f"RunOnceEx references a remote loader or downloader command: {value_name} = {raw}"
         if normalized_target and self._looks_like_temp_stage_launcher(normalized_target):
             return "HIGH", "RunOnceEx Persistence", f"RunOnceEx launches a temp-stage executable: {value_name} = {raw}"
-        if normalized_target and self._path_in_user_writable_exec_zone(normalized_target):
-            stem = os.path.splitext(os.path.basename(normalized_target))[0]
-            if self._looks_random(stem) or self._contains_marker(normalized_target, PROCESS_IOC_MARKERS):
-                return "HIGH", "RunOnceEx Persistence", f"RunOnceEx launches a suspicious user-writable payload: {value_name} = {raw}"
+        if self._looks_suspicious_userland_payload(normalized_target):
+            return "HIGH", "RunOnceEx Persistence", f"RunOnceEx launches a suspicious user-writable payload: {value_name} = {raw}"
         return None
+
+    @staticmethod
+    def _format_task_label(task_path, task_name):
+        return f"{str(task_path or '')}{str(task_name or '')}"
 
     def _evaluate_scheduled_task_entry(self, task_name, task_path, execute, arguments="", working_directory=""):
         task_name = str(task_name or "")
@@ -4687,12 +4848,13 @@ class ScanEngine:
         blob = " ".join(part for part in (task_name, task_path, execute, arguments, working_directory) if part)
         if not blob:
             return None
+        task_label = self._format_task_label(task_path, task_name)
 
         if self._has_strong_campaign_context(blob):
             return (
                 "CRITICAL",
                 "Malicious Scheduled Task",
-                f"Scheduled task references RenEngine/HijackLoader artifacts: {task_path}{task_name}",
+                f"Scheduled task references RenEngine/HijackLoader artifacts: {task_label}",
             )
 
         executable = self._extract_command_target(execute)
@@ -4705,7 +4867,21 @@ class ScanEngine:
             return (
                 severity,
                 "Malicious Scheduled Task",
-                f"Scheduled task launches Godot app_userdata payload with .asar arguments: {task_path}{task_name}",
+                f"Scheduled task launches Godot app_userdata payload with .asar arguments: {task_label}",
+            )
+
+        if self._looks_like_vm_profile_powershell(blob):
+            return (
+                "CRITICAL",
+                "Malicious Scheduled Task",
+                f"Scheduled task launches a hidden hardware/VM profiling PowerShell chain: {task_label}",
+            )
+
+        if self._looks_like_temp_compiler_cmdline(blob):
+            return (
+                "HIGH",
+                "Malicious Scheduled Task",
+                f"Scheduled task launches a temp compiler-stage payload build: {task_label}",
             )
 
         if self._looks_like_temp_stage_launcher(normalized_executable):
@@ -4714,7 +4890,7 @@ class ScanEngine:
                 return (
                     "HIGH",
                     "Malicious Scheduled Task",
-                    f"Scheduled task launches temp-stage executable: {task_path}{task_name} -> {executable}",
+                    f"Scheduled task launches temp-stage executable: {task_label} -> {executable}",
                 )
 
         if executable and any(marker in argument_blob for marker in ASAR_ARGUMENT_MARKERS):
@@ -4724,7 +4900,7 @@ class ScanEngine:
                 return (
                     "HIGH",
                     "Malicious Scheduled Task",
-                    f"Scheduled task passes .asar payload arguments to a user-writable executable: {task_path}{task_name}",
+                    f"Scheduled task passes .asar payload arguments to a user-writable executable: {task_label}",
                 )
 
         if executable_name in SHORTCUT_SCRIPT_HOSTS:
@@ -4734,7 +4910,7 @@ class ScanEngine:
                 return (
                     "HIGH",
                     "Malicious Scheduled Task",
-                    f"Scheduled task launches a script host with remote loader behavior: {task_path}{task_name}",
+                    f"Scheduled task launches a script host with remote loader behavior: {task_label}",
                 )
 
         return None
@@ -4761,6 +4937,12 @@ class ScanEngine:
         if self._looks_like_godot_asar_task(target, arguments, working_directory):
             score += 3
             reasons.append("Godot app_userdata + asar payload")
+        if self._looks_like_vm_profile_powershell(blob):
+            score += 4
+            reasons.append("hidden PowerShell hardware/VM profiling")
+        if self._looks_like_temp_compiler_cmdline(blob):
+            score += 4
+            reasons.append("temp compiler-stage payload build")
         if self._contains_remote_loader_marker(blob):
             score += 3
             reasons.append("remote URL/IP loader marker")
@@ -6290,6 +6472,8 @@ class ScanEngine:
             return True
         if any(token in message_lower for token in BENIGN_FIREWALL_PROVIDER_PATH_TOKENS):
             return True
+        if self._is_capability_style_rule_name(message_lower):
+            return True
         return False
 
     @staticmethod
@@ -6307,7 +6491,24 @@ class ScanEngine:
             return True
         if any(token in lowered for token in BENIGN_FIREWALL_RULE_TOKENS):
             return True
+        if self._is_capability_style_rule_name(lowered):
+            return True
         return False
+
+    def _is_benign_active_setup_stubpath(self, target, raw):
+        normalized_target = self._normalized_path(target)
+        lowered = self._normalize_cmdline(raw).lower()
+        if not normalized_target.endswith("\\installer\\chrmstp.exe"):
+            return False
+        if not all(token in lowered for token in ("--configure-user-settings", "--system-level")):
+            return False
+        if not any(token in lowered for token in BENIGN_ACTIVE_SETUP_SWITCHES):
+            return False
+        return bool(
+            self._is_trusted_path_context(target, allow_metadata=True)
+            or "\\program files\\" in normalized_target
+            or "\\program files (x86)\\" in normalized_target
+        )
 
     @staticmethod
     def _is_benign_defender_event(message_lower):
@@ -6384,6 +6585,8 @@ class ScanEngine:
         if self._is_local_tool_path(normalized_program):
             return None
         if self._is_benign_firewall_rule_name(rule_name, display_name):
+            return None
+        if any(token in normalized_program for token in BENIGN_FIREWALL_PROGRAM_ROOT_TOKENS):
             return None
         if self._is_trusted_path_context(normalized_program):
             return None
@@ -6477,6 +6680,18 @@ class ScanEngine:
         pl = (path or "").lower()
         return any(marker in pl for marker in USER_WRITABLE_DIR_MARKERS)
 
+    def _looks_suspicious_userland_payload(self, normalized_target):
+        if not normalized_target or not self._path_in_user_writable_exec_zone(normalized_target):
+            return False
+        stem = os.path.splitext(os.path.basename(normalized_target))[0]
+        return self._looks_random(stem) or self._contains_marker(normalized_target, PROCESS_IOC_MARKERS)
+
+    @staticmethod
+    def _is_capability_style_rule_name(lowered_name):
+        return "s-1-5-" in lowered_name and any(
+            token in lowered_name for token in ("-out-allow-allcapabilities", "-in-allow-servercapability")
+        )
+
     @staticmethod
     def _looks_script_host(pname, cmdline_lower):
         return pname in {"python.exe", "pythonw.exe", "wscript.exe", "cscript.exe", "mshta.exe", "rundll32.exe"} or any(
@@ -6492,13 +6707,15 @@ class ScanEngine:
         strong_cmdline_markers = STRONG_CAMPAIGN_MARKERS - {"renpy"}
         if self._contains_marker(cmdline_lower, strong_cmdline_markers):
             return True
+        if self._looks_like_vm_profile_powershell(cmdline_lower):
+            return True
+        if self._looks_like_temp_compiler_cmdline(cmdline_lower):
+            return True
         if self._looks_like_temp_stage_launcher(normalized_target):
             return True
         if GODOT_APP_USERDATA_MARKER in normalized_target and any(marker in cmdline_lower for marker in ASAR_ARGUMENT_MARKERS):
             return True
-        if normalized_target and self._path_in_user_writable_exec_zone(normalized_target):
-            base = os.path.splitext(os.path.basename(normalized_target))[0]
-            if self._looks_random(base) or self._contains_marker(normalized_target, PROCESS_IOC_MARKERS):
+        if self._looks_suspicious_userland_payload(normalized_target):
                 return True
         if normalized_exe and self._path_in_user_writable_exec_zone(normalized_exe):
             return True
@@ -6519,6 +6736,8 @@ class ScanEngine:
 
     def _shell_host_has_explicit_malware_target(self, cmdline):
         cmdline_lower = self._normalize_cmdline(cmdline).lower()
+        if self._looks_like_vm_profile_powershell(cmdline_lower):
+            return True
         target = self._extract_command_target(cmdline)
         if not self._is_pathlike_command_target(target):
             return False
@@ -6531,9 +6750,9 @@ class ScanEngine:
             return True
         if GODOT_APP_USERDATA_MARKER in normalized_target and any(marker in cmdline_lower for marker in ASAR_ARGUMENT_MARKERS):
             return True
+        if self._looks_suspicious_userland_payload(normalized_target):
+            return True
         if self._path_in_user_writable_exec_zone(normalized_target):
-            if self._contains_marker(normalized_target, PROCESS_IOC_MARKERS):
-                return True
             if ext in {".exe", ".dll", ".bat", ".cmd", ".hta", ".js", ".ps1", ".py", ".pyc", ".pyo", ".vbs"} and self._looks_random(base):
                 return True
         return False
@@ -6564,14 +6783,20 @@ class ScanEngine:
                     if self._stop:
                         return
                     dirpath_lower = dirpath.lower()
+                    if self._is_local_tool_path(dirpath):
+                        dirnames.clear()
+                        continue
                     if self._should_skip_walk_dir(dirpath) and not self._contains_marker(dirpath_lower, CAMPAIGN_DIR_MARKERS):
                         dirnames.clear()
                         continue
 
                     dirnames[:] = [
                         d for d in dirnames
-                        if not self._should_skip_walk_dir(os.path.join(dirpath, d))
+                        if not self._is_local_tool_path(os.path.join(dirpath, d))
+                        and (
+                            not self._should_skip_walk_dir(os.path.join(dirpath, d))
                         or self._contains_marker(os.path.join(dirpath, d).lower(), CAMPAIGN_DIR_MARKERS)
+                        )
                     ]
 
                     depth = dirpath.replace(root, "").count(os.sep)
@@ -6613,6 +6838,11 @@ class ScanEngine:
                         self._add("HIGH", "Suspicious Loader Stage Directory",
                                   f"NetSupport-style RAT staging directory detected in a suspicious location: {dp}", dp,
                                   lambda p=dp: self._nuke_directory(p))
+                    elif self._looks_like_compiled_temp_stage_dir(dirpath, file_names_lower):
+                        dp = dirpath
+                        self._add("HIGH", "Compiled Temp Stage Directory",
+                                  f"Temp compiler stage shows random PowerShell/C# payload build layout: {dp}", dp,
+                                  lambda p=dp: self._nuke_directory(p))
                     elif self._looks_like_suspicious_temp_stage_dir(dirpath, file_names_lower):
                         dp = dirpath
                         self._add("HIGH", "Suspicious Temp Stage Directory",
@@ -6628,6 +6858,8 @@ class ScanEngine:
                         fl = fname.lower()
                         fpath = os.path.join(dirpath, fname)
                         fpath_lower = fpath.lower()
+                        if self._is_local_tool_path(fpath):
+                            continue
 
                         exact_ioc = self._matches_exact_ioc_hash(fpath, fname)
                         if exact_ioc:
@@ -6798,6 +7030,26 @@ class ScanEngine:
         if pname in {"cmd.exe", "powershell.exe", "pwsh.exe", "python.exe", "pythonw.exe"} and (
             self._is_local_tool_context(pexe, cmdline) or self._is_project_like_path(self._extract_command_target(cmdline) or cmdline)
         ):
+            return
+        if pname in {"powershell.exe", "pwsh.exe", "cmd.exe"} and self._looks_like_vm_profile_powershell(cmdline_lower):
+            self._add_process_seed(
+                seeds,
+                pid,
+                "CRITICAL",
+                "Stealth Profiling Script Host",
+                f"Hidden PowerShell hardware/VM profiling chain detected: {pname} (PID {pid})  {cmdline}",
+                pexe or cmdline,
+            )
+            return
+        if pname == "csc.exe" and self._looks_like_temp_compiler_cmdline(cmdline_lower):
+            self._add_process_seed(
+                seeds,
+                pid,
+                "CRITICAL",
+                "Compiler Stage Process",
+                f"Temp compiler stage is building a payload from a random temp workspace: {pname} (PID {pid})  {cmdline}",
+                pexe or cmdline,
+            )
             return
         if self._is_protected_security_process(pname, pexe):
             return
@@ -7885,7 +8137,7 @@ class ScanEngine:
             (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"),
             (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"),
         ):
-            for value_name in ("ProxyEnable", "ProxyServer", "AutoConfigURL"):
+            for value_name in ("ProxyEnable", "ProxyServer", "ProxyOverride", "AutoConfigURL"):
                 snapshot = self._capture_reg_state(hive, subkey, value_name)
                 if snapshot:
                     snapshots.append(snapshot)
@@ -7899,7 +8151,7 @@ class ScanEngine:
                 changed = True
             except Exception:
                 pass
-            for value_name in ("ProxyServer", "AutoConfigURL"):
+            for value_name in ("ProxyServer", "ProxyOverride", "AutoConfigURL"):
                 try:
                     winreg.DeleteValue(key, value_name)
                     changed = True
@@ -8001,6 +8253,7 @@ class ScanEngine:
 
     def run_full_scan(self):
         self.threats.clear()
+        self._threat_keys.clear()
         self.killed = 0
         self.removed = 0
         self._stop = False
@@ -8074,6 +8327,28 @@ class ScanEngine:
         self.log(f"Account risk      : {exposure['score']}%  -  {exposure['label']}", "CRITICAL" if exposure["score"] >= 70 else "WARN")
         self.log(f"Account note      : {exposure['detail']}", "INFO")
 
+    def _log_manual_review_summary(self):
+        grouped = {}
+        for threat in sorted(self.threats):
+            if threat.category in MANUAL_REVIEW_CATEGORIES and not threat.remediated:
+                grouped.setdefault(threat.category, []).append(threat)
+
+        if not grouped:
+            return
+
+        total = sum(len(items) for items in grouped.values())
+        self.log(
+            f"Manual review still recommended for {total} item(s) across {len(grouped)} category(ies).",
+            "WARN",
+        )
+
+        for category, items in sorted(grouped.items()):
+            self.log(f"{category}: {len(items)} item(s) need a quick sanity check.", "INFO")
+            for threat in items[:3]:
+                self.log(f"  - {threat.path or threat.description}", "INFO")
+            if len(items) > 3:
+                self.log(f"  - ...and {len(items) - 3} more in {category}", "INFO")
+
     def run_remediation(self):
         self._recovery_session = None
         self._recovery_manifest_path = ""
@@ -8091,9 +8366,7 @@ class ScanEngine:
 
         self._run_remediation_bucket(file_cleanup_categories)
 
-        for threat in sorted(self.threats):
-            if threat.category in MANUAL_REVIEW_CATEGORIES and not threat.remediated:
-                self.log(f"Review manually before changing: {threat.path or threat.description}", "WARN")
+        self._log_manual_review_summary()
 
         self._run_remediation_bucket({"Malicious Scheduled Task", "Registry Persistence"})
 
@@ -8129,6 +8402,12 @@ class ScanEngine:
         )
         for category in ordered_categories:
             self._run_remediation_bucket({category})
+
+        dns_flushed, dns_detail = self._flush_dns_cache()
+        if dns_flushed:
+            self.log("Flushed Windows DNS cache after protection repair.", "SUCCESS")
+        else:
+            self.log(f"Could not flush Windows DNS cache after protection repair: {dns_detail}", "WARN")
 
         self.log(
             f"── PROTECTION REPAIR DONE  |  {self.removed - starting_removed} setting(s)/rule(s) repaired ──",
