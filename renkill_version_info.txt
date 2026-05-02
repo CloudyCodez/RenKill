@@ -17,11 +17,11 @@ VSVersionInfo(
           [
             StringStruct('CompanyName', 'Cloud'),
             StringStruct('FileDescription', 'RenKill RenEngine and HijackLoader removal tool'),
-            StringStruct('FileVersion', '1.5.3'),
+        StringStruct('FileVersion', '1.6.0'),
             StringStruct('InternalName', 'RenKill'),
             StringStruct('OriginalFilename', 'RenKill.exe'),
             StringStruct('ProductName', 'RenKill'),
-            StringStruct('ProductVersion', '1.5.3'),
+        StringStruct('ProductVersion', '1.6.0'),
             StringStruct('LegalCopyright', 'Copyright (C) Cloud'),
           ]
         )

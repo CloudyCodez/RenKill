@@ -1,5 +1,46 @@
 # Changelog
 
+## v1.6.0 - 2026-05-02
+
+This release is the full brief-driven pass. RenKill now covers much more of the broader account-hijacker / infostealer ecosystem around fake Ren'Py installers, trainers, fake playtests, ClickFix-style lures, and adjacent Discord / Steam / browser session theft fallout.
+
+- Expanded account-hijack containment and exposure reporting:
+  - Telegram Desktop session artifacts are now first-class in `ACCOUNT LOCKDOWN`, exposure notes, and recovery guidance
+  - broader exposure reporting for `MetaMask`, `Exodus`, `Atomic Wallet`, `Ledger Live`, `FileZilla`, `NordVPN`, and `OpenVPN Connect`
+  - stronger clean-device recovery guidance for tied email accounts, browser sync, Steam Web API key review, and downstream credential rotation
+- Added deeper behavior and aftermath detection:
+  - Firefox extension review via `extensions.json`
+  - stronger dead-drop / resolver / EtherHiding-style markers including `telegra.ph`, Google Forms/Presentation, Steam profile dead drops, `remus`, and Ethereum RPC host context
+  - broader suspicious outbound TLS detection for user-writable loader processes, not just a single hardcoded C2 IP
+  - Powercat-style `HKCU\\Software\\Beep` fingerprint artifact review
+- Improved forensic confidence and post-clean truthfulness:
+  - flagged filesystem findings now include creation/modification time context
+  - timestamp clustering now boosts confidence when suspicious artifacts land in the same short window
+  - post-clean rescans now call out persistence or browser residue returning instead of falsely reading as a clean pass
+  - reports now show post-clean mode, reboot state, and cleanup snapshot timing more clearly
+- Hardened cleanup safety and eradication flow:
+  - scheduled tasks are disabled before deletion
+  - long-path-safe quarantine and restore handling for deep staging trees
+  - `ACCOUNT LOCKDOWN` now clears Chromium `History`, `Bookmarks`, `Login Data`, and `Web Data`
+  - `REPAIR DEFAULTS` now also tries to restore Windows Security Center service defaults alongside Defender/proxy/firewall posture
+
+## v1.5.4 - 2026-05-02
+
+This release pushes RenKill further beyond the classic fake Ren'Py wrapper and deeper into the broader account-hijacker / infostealer ecosystem around Discord, Steam, cracked software, trainers, and ClickFix-style lures.
+
+- Added stronger account-containment and recovery coverage:
+  - Steam session artifacts are now part of `ACCOUNT LOCKDOWN`
+  - Steam exposure now feeds the recovery plan and account-risk guidance
+  - clean-device recovery guidance now prioritizes the tied email account, Steam device trust, and Steam Web API style access review
+- Added new behavior-focused detection for suspicious command residue:
+  - `RunMRU` review for malicious loader commands pasted into the Run dialog
+  - PowerShell history review for ClickFix-style download/execute chains
+  - command-history hits now feed confidence scoring as review-first evidence
+- Tightened broader lure awareness:
+  - added coverage for `OneBrowser` in installed-program review
+  - kept focus on behavior and persistence overlap instead of brittle filename matching
+- Expanded research notes around fake playtests, trainer-style lures, Discord / Steam spread, and email-linked account hijack fallout
+
 ## v1.5.3 - 2026-04-30
 
 This release is focused on making RenKill better at killing the actual malware chain instead of just sweeping up the mess it leaves behind.

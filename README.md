@@ -1,4 +1,4 @@
-# RenKill v1.5.3
+# RenKill v1.6.0
 
 Windows cleanup tool for the fake Ren'Py `Instaler.exe` / RenEngine loader chain.
 It focuses on the stuff this infection tends to leave behind: staged payloads,
@@ -46,7 +46,7 @@ Requirements: Python 3.10+ in `PATH`.
 ## Release Builds
 
 ```text
-1. Push a version tag like v1.5.3
+1. Push a version tag like v1.6.0
 2. GitHub Actions builds the RenKill folder package on windows-latest
 3. The workflow attaches a zipped Windows package and SHA256 checksum to the GitHub Release
 ```

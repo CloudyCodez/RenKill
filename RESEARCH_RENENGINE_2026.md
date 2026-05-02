@@ -1,6 +1,6 @@
 # RenEngine / "RenLoader" Notes
 
-Last updated: 2026-04-26
+Last updated: 2026-05-02 (RenKill 1.6.0 pass)
 
 ## Snapshot
 
@@ -78,6 +78,68 @@ The big change in the newer Reddit cases is not a completely different loader. I
 - more cases where the first visible symptom is Discord or Gmail account abuse, but the surviving residue is an autorun script, temp launcher, or browser-extension foothold rather than the original `Instaler.exe`
 
 That reinforces the same detection strategy for RenKill:
+
+## Lures Are Widening Beyond Ren'Py
+
+The core account-hijack symptom pattern is no longer limited to the classic fake Ren'Py `Instaler.exe` wrapper.
+
+Recent public reports and infected-user threads now point to several adjacent lure surfaces that can still end in the same Discord / Steam / browser-session compromise:
+
+- fake game trainers and cheat loaders
+- cracked software and repacks
+- fake game playtest invitations shared through Steam, Discord, or YouTube
+- phishing-style "gift", trade, or vote links sent through already hijacked Steam / Discord accounts
+- ClickFix / fake CAPTCHA / fake browser-error flows that talk the victim into pasting commands into `Run`, `Windows Terminal`, or `PowerShell`
+
+Two public write-ups are especially useful here:
+
+- Bitdefender's March 30, 2026 playtest-scam write-up describes fake Steam / Discord playtest invites, spoofed login pages, ZIP or installer downloads, and the same downstream account-theft and malware-spread loop.
+- Malwarebytes' January 3, 2025 "Can you try a game I made?" campaign write-up describes Discord DMs, archive passwords, Dropbox / Catbox / Discord CDN delivery, and info-stealer follow-ons that specifically target Discord and Steam sessions.
+
+From a defender point of view, those write-ups reinforce a useful split:
+
+- the lure surface keeps changing
+- the account-hijack aftermath does not
+
+The repeated aftermath is:
+
+- suspicious browser-extension state
+- browser/session theft
+- Steam / Discord social-account misuse
+- temp-stage download or compile residue
+- autorun or task rebuilders if the chain is still locally active
+
+The stable part is not the lure branding. It is the local behavior that follows:
+
+- browser/session theft
+- temp-stage download or compile workspaces
+- hidden or silent PowerShell
+- scheduled tasks / startup rebuilders
+- Discord spam, Steam misuse, and other social-account abuse afterward
+
+That means RenKill should keep moving toward:
+
+- command-history review (`RunMRU`, PowerShell history)
+- stronger account-session wipe coverage
+- better startup/task/service correlation for relaunch paths
+- better separation between "lure evidence", "active persistence", and "account fallout"
+
+## Steam / Email Compromise Matters
+
+Steam account theft in these cases is not always just a stolen local Steam session. Valve's own stolen-account guidance still says Steam compromises commonly follow compromise of the tied email account, and recent victim reports match that.
+
+If a victim sees a new Steam device login confirmed by an email code, that should be treated as at least one of:
+
+- email compromise or email-session compromise
+- browser-session theft affecting the mailbox
+- Steam device/session trust surviving a password change
+
+That is why RenKill's local cleanup should be paired with clean-device recovery steps that prioritize:
+
+1. email password first
+2. Steam password after email is secure
+3. deauthorizing devices and revoking sessions
+4. reviewing trade offers, market activity, suspicious chats, and API-key style access
 
 ## Trainer-Sample Behavior Worth Tracking
 

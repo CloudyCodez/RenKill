@@ -41,7 +41,7 @@ except ImportError:
 
 # IOC definitions
 
-VERSION = "1.5.3"
+VERSION = "1.6.0"
 TOOL_NAME = "RenKill"
 UPDATE_REPO_OWNER = "CloudyCodez"
 UPDATE_REPO_NAME = "RenKill"
@@ -119,6 +119,16 @@ PROCESS_IOC_MARKERS = {
     "antivmgpu",
     "antivmhypervisornames",
     "antivmmacs",
+    "remus",
+    "etherhiding",
+    "ether_hiding",
+    "infura.io",
+    "eth.llamarpc.com",
+    "cloudflare-eth.com",
+    "telegra.ph/",
+    "docs.google.com/forms/",
+    "docs.google.com/presentation/",
+    "steamcommunity.com/id/",
     "rshell",
     "esal",
     "modtask",
@@ -312,11 +322,42 @@ SOURCE_LURE_EXTENSIONS = {
 
 EXPOSURE_DIRS = (
     ("Discord", os.path.join("AppData", "Roaming", "Discord")),
+    ("Telegram Desktop", os.path.join("AppData", "Roaming", "Telegram Desktop")),
     ("Chrome", os.path.join("AppData", "Local", "Google", "Chrome", "User Data")),
     ("Edge", os.path.join("AppData", "Local", "Microsoft", "Edge", "User Data")),
     ("Brave", os.path.join("AppData", "Local", "BraveSoftware", "Brave-Browser", "User Data")),
+    ("MetaMask (Chrome)", os.path.join("AppData", "Local", "Google", "Chrome", "User Data", "Default", "Local Extension Settings", "nkbihfbeogaeaoehlefnkodbefgpgknn")),
+    ("MetaMask (Edge)", os.path.join("AppData", "Local", "Microsoft", "Edge", "User Data", "Default", "Local Extension Settings", "nkbihfbeogaeaoehlefnkodbefgpgknn")),
+    ("MetaMask (Brave)", os.path.join("AppData", "Local", "BraveSoftware", "Brave-Browser", "User Data", "Default", "Local Extension Settings", "nkbihfbeogaeaoehlefnkodbefgpgknn")),
     ("Opera", os.path.join("AppData", "Roaming", "Opera Software", "Opera Stable")),
+    ("Opera GX", os.path.join("AppData", "Roaming", "Opera Software", "Opera GX Stable")),
     ("Firefox", os.path.join("AppData", "Roaming", "Mozilla", "Firefox", "Profiles")),
+    ("FileZilla", os.path.join("AppData", "Roaming", "FileZilla")),
+    ("Exodus", os.path.join("AppData", "Roaming", "Exodus")),
+    ("Atomic Wallet", os.path.join("AppData", "Roaming", "atomic")),
+    ("Ledger Live", os.path.join("AppData", "Roaming", "Ledger Live")),
+    ("NordVPN", os.path.join("AppData", "Local", "NordVPN")),
+    ("OpenVPN Connect", os.path.join("AppData", "Roaming", "OpenVPN Connect")),
+)
+
+STEAM_SESSION_FILES = (
+    os.path.join("config", "config.vdf"),
+    os.path.join("config", "loginusers.vdf"),
+)
+
+STEAM_SESSION_DIRS = (
+    "htmlcache",
+    os.path.join("appcache", "httpcache"),
+    os.path.join("config", "htmlcache"),
+)
+
+STEAM_USERDATA_SESSION_FILES = (
+    os.path.join("config", "localconfig.vdf"),
+)
+
+TELEGRAM_SESSION_SUBPATHS = (
+    "tdata",
+    "working",
 )
 
 CHROMIUM_SESSION_SUBPATHS = (
@@ -342,8 +383,13 @@ CHROMIUM_SESSION_SUBPATHS = (
     "Session Storage",
     "Local Storage",
     "IndexedDB",
+    "History",
+    "Login Data",
+    "Login Data For Account",
+    "Bookmarks",
     "Service Worker",
     "Shared Dictionary",
+    "Web Data",
     "WebStorage",
     "SharedStorage",
 )
@@ -398,6 +444,13 @@ SESSION_RESET_APPS = (
         "subpaths": DISCORD_SESSION_SUBPATHS,
     },
     {
+        "label": "Telegram Desktop",
+        "kind": "flat",
+        "processes": {"telegram.exe"},
+        "roots": (os.path.join("AppData", "Roaming", "Telegram Desktop"),),
+        "subpaths": TELEGRAM_SESSION_SUBPATHS,
+    },
+    {
         "label": "Chrome",
         "kind": "chromium",
         "processes": {"chrome.exe"},
@@ -441,7 +494,34 @@ SESSION_RESET_APPS = (
         "processes": {"firefox.exe"},
         "roots": (os.path.join("AppData", "Roaming", "Mozilla", "Firefox", "Profiles"),),
     },
+    {
+        "label": "Steam",
+        "kind": "steam",
+        "processes": {"steam.exe", "steamservice.exe", "steamwebhelper.exe", "gameoverlayui.exe"},
+        "roots": (),
+    },
 )
+
+MASQUERADE_EXECUTABLE_NAMES = {
+    "conhost.exe",
+    "csrss.exe",
+    "dllhost.exe",
+    "explorer.exe",
+    "lsass.exe",
+    "rundll32.exe",
+    "searchhost.exe",
+    "searchindexer.exe",
+    "services.exe",
+    "smss.exe",
+    "spoolsv.exe",
+    "steamservice.exe",
+    "steamwebhelper.exe",
+    "svchost.exe",
+    "taskhostw.exe",
+    "wininit.exe",
+    "winlogon.exe",
+    "wmiprvse.exe",
+}
 
 SAFE_PROCESS_NAMES = {
     "code.exe",
@@ -700,6 +780,7 @@ MANUAL_REVIEW_CATEGORIES = {
     "Alternate Data Stream Review",
     "Browser Extension Review",
     "Browser Policy Review",
+    "Command History Review",
     "Defender Protection Review",
     "Defender Policy Review",
     "Explorer Hijack Review",
@@ -806,7 +887,70 @@ SCRIPT_LURE_REMOTE_MARKERS = (
     "silent-harvester.cc",
     "telegram.me",
     "t.me/",
+    "telegra.ph/",
+    "docs.google.com/forms/",
+    "docs.google.com/presentation/",
+    "steamcommunity.com/id/",
+    "u.to/gift",
     "vyroget.com",
+    "infura.io",
+    "eth.llamarpc.com",
+    "cloudflare-eth.com",
+)
+CLICKFIX_SHELL_MARKERS = (
+    "powershell",
+    "pwsh",
+    "wt.exe",
+    "windows terminal",
+    "cmd.exe",
+    "cmd /c",
+    "mshta",
+    "wscript",
+    "cscript",
+    "rundll32",
+    "regsvr32",
+)
+CLICKFIX_DOWNLOAD_TOKENS = (
+    "downloadstring",
+    "frombase64string",
+    "invoke-expression",
+    "invoke-restmethod",
+    "invoke-webrequest",
+    "irm ",
+    "iwr ",
+    "iex ",
+    "-enc ",
+    "-encodedcommand",
+    "start-bitstransfer",
+    "bitsadmin",
+    "curl ",
+    "wget ",
+    " mshta ",
+)
+CLICKFIX_SUSPICIOUS_TLDS = (
+    ".cfd",
+    ".icu",
+    ".live",
+    ".shop",
+    ".top",
+)
+ACCOUNT_HIJACK_BRAND_TOKENS = (
+    "discord",
+    "steamcommunity",
+    "steampowered",
+    "youtube.com",
+    "youtu.be",
+)
+ACCOUNT_HIJACK_LURE_TOKENS = (
+    "beta access",
+    "closed beta",
+    "gift",
+    "join the playtest",
+    "playtest",
+    "skin giveaway",
+    "steam guard",
+    "trade offer",
+    "try my game",
 )
 STARTUP_SCRIPT_EXTENSIONS = {".bat", ".cmd", ".exe", ".hta", ".js", ".ps1", ".py", ".pyw", ".url", ".vbs"}
 STARTUP_DOWNLOADER_TOKENS = (
@@ -907,6 +1051,8 @@ FRST_REVIEW_PROGRAM_NAMES = {
     "netsupport",
     "netsupport manager",
     "netsupport school",
+    "onebrowser",
+    "one browser",
     "urban vpn",
     "urban vpn proxy",
 }
@@ -958,6 +1104,8 @@ OFFICIAL_EXTENSION_UPDATE_URL_MARKERS = (
     "clients2.googleusercontent.com/service/update2/crx",
     "edge.microsoft.com/extensionwebstorebase/v1/crx",
     "extension-updates.opera.com",
+    "addons.mozilla.org",
+    "services.addons.mozilla.org",
 )
 IMPERSONATED_EXTENSION_NAMES = {
     "google docs",
@@ -974,6 +1122,8 @@ SENSITIVE_HOST_MARKERS = {
     "login.microsoftonline.com",
     "steamcommunity.com",
     "store.steampowered.com",
+    "web.telegram.org",
+    "oauth.telegram.org",
     "wallet",
 }
 
@@ -1340,6 +1490,7 @@ class ScanEngine:
         self._shortcut_scan_rows = None
         self._scheduled_task_rows = None
         self._autorun_rows = None
+        self._run_mru_rows = None
         self._runonceex_rows = None
         self._policy_rows = None
         self._active_setup_rows = None
@@ -1348,11 +1499,16 @@ class ScanEngine:
         self._shell_rows = None
         self._logon_rows = None
         self._explorer_hijack_rows = None
+        self._shell_history_rows = None
         self._threat_keys = set()
+        self._timestamp_cache = {}
         self._reset_recovery_state()
 
     def _add(self, severity, category, description, path=None, action=None):
         normalized_path = self._normalized_path(path) if path else ""
+        timestamp_note = self._path_timestamp_note(path)
+        if timestamp_note and timestamp_note not in str(description or ""):
+            description = f"{description} {timestamp_note}".strip()
         threat_key = (category, str(description or "").strip(), normalized_path)
         if threat_key in self._threat_keys:
             return None
@@ -1367,6 +1523,42 @@ class ScanEngine:
         if note not in self.exposure_notes:
             self.exposure_notes.append(note)
             self.log(description if not path else f"{description}: {path}", "WARN")
+
+    def _path_timestamp_note(self, path):
+        normalized = self._normalized_path(path)
+        if not normalized or normalized.startswith(("hkcu\\", "hklm\\", "root\\", "microsoft-windows-")):
+            return ""
+        cached = self._timestamp_cache.get(normalized)
+        if cached is not None:
+            return cached
+        try:
+            created = datetime.datetime.fromtimestamp(os.path.getctime(path)).strftime("%Y-%m-%d %H:%M")
+            modified = datetime.datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
+            note = f"[created {created} | modified {modified}]"
+        except Exception:
+            note = ""
+        self._timestamp_cache[normalized] = note
+        return note
+
+    def _has_timestamp_cluster(self, window_seconds=600, min_hits=3):
+        epochs = []
+        seen = set()
+        for threat in self.threats:
+            path = self._normalized_path(getattr(threat, "path", ""))
+            if not path or path in seen or path.startswith(("hkcu\\", "hklm\\", "root\\", "microsoft-windows-")):
+                continue
+            seen.add(path)
+            try:
+                epochs.append(float(os.path.getctime(threat.path)))
+            except Exception:
+                continue
+        if len(epochs) < min_hits:
+            return False
+        epochs.sort()
+        for index in range(len(epochs) - min_hits + 1):
+            if epochs[index + min_hits - 1] - epochs[index] <= window_seconds:
+                return True
+        return False
 
     def _recovery_root(self):
         candidates = [
@@ -1645,6 +1837,29 @@ class ScanEngine:
                 }
             )
 
+        def permissions_from_manifest(manifest):
+            return {
+                str(value).lower()
+                for section in ("permissions", "host_permissions", "optional_permissions")
+                for value in (manifest.get(section) or [])
+            }
+
+        def sensitive_host_hit(permissions):
+            for value in permissions:
+                lowered = str(value or "").lower()
+                if any(marker in lowered for marker in SENSITIVE_HOST_MARKERS):
+                    return True
+            return False
+
+        def firefox_permissions(addon):
+            permissions = set()
+            for section in ("userPermissions", "optionalPermissions"):
+                values = addon.get(section) or {}
+                if isinstance(values, dict):
+                    permissions.update(str(value).lower() for value in (values.get("permissions") or []))
+                    permissions.update(str(value).lower() for value in (values.get("origins") or []))
+            return permissions
+
         for label, manifest_path in self._iter_chromium_extension_manifests():
             try:
                 with open(manifest_path, "r", encoding="utf-8") as handle:
@@ -1653,11 +1868,7 @@ class ScanEngine:
                 continue
 
             blob = json.dumps(manifest, ensure_ascii=True).lower()
-            permissions = {
-                str(value).lower()
-                for section in ("permissions", "host_permissions", "optional_permissions")
-                for value in (manifest.get(section) or [])
-            }
+            permissions = permissions_from_manifest(manifest)
             keyword_hit = self._contains_marker(
                 blob,
                 {
@@ -1677,6 +1888,7 @@ class ScanEngine:
             )
             remote_lure_hit = self._contains_marker(blob, {"go.zovo", "mediafire", "mega", "dodi-repacks"})
             risky_permissions = bool(permissions & {perm.lower() for perm in SUSPICIOUS_EXTENSION_PERMISSIONS})
+            hijack_surface_hit = sensitive_host_hit(permissions)
             update_url = str(
                 manifest.get("update_url")
                 or manifest.get("browser_specific_settings", {}).get("gecko", {}).get("update_url")
@@ -1694,6 +1906,7 @@ class ScanEngine:
                 self._has_strong_campaign_context(blob, manifest_path)
                 or remote_lure_hit
                 or (keyword_hit and risky_permissions)
+                or (risky_permissions and hijack_surface_hit and suspicious_update_url)
                 or (impersonation_hit and suspicious_update_url)
                 or (suspicious_update_url and risky_permissions and self._contains_remote_loader_marker(update_url_lower))
             ):
@@ -1730,12 +1943,15 @@ class ScanEngine:
                     manifest = entry.get("manifest") or {}
                     extension_name = str(manifest.get("name") or ext_id)
                     extension_name_lower = extension_name.lower()
+                    permissions = permissions_from_manifest(manifest)
                     update_url = str(entry.get("update_url") or manifest.get("update_url") or "")
                     update_url_lower = update_url.lower()
                     suspicious_update_url = bool(update_url_lower) and not any(
                         marker in update_url_lower for marker in OFFICIAL_EXTENSION_UPDATE_URL_MARKERS
                     )
                     impersonation_hit = extension_name_lower in IMPERSONATED_EXTENSION_NAMES
+                    risky_permissions = bool(permissions & {perm.lower() for perm in SUSPICIOUS_EXTENSION_PERMISSIONS})
+                    hijack_surface_hit = sensitive_host_hit(permissions)
                     profile_ext_dir = os.path.join(profile_dir, "Extensions", ext_id)
                     installed_on_disk = os.path.isdir(profile_ext_dir)
                     path_value = str(entry.get("path") or "")
@@ -1743,6 +1959,7 @@ class ScanEngine:
                     risky_state = (
                         (impersonation_hit and suspicious_update_url)
                         or (suspicious_update_url and self._contains_remote_loader_marker(update_url_lower))
+                        or (suspicious_update_url and risky_permissions and hijack_surface_hit)
                         or (normalized_path and self._path_in_user_writable_exec_zone(normalized_path) and not self._is_local_tool_path(normalized_path))
                     )
                     if not risky_state:
@@ -1764,6 +1981,81 @@ class ScanEngine:
                             target,
                             f"{label} extension state needs review: {extension_name}",
                         )
+
+        firefox_root = os.path.join(os.environ.get("APPDATA", ""), "Mozilla", "Firefox", "Profiles")
+        if os.path.isdir(firefox_root):
+            try:
+                profile_names = os.listdir(firefox_root)
+            except Exception:
+                profile_names = []
+            for profile_name in profile_names:
+                profile_dir = os.path.join(firefox_root, profile_name)
+                if not os.path.isdir(profile_dir):
+                    continue
+                extensions_json = os.path.join(profile_dir, "extensions.json")
+                if not os.path.isfile(extensions_json):
+                    continue
+                try:
+                    with open(extensions_json, "r", encoding="utf-8", errors="ignore") as handle:
+                        payload = json.load(handle)
+                except Exception:
+                    continue
+                addons = (payload or {}).get("addons") or []
+                if not isinstance(addons, list):
+                    continue
+
+                for addon in addons:
+                    if not isinstance(addon, dict) or not addon.get("active", True):
+                        continue
+                    location = str(addon.get("location") or "").lower()
+                    if location in {"app-system-defaults", "app-system-addons"}:
+                        continue
+                    extension_name = str(
+                        addon.get("defaultLocale", {}).get("name")
+                        or addon.get("name")
+                        or addon.get("id")
+                        or "unknown add-on"
+                    )
+                    extension_name_lower = extension_name.lower()
+                    update_url = str(
+                        addon.get("updateURL")
+                        or addon.get("updateUrl")
+                        or addon.get("sourceURI")
+                        or addon.get("defaultLocale", {}).get("homepageURL")
+                        or ""
+                    )
+                    update_url_lower = update_url.lower()
+                    permissions = firefox_permissions(addon)
+                    risky_permissions = bool(permissions & {perm.lower() for perm in SUSPICIOUS_EXTENSION_PERMISSIONS})
+                    hijack_surface_hit = sensitive_host_hit(permissions)
+                    suspicious_update_url = bool(update_url_lower) and not any(
+                        marker in update_url_lower for marker in OFFICIAL_EXTENSION_UPDATE_URL_MARKERS
+                    )
+                    impersonation_hit = extension_name_lower in IMPERSONATED_EXTENSION_NAMES
+                    path_value = str(addon.get("path") or "")
+                    normalized_path = self._normalized_path(path_value)
+                    blob = json.dumps(addon, ensure_ascii=True).lower()
+                    remote_lure_hit = self._contains_marker(blob, {"go.zovo", "mediafire", "mega", "dodi-repacks"})
+                    keyword_hit = self._has_strong_campaign_context(blob, normalized_path, extension_name)
+                    risky_state = (
+                        keyword_hit
+                        or remote_lure_hit
+                        or (impersonation_hit and suspicious_update_url)
+                        or (suspicious_update_url and risky_permissions and hijack_surface_hit)
+                        or (suspicious_update_url and self._contains_remote_loader_marker(update_url_lower))
+                        or (normalized_path and self._path_in_user_writable_exec_zone(normalized_path) and not self._is_local_tool_path(normalized_path))
+                    )
+                    if not risky_state:
+                        continue
+
+                    target_root = normalized_path or update_url_lower or extension_name_lower
+                    target = f"Firefox:{extension_name_lower}:{target_root}"
+                    add(
+                        "Firefox",
+                        extensions_json,
+                        target,
+                        f"Firefox extension needs review: {extension_name}",
+                    )
 
         return findings
 
@@ -1856,6 +2148,15 @@ class ScanEngine:
             return False
         return True
 
+    @staticmethod
+    def _long_path(path):
+        text = str(path or "")
+        if not text or text.startswith("\\\\?\\") or text.startswith("\\\\"):
+            return text
+        if len(text) < 248:
+            return text
+        return "\\\\?\\" + os.path.abspath(text)
+
     def _quarantine_summary(self, session=None):
         session = session or self._recovery_session or {}
         entries = session.get("entries") or []
@@ -1901,12 +2202,14 @@ class ScanEngine:
         counter = len(self._recovery_session["entries"]) + 1
         backup_name = self._build_quarantine_backup_name(path, counter)
         backup_path = os.path.join(session_dir, RECOVERY_QUARANTINE_DIR, backup_name)
+        source_path = self._long_path(path)
+        target_backup_path = self._long_path(backup_path)
         try:
-            shutil.move(path, backup_path)
+            shutil.move(source_path, target_backup_path)
         except PermissionError:
             try:
                 subprocess.run(["attrib", "-r", "-s", "-h", path], capture_output=True, creationflags=0x08000000)
-                shutil.move(path, backup_path)
+                shutil.move(source_path, target_backup_path)
             except PermissionError:
                 return None, "access denied or file is locked by another process"
             except Exception as exc:
@@ -2143,7 +2446,7 @@ class ScanEngine:
             except Exception:
                 pass
             os.makedirs(os.path.dirname(target_path), exist_ok=True)
-            shutil.move(backup_path, target_path)
+            shutil.move(self._long_path(backup_path), self._long_path(target_path))
             return True, target_path
         except Exception:
             return False, ""
@@ -2439,6 +2742,7 @@ class ScanEngine:
         posture_categories = {
             "Browser Extension Review",
             "Browser Policy Review",
+            "Command History Review",
             "Defender Exclusion",
             "Defender Policy Review",
             "Defender Protection Review",
@@ -2479,12 +2783,9 @@ class ScanEngine:
 
     def assess_account_exposure(self):
         exposure_count = len(self.exposure_notes)
-        summary = self.last_summary or self.summarize_threats()
         profile = self._threat_confidence_profile()
 
-        score = 8
-        if summary["confidence"] in {"high", "medium"}:
-            score += 24
+        score = 0
         if profile["generic_stealer_hits"] >= 2:
             score += 26
         elif profile["generic_stealer_hits"] >= 1:
@@ -2493,14 +2794,28 @@ class ScanEngine:
             score += 16
         if "Defender Exclusion" in profile["categories"]:
             score += 8
+        if "Command History Review" in profile["categories"]:
+            score += 10
         if "Browser Extension Review" in profile["categories"] or "Browser Policy Review" in profile["categories"]:
             score += 8
         if exposure_count:
             score += min(32, exposure_count * 10)
 
+        notes_blob = " ".join(f"{desc} {path}".lower() for desc, path in self.exposure_notes)
+        if any(token in notes_blob for token in ("steam", "discord", "google", "microsoft", "firefox", "chrome", "edge", "brave", "opera", "filezilla", "nordvpn", "openvpn")):
+            score += 8
+        if "telegram" in notes_blob:
+            score += 6
+        if any(token in notes_blob for token in ("wallet", "metamask", "crypto", "exodus", "atomic wallet", "ledger live")):
+            score += 10
+
         score = self._clamp_score(score, lower=0, upper=98)
 
-        if score >= 70:
+        if score <= 0:
+            label = "No confirmed session-theft signals"
+            detail = "This scan did not surface strong local signs of browser or app session theft. If the user ran the malware, a clean-device review is still the safe move."
+            color = GREEN
+        elif score >= 70:
             label = "High account/session compromise risk"
             detail = "Browser or app session material may already be exposed. Treat this like a full account-compromise incident from a clean device."
             color = RED
@@ -2519,6 +2834,32 @@ class ScanEngine:
             "detail": detail,
             "color": color,
         }
+
+    @staticmethod
+    def _format_account_risk_value(exposure, compact=False):
+        score = int((exposure or {}).get("score") or 0)
+        if score <= 0:
+            return "none confirmed" if compact else "No confirmed session-theft signals"
+        return f"{score}%"
+
+    @classmethod
+    def _format_account_risk_summary(cls, exposure, compact=False):
+        exposure = exposure or {}
+        score = int(exposure.get("score") or 0)
+        label = exposure.get("label") or "Account/session compromise risk"
+        value = cls._format_account_risk_value(exposure, compact=compact)
+        if score <= 0:
+            return value if compact else label
+        return f"{value} - {label}"
+
+    @staticmethod
+    def _account_risk_log_level(exposure):
+        score = int((exposure or {}).get("score") or 0)
+        if score >= 70:
+            return "CRITICAL"
+        if score > 0:
+            return "WARN"
+        return "INFO"
 
     def finding_breakdown(self):
         confirmed_categories = PERSISTENCE_THREAT_CATEGORIES | PROCESS_REMEDIATION_CATEGORIES | FILE_REMEDIATION_CATEGORIES
@@ -2544,17 +2885,25 @@ class ScanEngine:
         exposure = exposure or self.assess_account_exposure()
         notes_blob = " ".join(f"{desc} {path}".lower() for desc, path in self.exposure_notes)
         touched_discord = "discord" in notes_blob
+        touched_telegram = "telegram" in notes_blob
         touched_browser = any(token in notes_blob for token in ("chrome", "edge", "firefox", "brave", "opera"))
-        touched_wallet = any(token in notes_blob for token in ("wallet", "metamask", "crypto"))
+        touched_steam = "steam" in notes_blob or bool(self._steam_install_roots())
+        touched_wallet = any(token in notes_blob for token in ("wallet", "metamask", "crypto", "exodus", "atomic wallet", "ledger live"))
+        touched_vpn = any(token in notes_blob for token in ("nordvpn", "openvpn"))
+        touched_filezilla = "filezilla" in notes_blob
 
         lines = [
             "ACCOUNT RECOVERY PLAN (do this from a CLEAN device)",
             "",
+            "STEP 0 (do this first, on a different device): change the tied email password and revoke email sessions before touching Steam, Discord, Telegram, or browser passwords.",
+            "",
             "Core steps:",
-            "  1. Change passwords for anything saved in the browser.",
-            "  2. Revoke active sessions, not just passwords.",
-            "  3. Re-enable MFA after passwords and sessions are reset.",
-            "  4. Reboot the infected PC and run RenKill again before trusting it.",
+            "  1. Change the password on the email account tied to Steam, Discord, and browser sync first.",
+            "  2. Review mailbox forwarding rules, recovery methods, app passwords, and suspicious OAuth/app access.",
+            "  3. Change passwords for anything saved in the browser or desktop apps on the infected PC.",
+            "  4. Revoke active sessions and deauthorize devices, not just passwords.",
+            "  5. Re-enable MFA after passwords, sessions, and device trust are reset.",
+            "  6. Reboot the infected PC and run RenKill again before trusting it.",
         ]
 
         if touched_browser or exposure["score"] >= 25:
@@ -2562,17 +2911,27 @@ class ScanEngine:
                 "",
                 "Browser / account steps:",
                 "  1. Review signed-in Google, Microsoft, Steam, and banking sessions.",
-                "  2. Turn off browser sync and clear synced data if suspicious state keeps returning.",
-                "  3. Review extensions and saved payment details before signing back in.",
+                "  2. Force sign-out browser sessions and browser sync before signing back in after password resets.",
+                "  3. Turn off browser sync and clear synced data before re-enabling it if suspicious state keeps returning.",
+                "  4. Review extensions and saved payment details before signing back in.",
             ]
 
-        if touched_discord or exposure["score"] >= 25:
+        if touched_discord or touched_telegram or exposure["score"] >= 25:
             lines += [
                 "",
-                "Discord / social steps:",
-                "  1. Revoke Discord sessions and review Authorized Apps.",
-                "  2. Rotate the email passwords tied to Discord, Instagram, and socials.",
-                "  3. Warn friends if spam links were sent from the account.",
+                "Discord / Telegram / social steps:",
+                "  1. Revoke Discord sessions, review Authorized Apps, and terminate Telegram Desktop active sessions.",
+                "  2. Rotate the email passwords tied to Discord, Telegram, Instagram, and other socials.",
+                "  3. Warn friends if spam links or fake gift / playtest / trade messages were sent from the account.",
+            ]
+
+        if touched_steam or exposure["score"] >= 25:
+            lines += [
+                "",
+                "Steam steps:",
+                "  1. Change the Steam password after changing the tied email password.",
+                "  2. Deauthorize trusted devices from Steam Guard / Account Security and review recent login activity.",
+                "  3. Review trade offers, market listings, wallet activity, suspicious chats or profile changes, and any Steam Web API key access at steamcommunity.com/dev/apikey.",
             ]
 
         if touched_wallet or exposure["score"] >= 50:
@@ -2583,9 +2942,17 @@ class ScanEngine:
                 "  2. Do not reuse the old wallet even if the PC looks clean.",
             ]
 
+        if touched_filezilla or touched_vpn:
+            lines += [
+                "",
+                "VPN / FTP steps:",
+                "  1. Rotate VPN credentials and review new-device or suspicious-location alerts.",
+                "  2. Rotate FileZilla or other saved server credentials and review downstream server access logs.",
+            ]
+
         lines += [
             "",
-            f"Current account-risk readout: {exposure['score']}% - {exposure['label']}",
+            f"Current account-risk readout: {self._format_account_risk_summary(exposure)}",
             exposure["detail"],
         ]
         return sanitize_for_display("\n".join(lines))
@@ -2651,6 +3018,7 @@ class ScanEngine:
         })
         generic_stealer_hits += sum(1 for cat in categories if cat in {
             "Active C2 Connection",
+            "Command History Review",
             "Defender Exclusion",
             "Disabled Startup Artifact",
             "Firewall Rule Review",
@@ -2699,6 +3067,9 @@ class ScanEngine:
             renloader_hits += 2
         elif persistence_layers >= 2:
             renloader_hits += 1
+        if self._has_timestamp_cluster():
+            renloader_hits += 1
+            generic_stealer_hits += 1
 
         suspicious_only = all(cat in {
             "Suspicious Userland Process",
@@ -2716,6 +3087,7 @@ class ScanEngine:
             "startup_layers": startup_layers,
             "persistence_layers": persistence_layers,
             "review_layers": review_layers,
+            "timestamp_clustered": self._has_timestamp_cluster(),
             "suspicious_only": suspicious_only,
         }
 
@@ -2734,6 +3106,7 @@ class ScanEngine:
         generic_stealer_hits = profile["generic_stealer_hits"]
         suspicious_only = profile["suspicious_only"]
         startup_layers = profile["startup_layers"]
+        timestamp_clustered = profile["timestamp_clustered"]
 
         if renloader_hits >= 6:
             label = "Probably RenLoader / RenEngine"
@@ -2741,6 +3114,8 @@ class ScanEngine:
                 detail = "Multiple campaign-specific artifacts matched, with layered startup persistence consistent with the RenEngine/HijackLoader chain."
             else:
                 detail = "Multiple campaign-specific artifacts matched the RenEngine/HijackLoader chain."
+            if timestamp_clustered:
+                detail += " Several flagged filesystem artifacts also share tightly clustered creation times."
             confidence = "high"
             color = RED
         elif renloader_hits >= 3:
@@ -2749,11 +3124,15 @@ class ScanEngine:
                 detail = "Some campaign-specific artifacts matched, and the startup state shows layered persistence that needs review."
             else:
                 detail = "Some campaign-specific artifacts matched, but the chain is not fully confirmed."
+            if timestamp_clustered:
+                detail += " The suspicious filesystem artifacts also cluster tightly in creation time."
             confidence = "medium"
             color = AMBER
         elif generic_stealer_hits >= 2:
             label = "Possible infostealer activity"
             detail = "Behavior looks malicious, but it does not clearly fingerprint RenLoader."
+            if timestamp_clustered:
+                detail += " Multiple suspicious files also appeared in a tight creation-time window."
             confidence = "medium"
             color = AMBER
         elif suspicious_only:
@@ -3557,6 +3936,60 @@ class ScanEngine:
         )
 
     @staticmethod
+    def _looks_like_logon_persistence_builder(cmdline):
+        lowered = str(cmdline or "").lower()
+        if not lowered:
+            return False
+
+        creates_logon_task = (
+            "schtasks" in lowered
+            and "/create" in lowered
+            and ("onlogon" in lowered or "/sc logon" in lowered or "/sc onlogon" in lowered)
+            and ("/rl highest" in lowered or "highestavailable" in lowered)
+        )
+        if creates_logon_task and any(token in lowered for token in ("\\temp\\", "\\appdata\\", "\\programdata\\", "powershell", "cmd.exe")):
+            return True
+
+        hides_userland_payload = (
+            "attrib" in lowered
+            and any(token in lowered for token in ("+h", "+s"))
+            and any(token in lowered for token in ("\\temp\\", "\\appdata\\", "\\programdata\\"))
+        )
+        return hides_userland_payload
+
+    def _looks_like_clickfix_command(self, cmdline):
+        raw = self._normalize_cmdline(cmdline)
+        lowered = raw.lower()
+        if not lowered or self._is_local_tool_context(raw):
+            return False
+        if self._has_strong_campaign_context(raw):
+            return True
+        if (
+            self._looks_like_vm_profile_powershell(raw)
+            or self._looks_like_temp_compiler_cmdline(raw)
+            or self._looks_like_logon_persistence_builder(raw)
+        ):
+            return True
+        if not any(marker in lowered for marker in CLICKFIX_SHELL_MARKERS):
+            return False
+
+        score = 0
+        if self._contains_remote_loader_marker(raw) or IPV4_HTTP_REGEX.search(lowered):
+            score += 2
+        if any(token in lowered for token in CLICKFIX_DOWNLOAD_TOKENS):
+            score += 2
+        if any(token in lowered for token in POWERSHELL_STEALTH_SWITCHES):
+            score += 1
+        if any(token in lowered for token in ("\\temp\\", "\\appdata\\local\\temp\\", ".hta", ".vbs", ".ps1", ".bat", ".cmd", ".js", ".msi", ".zip")):
+            score += 1
+        if any(marker in lowered for marker in ("api.ipify.org", "silent-harvester.cc", "u.to/gift")):
+            score += 1
+        if any(tld in lowered for tld in CLICKFIX_SUSPICIOUS_TLDS):
+            score += 1
+
+        return score >= 4
+
+    @staticmethod
     def _looks_like_vm_profile_powershell(cmdline):
         lowered = str(cmdline or "").lower()
         if not lowered:
@@ -3874,9 +4307,13 @@ class ScanEngine:
 
         strong_hits = sum(1 for token in SOURCE_LURE_KEYWORDS if token in text)
         remote_hit = any(marker in text for marker in SCRIPT_LURE_REMOTE_MARKERS)
+        brand_hits = sum(1 for token in ACCOUNT_HIJACK_BRAND_TOKENS if token in text)
+        lure_hits = sum(1 for token in ACCOUNT_HIJACK_LURE_TOKENS if token in text)
         ext = os.path.splitext(str(path or "").lower())[1]
         if ext in {".html", ".htm", ".url"}:
-            return remote_hit and strong_hits >= 1
+            if remote_hit and strong_hits >= 1:
+                return True
+            return remote_hit and brand_hits >= 1 and lure_hits >= 2
         return strong_hits >= 2 or (remote_hit and strong_hits >= 1)
 
     def _value_has_malware_signal(self, value):
@@ -3888,6 +4325,8 @@ class ScanEngine:
         if self._is_local_tool_context(raw, target):
             return False
         if self._has_strong_campaign_context(raw):
+            return True
+        if self._looks_like_clickfix_command(raw):
             return True
         if self._looks_like_temp_compiler_cmdline(raw):
             return True
@@ -3963,6 +4402,19 @@ class ScanEngine:
 
         return normalized_executable.endswith(".exe")
 
+    def _looks_like_masquerading_userland_executable(self, executable, cmdline=""):
+        normalized_executable = self._normalized_path(executable)
+        if not normalized_executable:
+            return False
+        executable_name = os.path.basename(normalized_executable).lower()
+        if executable_name not in MASQUERADE_EXECUTABLE_NAMES:
+            return False
+        if self._is_local_tool_context(normalized_executable, cmdline):
+            return False
+        if self._is_safe_process_context(executable_name, executable, cmdline, allow_metadata=True):
+            return False
+        return self._path_in_user_writable_exec_zone(normalized_executable)
+
     def _looks_suspicious_service(self, service_name, display_name, path_name):
         blob = " ".join(part for part in (service_name, display_name, path_name) if part)
         executable = self._extract_command_target(path_name)
@@ -3977,6 +4429,8 @@ class ScanEngine:
             return "HIGH", "Malicious Service", f"Service launches a temp compiler-stage payload build: {service_name} -> {path_name}"
         if not executable or self._is_safe_process_context(service_name.lower(), executable, path_name) or self._has_trusted_file_metadata(executable):
             return None
+        if self._looks_like_masquerading_userland_executable(executable, path_name):
+            return "HIGH", "Malicious Service", f"Service points at a masquerading system/helper executable in a user-writable path: {service_name} -> {path_name}"
         if self._looks_like_suspicious_netsupport_path(executable, allow_metadata=True):
             return "HIGH", "Malicious Service", f"Service points at a NetSupport-style remote-control payload in a suspicious location: {service_name} -> {path_name}"
         if any(marker in normalized_executable for marker in COMMON_USERLAND_EXEC_MARKERS) and (
@@ -4000,6 +4454,8 @@ class ScanEngine:
             "Arguments=$action.Arguments; "
             "WorkingDirectory=$action.WorkingDirectory; "
             "UserId=$task.Principal.UserId; "
+            "RunLevel=[string]$task.Principal.RunLevel; "
+            "TriggerTypes=(($task.Triggers | ForEach-Object { $_.CimClass.CimClassName }) -join ','); "
             "State=[string]$task.State "
             "} "
             "} "
@@ -4030,6 +4486,8 @@ class ScanEngine:
                             "Arguments": arguments,
                             "WorkingDirectory": str(item.get("Start In") or item.get("Start In (Optional)") or "").strip(),
                             "UserId": str(item.get("Run As User") or "").strip(),
+                            "RunLevel": str(item.get("Run Level") or item.get("RunLevel") or "").strip(),
+                            "TriggerTypes": str(item.get("Schedule Type") or item.get("Schedule") or "").strip(),
                             "State": str(item.get("Status") or item.get("Scheduled Task State") or "").strip(),
                         }
                     )
@@ -4083,6 +4541,90 @@ class ScanEngine:
                 pass
 
         self._autorun_rows = rows
+        return rows
+
+    def _collect_run_mru_rows(self):
+        if self._run_mru_rows is not None:
+            return self._run_mru_rows
+
+        rows = []
+        if not WINREG_OK:
+            self._run_mru_rows = rows
+            return rows
+
+        subkey = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\RunMRU"
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, subkey)
+        except (FileNotFoundError, PermissionError):
+            self._run_mru_rows = rows
+            return rows
+
+        index = 0
+        while True:
+            try:
+                value_name, value, _ = winreg.EnumValue(key, index)
+            except OSError:
+                break
+            index += 1
+            if str(value_name or "").lower() in {"mrulist", "mrulistex"}:
+                continue
+            rows.append(
+                {
+                    "Hive": winreg.HKEY_CURRENT_USER,
+                    "HiveName": "HKCU",
+                    "Subkey": subkey,
+                    "ValueName": str(value_name or ""),
+                    "Value": str(value or ""),
+                }
+            )
+
+        try:
+            winreg.CloseKey(key)
+        except Exception:
+            pass
+
+        self._run_mru_rows = rows
+        return rows
+
+    def _collect_shell_history_rows(self):
+        if self._shell_history_rows is not None:
+            return self._shell_history_rows
+
+        rows = []
+        profile = os.environ.get("USERPROFILE", "")
+        history_paths = []
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            history_paths.append(os.path.join(appdata, "Microsoft", "Windows", "PowerShell", "PSReadLine", "ConsoleHost_history.txt"))
+        if profile:
+            history_paths.append(os.path.join(profile, "AppData", "Roaming", "Microsoft", "Windows", "PowerShell", "PSReadLine", "ConsoleHost_history.txt"))
+
+        seen_paths = set()
+        for path in history_paths:
+            normalized = self._normalized_path(path)
+            if not normalized or normalized in seen_paths or not os.path.isfile(path):
+                continue
+            seen_paths.add(normalized)
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+                    all_lines = handle.readlines()
+            except Exception:
+                continue
+
+            start_line = max(1, len(all_lines) - 399)
+            for offset, line in enumerate(all_lines[-400:], start=start_line):
+                value = str(line or "").strip()
+                if not value:
+                    continue
+                rows.append(
+                    {
+                        "Path": path,
+                        "LineNumber": offset,
+                        "Value": value,
+                    }
+                )
+
+        self._shell_history_rows = rows
         return rows
 
     def _collect_policy_persistence_rows(self):
@@ -4839,13 +5381,15 @@ class ScanEngine:
     def _format_task_label(task_path, task_name):
         return f"{str(task_path or '')}{str(task_name or '')}"
 
-    def _evaluate_scheduled_task_entry(self, task_name, task_path, execute, arguments="", working_directory=""):
+    def _evaluate_scheduled_task_entry(self, task_name, task_path, execute, arguments="", working_directory="", trigger_types="", run_level=""):
         task_name = str(task_name or "")
         task_path = str(task_path or "")
         execute = str(execute or "")
         arguments = str(arguments or "")
         working_directory = str(working_directory or "")
-        blob = " ".join(part for part in (task_name, task_path, execute, arguments, working_directory) if part)
+        trigger_types = str(trigger_types or "")
+        run_level = str(run_level or "")
+        blob = " ".join(part for part in (task_name, task_path, execute, arguments, working_directory, trigger_types, run_level) if part)
         if not blob:
             return None
         task_label = self._format_task_label(task_path, task_name)
@@ -4861,6 +5405,10 @@ class ScanEngine:
         normalized_executable = self._normalized_path(executable)
         executable_name = os.path.basename(normalized_executable).lower()
         argument_blob = self._normalize_cmdline(arguments).lower()
+        trigger_blob = trigger_types.lower()
+        run_level_lower = run_level.lower()
+        onlogon_trigger = "logon" in trigger_blob
+        highest_privileges = "highest" in run_level_lower
 
         if self._looks_like_godot_asar_task(executable, arguments, working_directory):
             severity = "CRITICAL" if self._file_metadata_matches(executable, PYTHON_COMPANY_TOKENS) else "HIGH"
@@ -4903,6 +5451,26 @@ class ScanEngine:
                     f"Scheduled task passes .asar payload arguments to a user-writable executable: {task_label}",
                 )
 
+        if onlogon_trigger and highest_privileges:
+            if self._looks_like_masquerading_userland_executable(executable, arguments):
+                return (
+                    "CRITICAL",
+                    "Malicious Scheduled Task",
+                    f"Scheduled task relaunches a masquerading user-writable payload at logon with highest privileges: {task_label}",
+                )
+            if normalized_executable and self._path_in_user_writable_exec_zone(normalized_executable):
+                base_name = os.path.splitext(executable_name)[0]
+                if (
+                    self._contains_marker(normalized_executable, PROCESS_IOC_MARKERS)
+                    or self._looks_random(base_name)
+                    or self._contains_remote_loader_marker(arguments)
+                ) and not self._is_safe_process_context(executable_name, executable, arguments, allow_metadata=True):
+                    return (
+                        "CRITICAL",
+                        "Malicious Scheduled Task",
+                        f"Scheduled task relaunches a suspicious user-writable payload at logon with highest privileges: {task_label}",
+                    )
+
         if executable_name in SHORTCUT_SCRIPT_HOSTS:
             if self._contains_remote_loader_marker(arguments) or any(
                 token in argument_blob for token in STARTUP_DOWNLOADER_TOKENS
@@ -4940,6 +5508,9 @@ class ScanEngine:
         if self._looks_like_vm_profile_powershell(blob):
             score += 4
             reasons.append("hidden PowerShell hardware/VM profiling")
+        if self._looks_like_logon_persistence_builder(blob):
+            score += 4
+            reasons.append("logon persistence builder / file hiding chain")
         if self._looks_like_temp_compiler_cmdline(blob):
             score += 4
             reasons.append("temp compiler-stage payload build")
@@ -4952,6 +5523,9 @@ class ScanEngine:
         if normalized_target and self._looks_like_suspicious_netsupport_path(normalized_target, allow_metadata=True):
             score += 3
             reasons.append("NetSupport RAT path")
+        if target and self._looks_like_masquerading_userland_executable(target, blob):
+            score += 3
+            reasons.append("masquerading helper/system executable in user-writable path")
 
         if normalized_target and self._path_in_user_writable_exec_zone(normalized_target):
             base = os.path.splitext(os.path.basename(normalized_target))[0]
@@ -5570,6 +6144,25 @@ class ScanEngine:
                     full_path
                 )
 
+        for rel_path in (
+            os.path.join("AppData", "Roaming", "FileZilla", "recentservers.xml"),
+            os.path.join("AppData", "Roaming", "FileZilla", "sitemanager.xml"),
+        ):
+            full_path = os.path.join(profile, rel_path)
+            if os.path.isfile(full_path):
+                self._note_exposure(
+                    "Exposure warning — FileZilla saved server credentials may have been accessible. Rotate downstream credentials from a clean device",
+                    full_path,
+                )
+
+        for steam_root in self._steam_install_roots():
+            if not any(os.path.exists(os.path.join(steam_root, rel_path)) for rel_path in STEAM_SESSION_FILES):
+                continue
+            self._note_exposure(
+                "Exposure warning — Steam client/session data may have been accessed. Change the Steam password, secure the tied email, and deauthorize devices from a clean device",
+                steam_root,
+            )
+
     def _looks_suspicious_module_path(self, module_path):
         mpl = (module_path or "").lower()
         if not mpl.endswith(".dll"):
@@ -5739,6 +6332,8 @@ class ScanEngine:
                     row.get("TargetPath"),
                     row.get("Arguments"),
                     row.get("WorkingDirectory"),
+                    row.get("TriggerTypes"),
+                    row.get("RunLevel"),
                 )
                 if not finding:
                     continue
@@ -7105,6 +7700,28 @@ class ScanEngine:
             )
             return
 
+        if pexe and self._looks_like_masquerading_userland_executable(pexe, cmdline):
+            self._add_process_seed(
+                seeds,
+                pid,
+                "CRITICAL" if pid in connected_pids else "HIGH",
+                "Masquerading Userland Process",
+                f"System/helper-style executable is running from a user-writable path: {pname} (PID {pid})  {pexe}",
+                pexe,
+            )
+            return
+
+        if self._looks_like_logon_persistence_builder(cmdline_lower):
+            self._add_process_seed(
+                seeds,
+                pid,
+                "CRITICAL",
+                "Persistence Builder Process",
+                f"Process is creating or hiding a suspicious logon-persistence chain: {pname} (PID {pid})  {pexe or cmdline}",
+                pexe or cmdline,
+            )
+            return
+
         if self._contains_marker(pexe_lower, PROCESS_IOC_MARKERS) or (
             self._contains_marker(cmdline_lower, PROCESS_IOC_MARKERS)
             and (pname not in {"powershell.exe", "pwsh.exe", "cmd.exe"} or self._has_actionable_script_host_context(pexe, cmdline))
@@ -7329,6 +7946,31 @@ class ScanEngine:
                               f"Live C2 connection to {conn.raddr.ip}:{conn.raddr.port}  process: {pname} (PID {conn.pid})",
                               conn.raddr.ip,
                               lambda p=conn.pid: self._kill_pid(p) if p else None)
+                    continue
+                if not conn.pid or not self._has_external_raddr(conn):
+                    continue
+                try:
+                    proc = psutil.Process(conn.pid)
+                    pname = (proc.name() or "").lower()
+                    pexe = proc.exe() or ""
+                    cmdline = " ".join(proc.cmdline() or [])
+                except Exception:
+                    continue
+                if pname in KNOWN_BROWSER_TARGETS | {"discord.exe", "telegram.exe", "steam.exe", "steamwebhelper.exe"}:
+                    continue
+                blob = f"{pname} {pexe} {cmdline}".lower()
+                if conn.raddr.port == 443 and self._path_in_user_writable_exec_zone(pexe) and (
+                    self._has_strong_campaign_context(blob)
+                    or self._contains_marker(blob, {"discord.com/api/webhooks", "discordapp.com/api/webhooks", "infura.io", "eth.llamarpc.com", "cloudflare-eth.com", "telegra.ph/", "steamcommunity.com/id/"})
+                    or self._looks_like_temp_stage_launcher(pexe)
+                ):
+                    self._add(
+                        "HIGH",
+                        "Active C2 Connection",
+                        f"Suspicious external TLS connection from a user-writable process: {pname} (PID {conn.pid}) -> {conn.raddr.ip}:{conn.raddr.port}",
+                        pexe or conn.raddr.ip,
+                        lambda p=conn.pid: self._kill_pid(p),
+                    )
         except Exception as exc:
             self.log(f"Network scan error: {exc}", "WARN")
 
@@ -7346,6 +7988,8 @@ class ScanEngine:
                     row.get("Execute"),
                     row.get("Arguments"),
                     row.get("WorkingDirectory"),
+                    row.get("TriggerTypes"),
+                    row.get("RunLevel"),
                 )
                 if not finding:
                     continue
@@ -7399,6 +8043,28 @@ class ScanEngine:
                     winreg.CloseKey(key)
                 except (FileNotFoundError, PermissionError):
                     pass
+
+        try:
+            beep_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Beep")
+            value_count = winreg.QueryInfoKey(beep_key)[1]
+            for index in range(value_count):
+                try:
+                    name, value, _ = winreg.EnumValue(beep_key, index)
+                except OSError:
+                    break
+                full_key = r"HKCU\Software\Beep"
+                preview = sanitize_for_display(str(value))[:140]
+                label = name or "(Default)"
+                self._add(
+                    "HIGH",
+                    "Registry Persistence",
+                    f"Powercat-style fingerprint artifact present: {full_key} [{label}] = {preview}",
+                    full_key,
+                    lambda sk=r"Software\Beep", n=name: self._delete_reg_val(winreg.HKEY_CURRENT_USER, sk, n),
+                )
+            winreg.CloseKey(beep_key)
+        except (FileNotFoundError, PermissionError):
+            pass
 
         ifeo_roots = [
             (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options", "HKLM"),
@@ -7472,6 +8138,52 @@ class ScanEngine:
                 winreg.CloseKey(key)
             except Exception:
                 pass
+
+    def scan_command_history_review(self):
+        self.log("COMMAND HISTORY REVIEW", "SECTION")
+        if not WINREG_OK:
+            self.log("winreg unavailable - Run dialog history review skipped", "WARN")
+        else:
+            for row in self._collect_run_mru_rows():
+                if self._stop:
+                    return
+                value = str(row.get("Value") or "")
+                if not self._looks_like_clickfix_command(value):
+                    continue
+                severity = "HIGH" if (
+                    self._has_strong_campaign_context(value)
+                    or self._looks_like_vm_profile_powershell(value)
+                    or self._looks_like_temp_compiler_cmdline(value)
+                ) else "MEDIUM"
+                location = f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]"
+                preview = sanitize_for_display(value)[:180]
+                self._add(
+                    severity,
+                    "Command History Review",
+                    f"Run dialog history contains a suspicious loader command: {preview}",
+                    location,
+                    lambda h=row.get("Hive"), sk=row.get("Subkey"), n=row.get("ValueName"): self._delete_reg_val(h, sk, n),
+                )
+
+        for row in self._collect_shell_history_rows():
+            if self._stop:
+                return
+            value = str(row.get("Value") or "")
+            if not self._looks_like_clickfix_command(value):
+                continue
+            severity = "HIGH" if (
+                self._has_strong_campaign_context(value)
+                or self._looks_like_vm_profile_powershell(value)
+                or self._looks_like_temp_compiler_cmdline(value)
+            ) else "MEDIUM"
+            location = f"{row.get('Path')}:{row.get('LineNumber')}"
+            preview = sanitize_for_display(value)[:180]
+            self._add(
+                severity,
+                "Command History Review",
+                f"PowerShell history contains a suspicious loader command: {preview}",
+                location,
+            )
 
     def scan_policy_persistence(self):
         self.log("POLICY PERSISTENCE REVIEW", "SECTION")
@@ -7933,6 +8645,12 @@ class ScanEngine:
     def _delete_task(self, task_name):
         backup = self._capture_task_xml(task_name)
         try:
+            disable_result = subprocess.run(
+                [self._schtasks_path(), "/change", "/tn", task_name, "/disable"],
+                capture_output=True, text=True, creationflags=0x08000000
+            )
+            if disable_result.returncode == 0:
+                self.log(f"Disabled scheduled task before deletion: {task_name}", "SUCCESS")
             r = subprocess.run(
                 [self._schtasks_path(), "/delete", "/tn", task_name, "/f"],
                 capture_output=True, text=True, creationflags=0x08000000
@@ -8058,6 +8776,23 @@ class ScanEngine:
             self.log("Re-enabled Microsoft Defender protection defaults", "SUCCESS")
             return True
         self.log(self._format_removal_failure("re-enable Microsoft Defender protection defaults", "Defender", self._result_failure_reason(result, "Defender protection repair failed")), "WARN")
+        return False
+
+    def _repair_security_center_service(self):
+        result = self._run_powershell(
+            "try { "
+            "Set-Service -Name wscsvc -StartupType Automatic -ErrorAction Stop; "
+            "Start-Service -Name wscsvc -ErrorAction SilentlyContinue; "
+            "Set-Service -Name SecurityHealthService -StartupType Automatic -ErrorAction SilentlyContinue; "
+            "Start-Service -Name SecurityHealthService -ErrorAction SilentlyContinue "
+            "} catch { exit 1 }",
+            timeout=25,
+        )
+        if result is not None and result.returncode == 0:
+            self.removed += 1
+            self.log("Repaired Windows Security Center service defaults", "SUCCESS")
+            return True
+        self.log(self._format_removal_failure("repair Windows Security Center service defaults", "wscsvc", self._result_failure_reason(result, "service repair failed")), "WARN")
         return False
 
     def _remediate_disabled_startup_entry(self, reg_values, shortcut_path=""):
@@ -8265,6 +9000,7 @@ class ScanEngine:
         self._shortcut_scan_rows = None
         self._scheduled_task_rows = None
         self._autorun_rows = None
+        self._run_mru_rows = None
         self._policy_rows = None
         self._active_setup_rows = None
         self._disabled_startup_rows = None
@@ -8272,6 +9008,7 @@ class ScanEngine:
         self._shell_rows = None
         self._logon_rows = None
         self._explorer_hijack_rows = None
+        self._shell_history_rows = None
         self.scan_network()
         self.scan_processes()
         self.scan_process_modules()
@@ -8283,6 +9020,7 @@ class ScanEngine:
         self.scan_wmi_persistence()
         self.scan_scheduled_tasks()
         self.scan_registry()
+        self.scan_command_history_review()
         self.scan_runonceex_persistence()
         self.scan_policy_persistence()
         self.scan_active_setup_persistence()
@@ -8324,7 +9062,10 @@ class ScanEngine:
                 f"Browser compare   : {browser_compare['cleared_count']} suspicious browser item(s) cleared, {browser_compare['reappeared_count']} reappeared",
                 "INFO" if not browser_compare["reappeared_count"] else "WARN",
             )
-        self.log(f"Account risk      : {exposure['score']}%  -  {exposure['label']}", "CRITICAL" if exposure["score"] >= 70 else "WARN")
+        self.log(
+            f"Account risk      : {self._format_account_risk_summary(exposure)}",
+            self._account_risk_log_level(exposure),
+        )
         self.log(f"Account note      : {exposure['detail']}", "INFO")
 
     def _log_manual_review_summary(self):
@@ -8403,6 +9144,9 @@ class ScanEngine:
         for category in ordered_categories:
             self._run_remediation_bucket({category})
 
+        self._repair_defender_protection_defaults()
+        self._repair_security_center_service()
+
         dns_flushed, dns_detail = self._flush_dns_cache()
         if dns_flushed:
             self.log("Flushed Windows DNS cache after protection repair.", "SUCCESS")
@@ -8460,9 +9204,13 @@ class ScanEngine:
             f"Assessment      : {summary['detail']}",
             f"Local confidence: {cleanup['score']}% - {cleanup['label']}",
             f"Confidence note : {cleanup['detail']}",
-            f"Account risk    : {exposure['score']}% - {exposure['label']}",
+            f"Account risk    : {self._format_account_risk_summary(exposure)}",
             f"Account note    : {exposure['detail']}",
         ]
+
+        if self.post_cleanup_scan:
+            lines.append(f"Post-clean mode  : {'yes' if self.post_cleanup_scan else 'no'}")
+            lines.append(f"Reboot observed  : {'yes' if self.rebooted_after_cleanup else 'no'}")
 
         if persistence_compare:
             lines += [
@@ -8480,6 +9228,9 @@ class ScanEngine:
                 f"Recovery items  : {recovery['reversible_count']} reversible change(s), "
                 f"{recovery['note_count']} non-reversible note(s)"
             )
+            created_at = str(recovery.get("created_at") or "")
+            if created_at:
+                lines.append(f"Cleanup snapshot : {created_at}")
         if restore_point:
             status = str(restore_point.get("status") or "")
             if status == "created":
@@ -8543,12 +9294,12 @@ class ScanEngine:
             "=" * 64,
             "POST-INFECTION CHECKLIST (do from a CLEAN device)",
             "=" * 64,
-            " 1. Change ALL saved browser passwords",
-            " 2. Revoke all active sessions (Google, banking, Discord, Steam)",
+            " 1. Change the tied email password first, then every password saved in the browser or desktop apps",
+            " 2. Revoke all active sessions and deauthorize trusted devices (Google, banking, Discord, Steam)",
             " 3. Move crypto assets to a fresh wallet / new seed phrase",
             " 4. Review Google devices and sign out anything unfamiliar",
             " 5. Turn off Chrome sync and clear synced data before turning sync back on",
-            " 6. Review Discord Authorized Apps and submit a hacked-account ticket if needed",
+            " 6. Review Discord Authorized Apps, Steam device trust, and submit hacked-account tickets if needed",
             " 7. Run Microsoft Defender Full Scan, then Microsoft Defender Offline",
             " 8. Re-enable MFA on critical accounts",
             " 9. Run RenKill again after reboot to confirm clean",
@@ -8598,8 +9349,8 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"RenKill  v{VERSION}")
-        self.geometry("940x660")
-        self.minsize(740, 480)
+        self.geometry("940x700")
+        self.minsize(760, 540)
         self.configure(bg=BG)
         self.resizable(True, True)
 
@@ -8607,7 +9358,7 @@ class App(tk.Tk):
         self._thread = None
         self._paranoid_var = tk.BooleanVar(value=False)
         self._action_hint_var = tk.StringVar(
-            value="Scan first to map the infection. ACCOUNT LOCKDOWN is ready any time for a one-click local cookie/session wipe on this PC."
+            value="Scan first to map the infection. ACCOUNT LOCKDOWN is ready any time for a one-click local browser, Discord, Telegram, and Steam session wipe on this PC."
         )
         self._repair_defaults_available = False
         self._revert_available = False
@@ -8618,6 +9369,7 @@ class App(tk.Tk):
         self._startup_update_prompted = set()
 
         self._build()
+        self._fit_window_to_content()
         self.bind("<Configure>", self._refresh_status_layout)
         self.after(0, self._refresh_status_layout)
         self._check_admin()
@@ -8630,6 +9382,20 @@ class App(tk.Tk):
                 f"Recovery snapshot available: {summary['reversible_count']} reversible change(s) ready to restore.",
                 "INFO",
             )
+
+    def _fit_window_to_content(self):
+        self.update_idletasks()
+
+        requested_width = self.winfo_reqwidth()
+        requested_height = self.winfo_reqheight()
+
+        min_width = max(760, requested_width)
+        min_height = max(540, requested_height)
+        self.minsize(min_width, min_height)
+
+        current_width = max(self.winfo_width(), 940, min_width)
+        current_height = max(self.winfo_height(), 700, min_height)
+        self.geometry(f"{current_width}x{current_height}")
 
     def _build(self):
         # Title bar
@@ -9305,9 +10071,12 @@ class App(tk.Tk):
     def _iter_session_reset_paths(self):
         profile = os.environ.get("USERPROFILE", "")
         for app in SESSION_RESET_APPS:
+            kind = app["kind"]
+            if kind == "steam":
+                yield from self._iter_steam_session_paths()
+                continue
             for rel_root in app["roots"]:
                 root = os.path.join(profile, rel_root)
-                kind = app["kind"]
                 if kind == "flat":
                     if not os.path.isdir(root):
                         continue
@@ -9331,6 +10100,86 @@ class App(tk.Tk):
                                 yield app["label"], os.path.join(profile_dir, sub)
                     except Exception:
                         continue
+
+    def _steam_install_roots(self):
+        roots = set()
+
+        def add_root(path_text):
+            normalized = self._normalized_path(path_text)
+            if normalized and os.path.isdir(normalized):
+                roots.add(normalized)
+
+        add_root(os.path.join(os.environ.get("ProgramFiles(x86)", ""), "Steam"))
+        add_root(os.path.join(os.environ.get("ProgramFiles", ""), "Steam"))
+
+        if WINREG_OK:
+            registry_locations = (
+                (winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Valve\Steam"),
+            )
+            for hive, subkey in registry_locations:
+                try:
+                    key = winreg.OpenKey(hive, subkey)
+                except (FileNotFoundError, PermissionError):
+                    continue
+                try:
+                    for value_name in ("SteamPath", "InstallPath", "SteamExe"):
+                        try:
+                            value = str(winreg.QueryValueEx(key, value_name)[0] or "").strip()
+                        except OSError:
+                            continue
+                        if not value:
+                            continue
+                        if value_name.lower().endswith("exe"):
+                            value = os.path.dirname(value)
+                        add_root(value)
+                finally:
+                    try:
+                        winreg.CloseKey(key)
+                    except Exception:
+                        pass
+
+        return sorted(roots)
+
+    def _iter_steam_session_paths(self):
+        seen = set()
+        for root in self._steam_install_roots():
+            for rel_path in STEAM_SESSION_FILES:
+                target = os.path.join(root, rel_path)
+                if target not in seen:
+                    seen.add(target)
+                    yield "Steam", target
+            for rel_path in STEAM_SESSION_DIRS:
+                target = os.path.join(root, rel_path)
+                if target not in seen:
+                    seen.add(target)
+                    yield "Steam", target
+            try:
+                for entry in os.listdir(root):
+                    if entry.lower().startswith("ssfn"):
+                        target = os.path.join(root, entry)
+                        if target not in seen:
+                            seen.add(target)
+                            yield "Steam", target
+            except Exception:
+                pass
+
+            userdata_root = os.path.join(root, "userdata")
+            if not os.path.isdir(userdata_root):
+                continue
+            try:
+                for account_id in os.listdir(userdata_root):
+                    config_root = os.path.join(userdata_root, account_id)
+                    if not os.path.isdir(config_root):
+                        continue
+                    for rel_path in STEAM_USERDATA_SESSION_FILES:
+                        target = os.path.join(config_root, rel_path)
+                        if target not in seen:
+                            seen.add(target)
+                            yield "Steam", target
+            except Exception:
+                continue
 
     @staticmethod
     def _flush_dns_cache():
@@ -9452,6 +10301,23 @@ class App(tk.Tk):
         startup_hits = self._threat_count(startup_categories)
         repair_hits = self._actionable_threat_count(PROTECTION_REPAIR_CATEGORIES)
         breakdown = self._scanner.finding_breakdown() if self._scanner else {"confirmed": 0, "review": 0, "other": 0}
+        persistence_compare = None
+        browser_compare = None
+        if self._scanner and self._scanner.post_cleanup_scan:
+            persistence_compare = self._scanner.post_cleanup_persistence_summary or self._scanner.compare_post_cleanup_persistence()
+            browser_compare = self._scanner.post_cleanup_browser_summary or self._scanner.compare_post_cleanup_browser_state()
+        if persistence_compare and persistence_compare["reappeared_count"]:
+            self._set_action_hint(
+                f"Persistence rebuilt after cleanup: {persistence_compare['reappeared_count']} startup or relaunch target(s) came back. Treat the infection as still active until that creator is removed.",
+                RED,
+            )
+            return
+        if browser_compare and browser_compare["reappeared_count"]:
+            self._set_action_hint(
+                f"Browser aftermath still needs work: {browser_compare['reappeared_count']} suspicious browser-state item(s) came back after cleanup. Keep account recovery and session revocation moving from a clean device.",
+                AMBER,
+            )
+            return
         if startup_hits:
             self._set_action_hint(
                 f"Startup watch: {startup_hits} suspicious startup item(s) were found. Use KILL & CLEAN, then reboot and rescan so hidden startup leftovers cannot relaunch the infection.",
@@ -9477,7 +10343,7 @@ class App(tk.Tk):
                 )
             elif self._session_reset_available or exposure["score"] >= 50:
                 self._set_action_hint(
-                    "Threats were found. Use KILL & CLEAN for confirmed traces, then use ACCOUNT LOCKDOWN to wipe local browser/Discord sessions on this PC.",
+                    "Threats were found. Use KILL & CLEAN for confirmed traces, then use ACCOUNT LOCKDOWN to wipe local browser, Discord, Telegram, and Steam sessions on this PC.",
                     AMBER,
                 )
             else:
@@ -9487,8 +10353,9 @@ class App(tk.Tk):
                 )
             return
         if exposure["score"] >= 50:
+            account_risk_text = self._scanner._format_account_risk_value(exposure, compact=True)
             self._set_action_hint(
-                f"This scan looks locally clean, but account risk is still {exposure['score']}%. ACCOUNT LOCKDOWN can wipe local sessions here; password/session recovery still belongs on a clean device.",
+                f"This scan looks locally clean, but account risk is still {account_risk_text}. ACCOUNT LOCKDOWN can wipe local sessions here; password/session recovery still belongs on a clean device.",
                 AMBER,
             )
             return
@@ -9499,7 +10366,7 @@ class App(tk.Tk):
             )
             return
         self._set_action_hint(
-            "Scan came back clean. ACCOUNT LOCKDOWN still stays ready if you want a one-click local browser/Discord sign-out on this PC.",
+            "Scan came back clean. ACCOUNT LOCKDOWN still stays ready if you want a one-click local browser, Discord, Telegram, and Steam sign-out on this PC.",
             FG3,
         )
 
@@ -9531,7 +10398,7 @@ class App(tk.Tk):
         self._log(f"winreg            : {'OK' if WINREG_OK else 'MISSING'}", "INFO" if WINREG_OK else "WARN")
         self._log(f"Admin             : {'YES — full scan' if is_admin() else 'NO — limited scan'}", "INFO" if is_admin() else "WARN")
         self._log("Scan mode         : Standard", "INFO")
-        self._log("Containment tool   : ACCOUNT LOCKDOWN is ready for a one-click local cookie/session wipe.", "WARN")
+        self._log("Containment tool   : ACCOUNT LOCKDOWN is ready for a one-click local browser, Discord, Telegram, and Steam session wipe.", "WARN")
         self._log("Press SCAN SYSTEM to begin.", "DEFAULT")
 
     def _load_recovery_summary(self):
@@ -9647,10 +10514,11 @@ class App(tk.Tk):
                     "WMI Persistence",
                 })
                 if n > 0:
+                    account_risk_text = self._scanner._format_account_risk_value(exposure, compact=True)
                     self._btn_kill.configure(state="normal")
-                    self._count_var.set(f"{n} threats  |  local {cleanup['score']}%  |  account risk {exposure['score']}%")
+                    self._count_var.set(f"{n} threats  |  local {cleanup['score']}%  |  account {account_risk_text}")
                     self._set_status(
-                        f"Scan complete. {summary['label']}. Local {cleanup['score']}%. Account risk {exposure['score']}%. Use KILL & CLEAN to remediate.",
+                        f"Scan complete. {summary['label']}. Local {cleanup['score']}%. Account risk {account_risk_text}. Use KILL & CLEAN to remediate.",
                         summary["color"]
                     )
                     if startup_hits:
@@ -9669,27 +10537,40 @@ class App(tk.Tk):
                             "WARN",
                         )
                     if self._session_reset_available:
-                        self._log("ACCOUNT LOCKDOWN is available for a one-click local browser/Discord session wipe.", "WARN")
+                        self._log("ACCOUNT LOCKDOWN is available for a one-click local browser, Discord, Telegram, and Steam session wipe.", "WARN")
                     if self._repair_defaults_available:
                         self._log("REPAIR DEFAULTS is available for Defender, proxy, and actionable firewall drift.", "INFO")
                     else:
                         self._log("REPAIR DEFAULTS found nothing actionable in this scan. It stays available for scans that surface real Defender/proxy/firewall drift.", "INFO")
                 elif self._scanner.post_cleanup_scan and not self._scanner.rebooted_after_cleanup:
-                    self._count_var.set(f"Clean  |  local {cleanup['score']}%  |  account risk {exposure['score']}%")
+                    account_risk_text = self._scanner._format_account_risk_value(exposure, compact=True)
+                    self._count_var.set(f"Clean  |  local {cleanup['score']}%  |  account {account_risk_text}")
                     self._set_status(
-                        f"No threats detected, but reboot and scan once more. Local {cleanup['score']}%. Account risk {exposure['score']}%.",
+                        f"No threats detected, but reboot and scan once more. Local {cleanup['score']}%. Account risk {account_risk_text}.",
                         AMBER
                     )
                 elif self._scanner.post_cleanup_scan:
-                    self._count_var.set(f"Clean  |  local {cleanup['score']}%  |  account risk {exposure['score']}%")
-                    self._set_status(
-                        f"Post-clean rescan passed. No threats detected. Local {cleanup['score']}%. Account risk {exposure['score']}%.",
-                        GREEN
-                    )
+                    account_risk_text = self._scanner._format_account_risk_value(exposure, compact=True)
+                    self._count_var.set(f"Clean  |  local {cleanup['score']}%  |  account {account_risk_text}")
+                    if persistence_compare and persistence_compare["reappeared_count"]:
+                        self._set_status(
+                            f"Post-clean rescan found persistence rebuilding after cleanup. Local {cleanup['score']}%. Account risk {account_risk_text}.",
+                            RED,
+                        )
+                    elif browser_compare and browser_compare["reappeared_count"]:
+                        self._set_status(
+                            f"Post-clean rescan found browser/session residue returning after cleanup. Local {cleanup['score']}%. Account risk {account_risk_text}.",
+                            AMBER,
+                        )
+                    else:
+                        self._set_status(
+                            f"Post-clean rescan passed. No threats detected. Local {cleanup['score']}%. Account risk {account_risk_text}.",
+                            GREEN,
+                        )
                     if persistence_compare:
                         self._log(
                             f"Snapshot compare   : {persistence_compare['cleared_count']} startup target(s) stayed gone, {persistence_compare['reappeared_count']} came back after cleanup.",
-                            "INFO" if not persistence_compare["reappeared_count"] else "WARN",
+                            "INFO" if not persistence_compare["reappeared_count"] else "CRITICAL",
                         )
                     if browser_compare:
                         self._log(
@@ -9697,8 +10578,9 @@ class App(tk.Tk):
                             "INFO" if not browser_compare["reappeared_count"] else "WARN",
                         )
                 else:
-                    self._count_var.set(f"Clean  |  local {cleanup['score']}%  |  account risk {exposure['score']}%")
-                    self._set_status(f"Scan complete. No threats detected. Local {cleanup['score']}%. Account risk {exposure['score']}%.", GREEN)
+                    account_risk_text = self._scanner._format_account_risk_value(exposure, compact=True)
+                    self._count_var.set(f"Clean  |  local {cleanup['score']}%  |  account {account_risk_text}")
+                    self._set_status(f"Scan complete. No threats detected. Local {cleanup['score']}%. Account risk {account_risk_text}.", GREEN)
                 self._update_post_scan_hint(n, cleanup, exposure)
             self.after(0, _done)
 
@@ -9765,13 +10647,14 @@ class App(tk.Tk):
                 if self._scanner.exposure_notes:
                     exposure_blurb = (
                         "\nExposure warning:\n"
-                        "  - Browser and/or Discord data may have been exposed\n"
+                        "  - Browser, Discord, Telegram, Steam, wallet, VPN, or FTP session data may have been exposed\n"
                         "  - Revoke sessions from a clean device immediately\n"
                     )
                 recovery_blurb = self._recovery_snapshot_blurb(recovery)
                 exposure = self._scanner.assess_account_exposure()
+                account_risk_text = self._scanner._format_account_risk_summary(exposure)
                 self._set_status(
-                    f"Cleanup finished - {k} process(es) killed, {r} item(s) removed. Reboot, rescan, and treat account risk as {exposure['score']}%.",
+                    f"Cleanup finished - {k} process(es) killed, {r} item(s) removed. Reboot, rescan, and treat account risk as {account_risk_text}.",
                     GREEN
                 )
                 messagebox.showinfo(
@@ -9781,13 +10664,15 @@ class App(tk.Tk):
                     f"Quarantined items    : {quarantine['items']} total\n"
                     f"Inert payload copies : {quarantine['neutralized']}\n\n"
                     f"Local cleanup state  : reboot and rescan needed\n"
-                    f"Account risk         : {exposure['score']}% - {exposure['label']}\n\n"
+                    f"Account risk         : {account_risk_text}\n\n"
                     f"NEXT STEP ON THIS PC:\n"
                     f"  - Reboot Windows\n"
                     f"  - Run SCAN SYSTEM again for post-clean confidence\n\n"
                     f"FROM A CLEAN DEVICE:\n"
-                    f"  - Change ALL browser-saved passwords\n"
-                    f"  - Revoke all active sessions\n"
+                    f"  - Change the tied email password first, then browser/app passwords\n"
+                    f"  - Review mailbox forwarding rules, recovery methods, and app passwords\n"
+                    f"  - Revoke all active sessions and deauthorize trusted devices\n"
+                    f"  - Review Steam login activity, trade actions, and suspicious chats\n"
                     f"  - Move crypto to fresh wallet addresses\n\n"
                     f"{recovery_blurb}"
                     f"{exposure_blurb}"
@@ -9943,9 +10828,10 @@ class App(tk.Tk):
     def _do_reset_sessions(self):
         if not messagebox.askyesno(
             "Confirm Account Lockdown",
-            "RenKill will close Discord and supported browsers, then wipe local cookies, session tokens, and web-session storage.\n\n"
+            "RenKill will close Steam, Discord, Telegram Desktop, and supported browsers, then wipe local cookies, session tokens, saved web-session storage, and browser credential databases on this PC.\n\n"
             "Use this when you want to cut off any currently reusable local sessions on the infected PC.\n"
             "This will sign the user out locally and may remove app/site session state.\n"
+            "If browser sync is enabled, turn sync off and clear synced data before signing back in so suspicious state does not re-sync.\n"
             "This does NOT replace password changes or remote session revocation from a clean device.\n\n"
             "Continue?"
         ):
@@ -9992,11 +10878,14 @@ class App(tk.Tk):
                     f"Storage items wiped: {removed}\n"
                     f"DNS cache flushed: {'yes' if dns_flushed else 'no'}\n"
                     f"Apps affected    : {app_list}\n\n"
-                    f"This clears LOCAL cookies, sessions, and token-style storage on this PC.\n"
+                    f"This clears LOCAL browser, Discord, Telegram, Steam, and related session-style storage on this PC.\n"
                     f"You still need to do the following from a CLEAN device:\n"
-                    f"  • Change passwords\n"
-                    f"  • Revoke remote sessions\n"
+                    f"  • Change the tied email password first, then app/site passwords\n"
+                    f"  • Review mailbox forwarding rules, recovery methods, and app passwords\n"
+                    f"  • Revoke remote sessions and deauthorize trusted devices\n"
                     f"  • Review Discord Authorized Apps\n"
+                    f"  • Review Steam login activity, device trust, and trade/market actions\n"
+                    f"  • Turn off browser sync and clear synced data before re-enabling it\n"
                     f"  • Move crypto to fresh wallet addresses\n"
                 )
                 self._btn_sessions.configure(state="normal")
