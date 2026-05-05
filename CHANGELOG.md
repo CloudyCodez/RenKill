@@ -7,7 +7,10 @@ This release folds in the latest field update around fake playtests, malicious S
 - Added reviewed-safe path handling:
   - new `TRUST KNOWN PATH` action for software the user personally recognizes as safe
   - trusted paths now suppress review-only firewall and security-event noise tied to that exact file/folder tree without muting strong campaign hits
-  - path-backed review findings in the live log can now show a clickable inline `[trust]` action so users can trust an item straight from the scan output
+  - path-backed review findings in the live log can now show clickable inline `[TRUST]` and `[OPEN]` actions so users can trust an item or jump straight to it in Explorer from the scan output
+  - fixed the inline action lane so it only appears on real filesystem-backed findings, not generic Defender/web event text
+- Fixed a Steam/session cleanup regression:
+  - Steam install-root discovery is now shared by both scanner and cleanup flows, which fixes the `ScanEngine` `_steam_install_roots` crash during exposure review
 - Tightened current lure and extension coverage:
   - added known malicious Steam-game title markers from recent public victim reporting and FBI follow-up
   - stronger HTML / URL lure detection for fake verification, copy-paste, and `Win+R` style ClickFix prompts

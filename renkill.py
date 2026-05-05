@@ -1548,6 +1548,97 @@ def save_user_trusted_paths(paths):
         return False
 
 
+def _normalize_local_path(path_text):
+    if not path_text:
+        return ""
+    try:
+        return os.path.normcase(os.path.normpath(os.path.abspath(os.path.expandvars(str(path_text)))))
+    except Exception:
+        return ""
+
+
+def _steam_install_roots():
+    roots = set()
+
+    def add_root(path_text):
+        normalized = _normalize_local_path(path_text)
+        if normalized and os.path.isdir(normalized):
+            roots.add(normalized)
+
+    add_root(os.path.join(os.environ.get("ProgramFiles(x86)", ""), "Steam"))
+    add_root(os.path.join(os.environ.get("ProgramFiles", ""), "Steam"))
+
+    if WINREG_OK:
+        registry_locations = (
+            (winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Valve\Steam"),
+        )
+        for hive, subkey in registry_locations:
+            try:
+                key = winreg.OpenKey(hive, subkey)
+            except (FileNotFoundError, PermissionError):
+                continue
+            try:
+                for value_name in ("SteamPath", "InstallPath", "SteamExe"):
+                    try:
+                        value = str(winreg.QueryValueEx(key, value_name)[0] or "").strip()
+                    except OSError:
+                        continue
+                    if not value:
+                        continue
+                    if value_name.lower().endswith("exe"):
+                        value = os.path.dirname(value)
+                    add_root(value)
+            finally:
+                try:
+                    winreg.CloseKey(key)
+                except Exception:
+                    pass
+
+    return sorted(roots)
+
+
+def _iter_steam_session_paths():
+    seen = set()
+    for root in _steam_install_roots():
+        for rel_path in STEAM_SESSION_FILES:
+            target = os.path.join(root, rel_path)
+            if target not in seen:
+                seen.add(target)
+                yield "Steam", target
+        for rel_path in STEAM_SESSION_DIRS:
+            target = os.path.join(root, rel_path)
+            if target not in seen:
+                seen.add(target)
+                yield "Steam", target
+        try:
+            for entry in os.listdir(root):
+                if entry.lower().startswith("ssfn"):
+                    target = os.path.join(root, entry)
+                    if target not in seen:
+                        seen.add(target)
+                        yield "Steam", target
+        except Exception:
+            pass
+
+        userdata_root = os.path.join(root, "userdata")
+        if not os.path.isdir(userdata_root):
+            continue
+        try:
+            for account_id in os.listdir(userdata_root):
+                config_root = os.path.join(userdata_root, account_id)
+                if not os.path.isdir(config_root):
+                    continue
+                for rel_path in STEAM_USERDATA_SESSION_FILES:
+                    target = os.path.join(config_root, rel_path)
+                    if target not in seen:
+                        seen.add(target)
+                        yield "Steam", target
+        except Exception:
+            continue
+
+
 # Admin elevation
 
 def is_admin():
@@ -3019,7 +3110,7 @@ class ScanEngine:
         touched_discord = "discord" in notes_blob
         touched_telegram = "telegram" in notes_blob
         touched_browser = any(token in notes_blob for token in ("chrome", "edge", "firefox", "brave", "opera"))
-        touched_steam = "steam" in notes_blob or bool(self._steam_install_roots())
+        touched_steam = "steam" in notes_blob or bool(_steam_install_roots())
         touched_wallet = any(token in notes_blob for token in ("wallet", "metamask", "crypto", "exodus", "atomic wallet", "ledger live"))
         touched_vpn = any(token in notes_blob for token in ("nordvpn", "openvpn"))
         touched_filezilla = "filezilla" in notes_blob
@@ -6331,7 +6422,7 @@ class ScanEngine:
                     full_path,
                 )
 
-        for steam_root in self._steam_install_roots():
+        for steam_root in _steam_install_roots():
             if not any(os.path.exists(os.path.join(steam_root, rel_path)) for rel_path in STEAM_SESSION_FILES):
                 continue
             self._note_exposure(
@@ -9528,6 +9619,9 @@ AMBER   = "#EF9F27"
 YELLOW  = "#E6C458"
 GREEN   = "#5EC269"
 BLUE    = "#378ADD"
+CYAN    = "#6FE8FF"
+PINK    = "#FF73D4"
+LIME    = "#95F46F"
 MONO    = "Consolas"
 
 SEV_COLORS = {
@@ -9540,6 +9634,9 @@ SEV_COLORS = {
     "SECTION":  BLUE,
     "DEFAULT":  FG,
 }
+
+LOG_ACTION_TRUST_COLORS = (CYAN, LIME, YELLOW, PINK)
+LOG_ACTION_OPEN_COLORS = (AMBER, CYAN, PINK, GREEN)
 
 
 class App(tk.Tk):
@@ -9565,12 +9662,14 @@ class App(tk.Tk):
         self._update_check_in_progress = False
         self._startup_update_prompted = set()
         self._user_trusted_paths = load_user_trusted_paths()
-        self._log_trust_tag_counter = 0
+        self._log_action_tag_counter = 0
+        self._log_action_color_phase = 0
 
         self._build()
         self._fit_window_to_content()
         self.bind("<Configure>", self._refresh_status_layout)
         self.after(0, self._refresh_status_layout)
+        self.after(0, self._animate_log_action_tags)
         self._check_admin()
         self._startup_msg()
         self._report_update_state()
@@ -9595,6 +9694,19 @@ class App(tk.Tk):
         current_width = max(self.winfo_width(), 940, min_width)
         current_height = max(self.winfo_height(), 700, min_height)
         self.geometry(f"{current_width}x{current_height}")
+
+    def _animate_log_action_tags(self):
+        if not hasattr(self, "_log_txt") or not self.winfo_exists():
+            return
+        trust_color = LOG_ACTION_TRUST_COLORS[self._log_action_color_phase % len(LOG_ACTION_TRUST_COLORS)]
+        open_color = LOG_ACTION_OPEN_COLORS[self._log_action_color_phase % len(LOG_ACTION_OPEN_COLORS)]
+        self._log_txt.tag_configure("TRUST_LINK", foreground=trust_color)
+        self._log_txt.tag_configure("OPEN_LINK", foreground=open_color)
+        self._log_action_color_phase = (self._log_action_color_phase + 1) % max(
+            len(LOG_ACTION_TRUST_COLORS),
+            len(LOG_ACTION_OPEN_COLORS),
+        )
+        self.after(420, self._animate_log_action_tags)
 
     def _build(self):
         # Title bar
@@ -9714,7 +9826,18 @@ class App(tk.Tk):
                 tag, foreground=color,
                 font=(MONO, 10, "bold") if bold else (MONO, 10)
             )
-        self._log_txt.tag_configure("TRUST_LINK", foreground=BLUE, underline=True)
+        self._log_txt.tag_configure(
+            "TRUST_LINK",
+            foreground=CYAN,
+            background="#101823",
+            font=(MONO, 9, "bold"),
+        )
+        self._log_txt.tag_configure(
+            "OPEN_LINK",
+            foreground=AMBER,
+            background="#1d140a",
+            font=(MONO, 9, "bold"),
+        )
         self._log_txt.configure(state="disabled")
 
         # Footer
@@ -10274,7 +10397,7 @@ class App(tk.Tk):
         for app in SESSION_RESET_APPS:
             kind = app["kind"]
             if kind == "steam":
-                yield from self._iter_steam_session_paths()
+                yield from _iter_steam_session_paths()
                 continue
             for rel_root in app["roots"]:
                 root = os.path.join(profile, rel_root)
@@ -10302,86 +10425,6 @@ class App(tk.Tk):
                     except Exception:
                         continue
 
-    def _steam_install_roots(self):
-        roots = set()
-
-        def add_root(path_text):
-            normalized = self._normalized_path(path_text)
-            if normalized and os.path.isdir(normalized):
-                roots.add(normalized)
-
-        add_root(os.path.join(os.environ.get("ProgramFiles(x86)", ""), "Steam"))
-        add_root(os.path.join(os.environ.get("ProgramFiles", ""), "Steam"))
-
-        if WINREG_OK:
-            registry_locations = (
-                (winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam"),
-                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam"),
-                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Valve\Steam"),
-            )
-            for hive, subkey in registry_locations:
-                try:
-                    key = winreg.OpenKey(hive, subkey)
-                except (FileNotFoundError, PermissionError):
-                    continue
-                try:
-                    for value_name in ("SteamPath", "InstallPath", "SteamExe"):
-                        try:
-                            value = str(winreg.QueryValueEx(key, value_name)[0] or "").strip()
-                        except OSError:
-                            continue
-                        if not value:
-                            continue
-                        if value_name.lower().endswith("exe"):
-                            value = os.path.dirname(value)
-                        add_root(value)
-                finally:
-                    try:
-                        winreg.CloseKey(key)
-                    except Exception:
-                        pass
-
-        return sorted(roots)
-
-    def _iter_steam_session_paths(self):
-        seen = set()
-        for root in self._steam_install_roots():
-            for rel_path in STEAM_SESSION_FILES:
-                target = os.path.join(root, rel_path)
-                if target not in seen:
-                    seen.add(target)
-                    yield "Steam", target
-            for rel_path in STEAM_SESSION_DIRS:
-                target = os.path.join(root, rel_path)
-                if target not in seen:
-                    seen.add(target)
-                    yield "Steam", target
-            try:
-                for entry in os.listdir(root):
-                    if entry.lower().startswith("ssfn"):
-                        target = os.path.join(root, entry)
-                        if target not in seen:
-                            seen.add(target)
-                            yield "Steam", target
-            except Exception:
-                pass
-
-            userdata_root = os.path.join(root, "userdata")
-            if not os.path.isdir(userdata_root):
-                continue
-            try:
-                for account_id in os.listdir(userdata_root):
-                    config_root = os.path.join(userdata_root, account_id)
-                    if not os.path.isdir(config_root):
-                        continue
-                    for rel_path in STEAM_USERDATA_SESSION_FILES:
-                        target = os.path.join(config_root, rel_path)
-                        if target not in seen:
-                            seen.add(target)
-                            yield "Steam", target
-            except Exception:
-                continue
-
     @staticmethod
     def _flush_dns_cache():
         try:
@@ -10398,7 +10441,42 @@ class App(tk.Tk):
             return True, ""
         return False, ScanEngine._result_failure_reason(result, "DNS cache flush failed")
 
-    def _log(self, msg, level="DEFAULT", trust_path=None):
+    def _bind_log_action(self, tag_name, callback):
+        self._log_txt.tag_bind(tag_name, "<Button-1>", callback)
+        self._log_txt.tag_bind(
+            tag_name,
+            "<Enter>",
+            lambda _event: self._log_txt.configure(cursor="hand2"),
+        )
+        self._log_txt.tag_bind(
+            tag_name,
+            "<Leave>",
+            lambda _event: self._log_txt.configure(cursor="xterm"),
+        )
+
+    def _append_log_action(self, label, base_tag, callback):
+        self._log_action_tag_counter += 1
+        action_tag = f"log_action_{self._log_action_tag_counter}"
+        self._bind_log_action(action_tag, callback)
+        self._log_txt.insert("end", f"  [ {label} ]", (base_tag, action_tag))
+
+    def _append_log_path_actions(self, raw_path):
+        open_target = self._qualify_log_open_path(raw_path)
+        trust_target = self._qualify_log_trust_path(raw_path)
+        if trust_target:
+            self._append_log_action(
+                "TRUST",
+                "TRUST_LINK",
+                lambda _event, path=trust_target: self._trust_path_from_log(path),
+            )
+        if open_target:
+            self._append_log_action(
+                "OPEN",
+                "OPEN_LINK",
+                lambda _event, path=open_target: self._open_path_from_log(path),
+            )
+
+    def _log(self, msg, level="DEFAULT", item_path=None):
         def _w():
             self._log_txt.configure(state="normal")
             ts = datetime.datetime.now().strftime("%H:%M:%S")
@@ -10408,27 +10486,7 @@ class App(tk.Tk):
                 self._log_txt.insert("end", f"\n[{ts}]  {safe_msg}\n", tag)
             else:
                 self._log_txt.insert("end", f"[{ts}]  {safe_msg}", tag)
-                trust_target = self._qualify_log_trust_path(trust_path)
-                if trust_target:
-                    self._log_trust_tag_counter += 1
-                    trust_tag = f"trust_link_{self._log_trust_tag_counter}"
-                    self._log_txt.tag_configure(trust_tag, foreground=BLUE, underline=True)
-                    self._log_txt.tag_bind(
-                        trust_tag,
-                        "<Button-1>",
-                        lambda _event, path=trust_target: self._trust_path_from_log(path),
-                    )
-                    self._log_txt.tag_bind(
-                        trust_tag,
-                        "<Enter>",
-                        lambda _event: self._log_txt.configure(cursor="hand2"),
-                    )
-                    self._log_txt.tag_bind(
-                        trust_tag,
-                        "<Leave>",
-                        lambda _event: self._log_txt.configure(cursor="xterm"),
-                    )
-                    self._log_txt.insert("end", "  [trust]", ("TRUST_LINK", trust_tag))
+                self._append_log_path_actions(item_path)
                 self._log_txt.insert("end", "\n", tag)
             self._log_txt.see("end")
             self._log_txt.configure(state="disabled")
@@ -11052,7 +11110,8 @@ class App(tk.Tk):
         if self._scanner is not None:
             self._scanner.user_trusted_paths = list(self._user_trusted_paths)
 
-    def _qualify_log_trust_path(self, raw_path):
+    @staticmethod
+    def _qualify_log_action_path(raw_path):
         if not raw_path:
             return ""
         raw_text = str(raw_path).strip()
@@ -11060,6 +11119,18 @@ class App(tk.Tk):
             return ""
         normalized = os.path.normcase(os.path.normpath(os.path.abspath(raw_text)))
         if normalized.startswith(("hkcu\\", "hklm\\", "root\\", "microsoft-windows-")):
+            return ""
+        parent = os.path.dirname(normalized)
+        if not (os.path.exists(normalized) or (parent and os.path.exists(parent))):
+            return ""
+        return normalized
+
+    def _qualify_log_open_path(self, raw_path):
+        return self._qualify_log_action_path(raw_path)
+
+    def _qualify_log_trust_path(self, raw_path):
+        normalized = self._qualify_log_action_path(raw_path)
+        if not normalized:
             return ""
         if normalized in self._user_trusted_paths:
             return ""
@@ -11070,9 +11141,6 @@ class App(tk.Tk):
             or self._scanner._is_trusted_vendor_path(normalized)
             or self._scanner._has_trusted_file_metadata(normalized)
         ):
-            return ""
-        parent = os.path.dirname(normalized)
-        if not (os.path.exists(normalized) or (parent and os.path.exists(parent))):
             return ""
         return normalized
 
@@ -11108,6 +11176,27 @@ class App(tk.Tk):
             )
         else:
             messagebox.showerror("Trust Known Path", sanitize_for_display(detail))
+
+    def _open_path_from_log(self, raw_path):
+        target = self._qualify_log_open_path(raw_path)
+        if not target:
+            messagebox.showerror("Open Item", "RenKill could not resolve a local path for that log item.")
+            return
+        try:
+            if os.path.isdir(target):
+                subprocess.Popen(["explorer.exe", target])
+                return
+            if os.path.exists(target):
+                subprocess.Popen(["explorer.exe", f"/select,{target}"])
+                return
+            parent = os.path.dirname(target)
+            if parent and os.path.isdir(parent):
+                subprocess.Popen(["explorer.exe", parent])
+                return
+        except Exception as exc:
+            messagebox.showerror("Open Item", sanitize_for_display(f"RenKill could not open that location.\n\n{exc}"))
+            return
+        messagebox.showerror("Open Item", "RenKill could not find that item or its parent folder anymore.")
 
     def _do_trust_path(self):
         choice = messagebox.askyesnocancel(
