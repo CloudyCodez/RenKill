@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.6.1 - 2026-05-04
+
+This release folds in the latest field update around fake playtests, malicious Steam titles, compromised extensions, ClickFix-style command lures, and safer user-driven review suppression.
+
+- Added reviewed-safe path handling:
+  - new `TRUST KNOWN PATH` action for software the user personally recognizes as safe
+  - trusted paths now suppress review-only firewall and security-event noise tied to that exact file/folder tree without muting strong campaign hits
+  - path-backed review findings in the live log can now show a clickable inline `[trust]` action so users can trust an item straight from the scan output
+- Tightened current lure and extension coverage:
+  - added known malicious Steam-game title markers from recent public victim reporting and FBI follow-up
+  - stronger HTML / URL lure detection for fake verification, copy-paste, and `Win+R` style ClickFix prompts
+  - extension review now escalates known risky names like `Torrent Scanner` and `QuickLens`
+- Broadened ecosystem awareness around adjacent hijacker chains:
+  - added `Fickle` / `worker.ps1` / `soft-gets.com` / `cclib.dll` / `CVKRUTNP.exe` style markers from Steam game compromise reporting
+  - broader lure-host coverage for Discord CDN attachments, Catbox, GoFile, and similar delivery surfaces seen in game and social-account scams
+- Improved account fallout guidance:
+  - exposure review now includes `1Password`, `Bitwarden`, `KeePass`, `Authy Desktop`, and `WinSCP`
+  - recovery guidance now calls out password-manager and 2FA cleanup when those surfaces are present
+- Expanded review-first software coverage with more PUP / remote-support cleanup context from FRST-style cases:
+  - `Web Companion`
+  - `UltraViewer`
+
 ## v1.6.0 - 2026-05-02
 
 This release is the full brief-driven pass. RenKill now covers much more of the broader account-hijacker / infostealer ecosystem around fake Ren'Py installers, trainers, fake playtests, ClickFix-style lures, and adjacent Discord / Steam / browser session theft fallout.

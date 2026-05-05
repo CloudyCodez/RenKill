@@ -41,7 +41,7 @@ except ImportError:
 
 # IOC definitions
 
-VERSION = "1.6.0"
+VERSION = "1.6.1"
 TOOL_NAME = "RenKill"
 UPDATE_REPO_OWNER = "CloudyCodez"
 UPDATE_REPO_NAME = "RenKill"
@@ -105,8 +105,13 @@ PROCESS_IOC_MARKERS = {
     "doppelgang",
     "doppelganging",
     "cc32290mt.dll",
+    "cclib.dll",
+    "cvkrutnp.exe",
+    "fickle",
     "gayal.asp",
     "hap.eml",
+    "soft-gets.com",
+    "worker.ps1",
     "w8cpbgqi.exe",
     "zt5qwyucfl.txt",
     "dksyvguj.exe",
@@ -336,8 +341,13 @@ EXPOSURE_DIRS = (
     ("Exodus", os.path.join("AppData", "Roaming", "Exodus")),
     ("Atomic Wallet", os.path.join("AppData", "Roaming", "atomic")),
     ("Ledger Live", os.path.join("AppData", "Roaming", "Ledger Live")),
+    ("1Password", os.path.join("AppData", "Local", "1Password")),
+    ("Authy Desktop", os.path.join("AppData", "Roaming", "Authy Desktop")),
+    ("Bitwarden", os.path.join("AppData", "Roaming", "Bitwarden")),
+    ("KeePass", os.path.join("AppData", "Roaming", "KeePass")),
     ("NordVPN", os.path.join("AppData", "Local", "NordVPN")),
     ("OpenVPN Connect", os.path.join("AppData", "Roaming", "OpenVPN Connect")),
+    ("WinSCP", os.path.join("AppData", "Roaming", "WinSCP")),
 )
 
 STEAM_SESSION_FILES = (
@@ -876,15 +886,20 @@ BENIGN_ACTIVE_SETUP_SWITCHES = (
     "--verbose-logging",
 )
 SCRIPT_LURE_REMOTE_MARKERS = (
+    "catbox.moe",
+    "cdn.discordapp.com/attachments/",
+    "discordapp.com/attachments/",
     "http://",
     "https://",
     "discord.gg",
     "dropbox",
+    "gofile.io",
     "go.zovo",
     "mediafire",
     "mega",
     "pastebin",
     "silent-harvester.cc",
+    "soft-gets.com",
     "telegram.me",
     "t.me/",
     "telegra.ph/",
@@ -942,15 +957,34 @@ ACCOUNT_HIJACK_BRAND_TOKENS = (
     "youtu.be",
 )
 ACCOUNT_HIJACK_LURE_TOKENS = (
+    "accidentally reported you",
     "beta access",
+    "claim gift",
     "closed beta",
+    "copy and paste",
     "gift",
     "join the playtest",
+    "paste and press enter",
     "playtest",
     "skin giveaway",
     "steam guard",
+    "steam support",
     "trade offer",
     "try my game",
+    "verify you are human",
+    "vote for my team",
+)
+CLICKFIX_PROMPT_MARKERS = (
+    "copy the command",
+    "copy this command",
+    "ctrl+v",
+    "paste and press enter",
+    "paste this into",
+    "press windows+r",
+    "press win+r",
+    "verify you are human",
+    "win+r",
+    "windows+r",
 )
 STARTUP_SCRIPT_EXTENSIONS = {".bat", ".cmd", ".exe", ".hta", ".js", ".ps1", ".py", ".pyw", ".url", ".vbs"}
 STARTUP_DOWNLOADER_TOKENS = (
@@ -1055,6 +1089,24 @@ FRST_REVIEW_PROGRAM_NAMES = {
     "one browser",
     "urban vpn",
     "urban vpn proxy",
+    "ultraviewer",
+    "web companion",
+}
+HIGH_RISK_EXTENSION_NAMES = {
+    "quicklens",
+    "quicklens - search screen with google lens",
+    "torrent scanner",
+}
+STEAM_MALICIOUS_TITLE_MARKERS = {
+    "blockblasters",
+    "chemia",
+    "dashfps",
+    "dashverse",
+    "lampy",
+    "lunara",
+    "piratefi",
+    "sniper phantom",
+    "tokenova",
 }
 
 BROWSER_POLICY_ROOTS = (
@@ -1358,6 +1410,7 @@ RECOVERY_SESSIONS_DIR = "sessions"
 RECOVERY_LATEST_FILE = "latest_session.txt"
 RESTORE_CONFLICT_SUFFIX = ".renkill_restore"
 RECOVERY_QUARANTINE_DIR = "quarantine"
+USER_TRUST_STATE_FILE = "trusted_paths.json"
 QUARANTINE_NEUTRAL_EXTENSIONS = {
     ".7z",
     ".appx",
@@ -1429,6 +1482,72 @@ def sanitize_for_display(text):
     return out
 
 
+def _renkill_state_root():
+    candidates = [
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), TOOL_NAME),
+        os.path.join(os.getcwd(), TOOL_NAME),
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            os.makedirs(candidate, exist_ok=True)
+            return candidate
+        except Exception:
+            continue
+    return ""
+
+
+def _user_trust_store_path():
+    root = _renkill_state_root()
+    return os.path.join(root, USER_TRUST_STATE_FILE) if root else ""
+
+
+def load_user_trusted_paths():
+    path = _user_trust_store_path()
+    if not path or not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        raw_paths = payload.get("trusted_paths") if isinstance(payload, dict) else payload
+        if not isinstance(raw_paths, list):
+            return []
+        trusted = []
+        for item in raw_paths:
+            if not item:
+                continue
+            normalized = os.path.normcase(os.path.normpath(os.path.abspath(str(item))))
+            if normalized not in trusted:
+                trusted.append(normalized)
+        return trusted
+    except Exception:
+        return []
+
+
+def save_user_trusted_paths(paths):
+    store_path = _user_trust_store_path()
+    if not store_path:
+        return False
+    normalized_paths = []
+    for item in paths or []:
+        if not item:
+            continue
+        normalized = os.path.normcase(os.path.normpath(os.path.abspath(str(item))))
+        if normalized not in normalized_paths:
+            normalized_paths.append(normalized)
+    payload = {
+        "trusted_paths": normalized_paths,
+        "updated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    try:
+        with open(store_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2)
+        return True
+    except Exception:
+        return False
+
+
 # Admin elevation
 
 def is_admin():
@@ -1453,12 +1572,13 @@ def elevate_if_needed():
 class Threat:
     SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "INFO": 3}
 
-    def __init__(self, severity, category, description, path=None, action=None):
+    def __init__(self, severity, category, description, path=None, action=None, trust_path=None):
         self.severity = severity
         self.category = category
         self.description = description
         self.path = path or ""
         self.action = action
+        self.trust_path = trust_path or ""
         self.remediated = False
         self.timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -1469,7 +1589,7 @@ class Threat:
 # Scanner engine
 
 class ScanEngine:
-    def __init__(self, log_cb, progress_cb, paranoid=False):
+    def __init__(self, log_cb, progress_cb, paranoid=False, user_trusted_paths=None):
         self.log = log_cb
         self.progress = progress_cb
         self.paranoid = paranoid
@@ -1502,9 +1622,10 @@ class ScanEngine:
         self._shell_history_rows = None
         self._threat_keys = set()
         self._timestamp_cache = {}
+        self.user_trusted_paths = list(user_trusted_paths or load_user_trusted_paths())
         self._reset_recovery_state()
 
-    def _add(self, severity, category, description, path=None, action=None):
+    def _add(self, severity, category, description, path=None, action=None, trust_path=None):
         normalized_path = self._normalized_path(path) if path else ""
         timestamp_note = self._path_timestamp_note(path)
         if timestamp_note and timestamp_note not in str(description or ""):
@@ -1513,9 +1634,9 @@ class ScanEngine:
         if threat_key in self._threat_keys:
             return None
         self._threat_keys.add(threat_key)
-        t = Threat(severity, category, description, path, action)
+        t = Threat(severity, category, description, path, action, trust_path=trust_path)
         self.threats.append(t)
-        self.log(f"{description}", severity)
+        self.log(f"{description}", severity, trust_path)
         return t
 
     def _note_exposure(self, description, path=None):
@@ -1901,9 +2022,11 @@ class ScanEngine:
                 marker in update_url_lower for marker in OFFICIAL_EXTENSION_UPDATE_URL_MARKERS
             )
             impersonation_hit = extension_name_lower in IMPERSONATED_EXTENSION_NAMES
+            high_risk_name_hit = self._is_high_risk_extension_name(extension_name_lower)
 
             if not (
                 self._has_strong_campaign_context(blob, manifest_path)
+                or high_risk_name_hit
                 or remote_lure_hit
                 or (keyword_hit and risky_permissions)
                 or (risky_permissions and hijack_surface_hit and suspicious_update_url)
@@ -1950,6 +2073,7 @@ class ScanEngine:
                         marker in update_url_lower for marker in OFFICIAL_EXTENSION_UPDATE_URL_MARKERS
                     )
                     impersonation_hit = extension_name_lower in IMPERSONATED_EXTENSION_NAMES
+                    high_risk_name_hit = self._is_high_risk_extension_name(extension_name_lower)
                     risky_permissions = bool(permissions & {perm.lower() for perm in SUSPICIOUS_EXTENSION_PERMISSIONS})
                     hijack_surface_hit = sensitive_host_hit(permissions)
                     profile_ext_dir = os.path.join(profile_dir, "Extensions", ext_id)
@@ -1957,6 +2081,8 @@ class ScanEngine:
                     path_value = str(entry.get("path") or "")
                     normalized_path = self._normalized_path(path_value)
                     risky_state = (
+                        high_risk_name_hit
+                        or
                         (impersonation_hit and suspicious_update_url)
                         or (suspicious_update_url and self._contains_remote_loader_marker(update_url_lower))
                         or (suspicious_update_url and risky_permissions and hijack_surface_hit)
@@ -2032,12 +2158,15 @@ class ScanEngine:
                         marker in update_url_lower for marker in OFFICIAL_EXTENSION_UPDATE_URL_MARKERS
                     )
                     impersonation_hit = extension_name_lower in IMPERSONATED_EXTENSION_NAMES
+                    high_risk_name_hit = self._is_high_risk_extension_name(extension_name_lower)
                     path_value = str(addon.get("path") or "")
                     normalized_path = self._normalized_path(path_value)
                     blob = json.dumps(addon, ensure_ascii=True).lower()
                     remote_lure_hit = self._contains_marker(blob, {"go.zovo", "mediafire", "mega", "dodi-repacks"})
                     keyword_hit = self._has_strong_campaign_context(blob, normalized_path, extension_name)
                     risky_state = (
+                        high_risk_name_hit
+                        or
                         keyword_hit
                         or remote_lure_hit
                         or (impersonation_hit and suspicious_update_url)
@@ -2802,12 +2931,14 @@ class ScanEngine:
             score += min(32, exposure_count * 10)
 
         notes_blob = " ".join(f"{desc} {path}".lower() for desc, path in self.exposure_notes)
-        if any(token in notes_blob for token in ("steam", "discord", "google", "microsoft", "firefox", "chrome", "edge", "brave", "opera", "filezilla", "nordvpn", "openvpn")):
+        if any(token in notes_blob for token in ("steam", "discord", "google", "microsoft", "firefox", "chrome", "edge", "brave", "opera", "filezilla", "nordvpn", "openvpn", "bitwarden", "1password", "keepass", "winscp")):
             score += 8
         if "telegram" in notes_blob:
             score += 6
         if any(token in notes_blob for token in ("wallet", "metamask", "crypto", "exodus", "atomic wallet", "ledger live")):
             score += 10
+        if any(token in notes_blob for token in ("authy", "otp", "2fa")):
+            score += 6
 
         score = self._clamp_score(score, lower=0, upper=98)
 
@@ -2891,6 +3022,8 @@ class ScanEngine:
         touched_wallet = any(token in notes_blob for token in ("wallet", "metamask", "crypto", "exodus", "atomic wallet", "ledger live"))
         touched_vpn = any(token in notes_blob for token in ("nordvpn", "openvpn"))
         touched_filezilla = "filezilla" in notes_blob
+        touched_password_manager = any(token in notes_blob for token in ("bitwarden", "1password", "keepass"))
+        touched_2fa = "authy" in notes_blob
 
         lines = [
             "ACCOUNT RECOVERY PLAN (do this from a CLEAN device)",
@@ -2940,6 +3073,14 @@ class ScanEngine:
                 "Wallet / high-value steps:",
                 "  1. Move assets to a fresh wallet with a new seed phrase.",
                 "  2. Do not reuse the old wallet even if the PC looks clean.",
+            ]
+
+        if touched_password_manager or touched_2fa:
+            lines += [
+                "",
+                "Password-manager / 2FA steps:",
+                "  1. Rotate the master password for password managers touched on the infected PC and review vault sessions or logged-in devices.",
+                "  2. Reissue backup codes, review TOTP/2FA enrollment, and replace exported recovery material that may have been stored locally.",
             ]
 
         if touched_filezilla or touched_vpn:
@@ -3804,10 +3945,27 @@ class ScanEngine:
         pl = self._normalized_path(path)
         return bool(pl) and any(marker in pl for marker in PROTECTED_SYSTEM_PATH_MARKERS)
 
+    def _is_user_trusted_path(self, path):
+        normalized = self._normalized_path(path)
+        if not normalized:
+            return False
+        try:
+            candidate = os.path.normcase(os.path.normpath(os.path.abspath(normalized)))
+        except Exception:
+            candidate = normalized
+        for trusted in self.user_trusted_paths:
+            if not trusted:
+                continue
+            if candidate == trusted or candidate.startswith(trusted + os.sep):
+                return True
+        return False
+
     def _is_trusted_path_context(self, path, *, allow_metadata=False):
         normalized = self._normalized_path(path)
         if not normalized:
             return False
+        if self._is_user_trusted_path(normalized):
+            return True
         if self._is_trusted_vendor_path(normalized) or self._is_protected_system_path(normalized):
             return True
         return bool(allow_metadata and self._has_trusted_file_metadata(path))
@@ -4309,8 +4467,11 @@ class ScanEngine:
         remote_hit = any(marker in text for marker in SCRIPT_LURE_REMOTE_MARKERS)
         brand_hits = sum(1 for token in ACCOUNT_HIJACK_BRAND_TOKENS if token in text)
         lure_hits = sum(1 for token in ACCOUNT_HIJACK_LURE_TOKENS if token in text)
+        clickfix_hits = sum(1 for token in CLICKFIX_PROMPT_MARKERS if token in text)
         ext = os.path.splitext(str(path or "").lower())[1]
         if ext in {".html", ".htm", ".url"}:
+            if remote_hit and clickfix_hits >= 2:
+                return True
             if remote_hit and strong_hits >= 1:
                 return True
             return remote_hit and brand_hits >= 1 and lure_hits >= 2
@@ -5892,7 +6053,11 @@ class ScanEngine:
         if ext == ".exe":
             if self._is_trusted_vendor_path(path) or self._has_trusted_file_metadata(path):
                 return False
+            if self._looks_like_known_malware_title(name_lower):
+                return True
             return self._contains_marker(name_lower, SOURCE_LURE_FILENAME_STRONG)
+        if self._looks_like_known_malware_title(name_lower):
+            return True
         if self._contains_marker(name_lower, SOURCE_LURE_KEYWORDS) and ext not in {".html", ".htm", ".url"}:
             return True
         if ext in {".url", ".lnk", ".html", ".htm", ".bat", ".cmd", ".ps1", ".vbs", ".js"}:
@@ -5916,6 +6081,16 @@ class ScanEngine:
             if ScanEngine._looks_random(lowered):
                 return True
         return False
+
+    @staticmethod
+    def _looks_like_known_malware_title(text):
+        lowered = str(text or "").lower()
+        return any(marker in lowered for marker in STEAM_MALICIOUS_TITLE_MARKERS)
+
+    @staticmethod
+    def _is_high_risk_extension_name(name):
+        lowered = str(name or "").strip().lower()
+        return lowered in HIGH_RISK_EXTENSION_NAMES
 
     def _profile_renpy_bundle(self, dirpath, dir_names_lower, filenames):
         if not RENENGINE_FOLDER_SET.issubset(dir_names_lower):
@@ -6983,6 +7158,8 @@ class ScanEngine:
         if GODOT_APP_USERDATA_MARKER in message_lower and any(marker in message_lower for marker in ASAR_ARGUMENT_MARKERS):
             return True
         extracted_paths = [self._normalized_path(match.group(0).rstrip(" .,)")) for match in DRIVE_PATH_REGEX.finditer(message)]
+        if extracted_paths and all(path and self._is_user_trusted_path(path) for path in extracted_paths):
+            return False
         userland_path_hit = any(
             path
             and self._path_in_user_writable_exec_zone(path)
@@ -7019,6 +7196,24 @@ class ScanEngine:
         ):
             return True
         return False
+
+    def _trustable_event_path(self, message):
+        candidates = []
+        for match in DRIVE_PATH_REGEX.finditer(str(message or "")):
+            path = self._normalized_path(match.group(0).rstrip(" .,)"))
+            if not path:
+                continue
+            if self._is_local_tool_path(path):
+                continue
+            if path.startswith(("hkcu\\", "hklm\\", "root\\", "microsoft-windows-")):
+                continue
+            candidates.append(path)
+        if not candidates:
+            return ""
+        for path in candidates:
+            if self._path_in_user_writable_exec_zone(path):
+                return path
+        return candidates[0]
 
     def _is_benign_security_center_product(self, display_name, exe_path):
         display_lower = str(display_name or "").strip().lower()
@@ -7163,11 +7358,13 @@ class ScanEngine:
                     seen.add(fingerprint)
 
                     severity = "HIGH" if self._has_strong_campaign_context(message) else "MEDIUM"
+                    trust_path = self._trustable_event_path(message)
                     self._add(
                         severity,
                         "Security Event Review",
                         f"{source_label} event requires review: {provider} [{event_id}] {compact}",
                         log_name,
+                        trust_path=trust_path,
                     )
                 except Exception as exc:
                     self.log(f"{source_label} event review warning: {exc}", "WARN")
@@ -7266,6 +7463,7 @@ class ScanEngine:
                     f"Allow firewall rule points at suspicious program: {display_name or rule_name} -> {program}",
                     rule_name or display_name,
                     action,
+                    trust_path=program,
                 )
             except Exception as exc:
                 self.log(f"Firewall review warning: {exc}", "WARN")
@@ -9367,6 +9565,8 @@ class App(tk.Tk):
         self._update_info = None
         self._update_check_in_progress = False
         self._startup_update_prompted = set()
+        self._user_trusted_paths = load_user_trusted_paths()
+        self._log_trust_tag_counter = 0
 
         self._build()
         self._fit_window_to_content()
@@ -9448,6 +9648,7 @@ class App(tk.Tk):
         self._btn_sessions = self._btn(primary_actions, "⌁  ACCOUNT LOCKDOWN", AMBER, self._do_reset_sessions)
         self._btn_repair = self._btn(secondary_actions, "🛡  REPAIR DEFAULTS", GREEN, self._do_repair_defaults)
         self._btn_report = self._btn(secondary_actions, "↓  EXPORT REPORT", GREEN, self._do_report)
+        self._btn_trust = self._btn(secondary_actions, "TRUST KNOWN PATH", BLUE, self._do_trust_path)
         self._btn_clear = self._btn(secondary_actions, "⌫  CLEAR LOG", FG3, self._do_clear)
 
         self._btn_update = self._btn(secondary_actions, "CHECK UPDATES", BLUE, self._do_update)
@@ -9514,6 +9715,7 @@ class App(tk.Tk):
                 tag, foreground=color,
                 font=(MONO, 10, "bold") if bold else (MONO, 10)
             )
+        self._log_txt.tag_configure("TRUST_LINK", foreground=BLUE, underline=True)
         self._log_txt.configure(state="disabled")
 
         # Footer
@@ -10197,7 +10399,7 @@ class App(tk.Tk):
             return True, ""
         return False, ScanEngine._result_failure_reason(result, "DNS cache flush failed")
 
-    def _log(self, msg, level="DEFAULT"):
+    def _log(self, msg, level="DEFAULT", trust_path=None):
         def _w():
             self._log_txt.configure(state="normal")
             ts = datetime.datetime.now().strftime("%H:%M:%S")
@@ -10206,7 +10408,29 @@ class App(tk.Tk):
             if level == "SECTION":
                 self._log_txt.insert("end", f"\n[{ts}]  {safe_msg}\n", tag)
             else:
-                self._log_txt.insert("end", f"[{ts}]  {safe_msg}\n", tag)
+                self._log_txt.insert("end", f"[{ts}]  {safe_msg}", tag)
+                trust_target = self._qualify_log_trust_path(trust_path)
+                if trust_target:
+                    self._log_trust_tag_counter += 1
+                    trust_tag = f"trust_link_{self._log_trust_tag_counter}"
+                    self._log_txt.tag_configure(trust_tag, foreground=BLUE, underline=True)
+                    self._log_txt.tag_bind(
+                        trust_tag,
+                        "<Button-1>",
+                        lambda _event, path=trust_target: self._trust_path_from_log(path),
+                    )
+                    self._log_txt.tag_bind(
+                        trust_tag,
+                        "<Enter>",
+                        lambda _event: self._log_txt.configure(cursor="hand2"),
+                    )
+                    self._log_txt.tag_bind(
+                        trust_tag,
+                        "<Leave>",
+                        lambda _event: self._log_txt.configure(cursor="xterm"),
+                    )
+                    self._log_txt.insert("end", "  [trust]", ("TRUST_LINK", trust_tag))
+                self._log_txt.insert("end", "\n", tag)
             self._log_txt.see("end")
             self._log_txt.configure(state="disabled")
         self.after(0, _w)
@@ -10219,19 +10443,8 @@ class App(tk.Tk):
 
     @staticmethod
     def _diagnostic_log_path():
-        candidates = [
-            os.path.join(os.environ.get("LOCALAPPDATA", ""), TOOL_NAME),
-            os.path.join(os.getcwd(), TOOL_NAME),
-        ]
-        for root in candidates:
-            if not root:
-                continue
-            try:
-                os.makedirs(root, exist_ok=True)
-                return os.path.join(root, "renkill_diagnostics.log")
-            except Exception:
-                continue
-        return ""
+        root = _renkill_state_root()
+        return os.path.join(root, "renkill_diagnostics.log") if root else ""
 
     def _write_diagnostic_log(self, context):
         path = self._diagnostic_log_path()
@@ -10402,7 +10615,7 @@ class App(tk.Tk):
         self._log("Press SCAN SYSTEM to begin.", "DEFAULT")
 
     def _load_recovery_summary(self):
-        scanner = ScanEngine(lambda *_: None, lambda *_: None)
+        scanner = ScanEngine(lambda *_: None, lambda *_: None, user_trusted_paths=self._user_trusted_paths)
         return scanner.get_latest_recovery_summary()
 
     def _update_revert_button(self):
@@ -10452,7 +10665,12 @@ class App(tk.Tk):
         self._set_status(f"Scanning system ({scan_mode})…", BLUE)
         self._log(f"Scan mode         : {scan_mode}", "WARN" if self._paranoid_var.get() else "INFO")
 
-        self._scanner = ScanEngine(self._log, self._set_progress, paranoid=self._paranoid_var.get())
+        self._scanner = ScanEngine(
+            self._log,
+            self._set_progress,
+            paranoid=self._paranoid_var.get(),
+            user_trusted_paths=self._user_trusted_paths,
+        )
         self._scanner.post_cleanup_scan = self._last_remediation_ts > 0
         self._scanner.rebooted_after_cleanup = self._scanner.post_cleanup_scan and self._boot_time() > self._last_remediation_ts
 
@@ -10795,7 +11013,12 @@ class App(tk.Tk):
         self._set_status("Reverting last cleanup snapshot...", AMBER)
 
         def _run():
-            scanner = ScanEngine(self._log, self._set_progress, paranoid=self._paranoid_var.get())
+            scanner = ScanEngine(
+                self._log,
+                self._set_progress,
+                paranoid=self._paranoid_var.get(),
+                user_trusted_paths=self._user_trusted_paths,
+            )
             result = scanner.revert_last_remediation()
 
             def _done():
@@ -10824,6 +11047,87 @@ class App(tk.Tk):
             self.after(0, _done)
 
         threading.Thread(target=_run, daemon=True).start()
+
+    def _reload_user_trusted_paths(self):
+        self._user_trusted_paths = load_user_trusted_paths()
+        if self._scanner is not None:
+            self._scanner.user_trusted_paths = list(self._user_trusted_paths)
+
+    def _qualify_log_trust_path(self, raw_path):
+        if not raw_path:
+            return ""
+        normalized = os.path.normcase(os.path.normpath(os.path.abspath(str(raw_path))))
+        if normalized.startswith(("hkcu\\", "hklm\\", "root\\", "microsoft-windows-")):
+            return ""
+        if normalized in self._user_trusted_paths:
+            return ""
+        if self._scanner and self._scanner._is_local_tool_path(normalized):
+            return ""
+        return normalized
+
+    def _save_trusted_path(self, raw_path):
+        normalized = self._qualify_log_trust_path(raw_path)
+        if not normalized:
+            return False, "That item is not eligible for a reviewed-safe trust entry."
+
+        trusted_paths = load_user_trusted_paths()
+        if normalized in trusted_paths:
+            self._reload_user_trusted_paths()
+            return True, f"That path is already marked as known-good:\n{normalized}"
+
+        trusted_paths.append(normalized)
+        if not save_user_trusted_paths(trusted_paths):
+            return False, "RenKill could not save the reviewed-safe path list."
+
+        self._reload_user_trusted_paths()
+        self._log(f"Saved reviewed-safe path: {normalized}", "SUCCESS")
+        self._set_status("Known-good path saved — rerun SCAN SYSTEM to refresh review noise.", GREEN)
+        return True, f"Saved as known-good:\n{normalized}"
+
+    def _trust_path_from_log(self, raw_path):
+        ok, detail = self._save_trusted_path(raw_path)
+        if ok:
+            messagebox.showinfo(
+                "Trust Known Path",
+                sanitize_for_display(
+                    f"{detail}\n\n"
+                    "Future scans will suppress review-only noise tied to this path when the event context is otherwise benign.\n"
+                    "RenKill will still surface strong campaign indicators and high-confidence malware findings."
+                ),
+            )
+        else:
+            messagebox.showerror("Trust Known Path", sanitize_for_display(detail))
+
+    def _do_trust_path(self):
+        choice = messagebox.askyesnocancel(
+            "Trust Known Path",
+            "Mark a personally reviewed file or folder as known-good?\n\n"
+            "Use this for software you recognize and trust, like your own server or private tools.\n"
+            "RenKill will suppress future review-noise for that exact file/folder path and anything under it.\n\n"
+            "Yes = choose a folder\n"
+            "No = choose a file\n"
+            "Cancel = do nothing",
+        )
+        if choice is None:
+            return
+
+        selected = filedialog.askdirectory(title="Choose trusted folder") if choice else filedialog.askopenfilename(
+            title="Choose trusted file"
+        )
+        if not selected:
+            return
+
+        ok, detail = self._save_trusted_path(selected)
+        if ok:
+            suffix = (
+                "\n\nRun SCAN SYSTEM again if you want the current scan noise refreshed."
+                if "already marked" in detail.lower()
+                else "\n\nFuture scans will suppress review-only noise tied to this path when the event context is otherwise benign.\n"
+                "RenKill will still surface strong campaign indicators and high-confidence malware findings."
+            )
+            messagebox.showinfo("Trust Known Path", sanitize_for_display(detail + suffix))
+        else:
+            messagebox.showerror("Trust Known Path", sanitize_for_display(detail))
 
     def _do_reset_sessions(self):
         if not messagebox.askyesno(
@@ -10895,7 +11199,7 @@ class App(tk.Tk):
         threading.Thread(target=_run, daemon=True).start()
 
     def _do_recovery_plan(self):
-        scanner = self._scanner or ScanEngine(lambda *_: None, lambda *_: None)
+        scanner = self._scanner or ScanEngine(lambda *_: None, lambda *_: None, user_trusted_paths=self._user_trusted_paths)
         exposure = scanner.assess_account_exposure() if self._scanner else {
             "score": 0,
             "label": "General recovery guidance",

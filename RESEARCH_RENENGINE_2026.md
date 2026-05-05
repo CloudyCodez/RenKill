@@ -1,6 +1,6 @@
 # RenEngine / "RenLoader" Notes
 
-Last updated: 2026-05-02 (RenKill 1.6.0 pass)
+Last updated: 2026-05-04 (RenKill 1.6.1 field update)
 
 ## Snapshot
 
@@ -123,6 +123,35 @@ That means RenKill should keep moving toward:
 - stronger account-session wipe coverage
 - better startup/task/service correlation for relaunch paths
 - better separation between "lure evidence", "active persistence", and "account fallout"
+
+## May 2026 Field Update
+
+The last few days did not show a brand-new persistence chain so much as more proof that the same account-hijack ecosystem is spreading through additional lure surfaces.
+
+What changed in the reporting:
+
+- BleepingComputer's March 13, 2026 FBI follow-up says victims were sought for multiple Steam titles used to spread malware between May 2024 and January 2026, including `BlockBlasters`, `Chemia`, `Dashverse` / `DashFPS`, `Lampy`, `Lunara`, `PirateFi`, and `Tokenova`.
+- BleepingComputer's QuickLens write-up shows that compromised browser extensions can become the delivery and theft layer themselves, not just a post-infection side effect. That matters because FRST helpers are still catching suspicious extension residue after the main payload is gone.
+- Microsoft's February 5, 2026 `CrashFix` reporting reinforces that fake browser-fix / fake verification copy-paste lures are still getting people to run the same kind of download-and-execute chains manually.
+- Malwarebytes' April 15, 2026 NWHStealer reporting reinforces that gaming mods, fake software downloads, and utility lures can still lead to the same browser/session theft and wallet fallout even when the wrapper is not Ren'Py at all.
+
+What did not really change:
+
+- FRST helpers are still winning by cleaning the creator and then rescanning, not by trusting one AV pass.
+- Reddit cleanup threads from May 1 to May 4 still revolve around:
+  - startup/task residue
+  - invalid firewall rules
+  - WMI or Security Center oddities
+  - suspicious browser extensions like `Torrent Scanner`
+  - PUP / remote-support style software such as `Web Companion` or `UltraViewer`
+  - final rescans after cleanup to prove nothing rebuilt itself
+
+The practical takeaway for RenKill is the same:
+
+- keep broadening lure awareness without overfitting to one filename
+- stay aggressive on startup/task/WMI/process correlation
+- keep browser-extension and browser-policy aftermath in the same loop as malware cleanup
+- treat Steam, Discord, email, password managers, VPNs, FTP clients, wallets, and 2FA apps as part of the same incident when local exposure is plausible
 
 ## Steam / Email Compromise Matters
 
@@ -312,8 +341,13 @@ The payload families in this ecosystem steal browser credentials, cookies, auth 
 - Kaspersky Press Release, "Kaspersky identifies RenEngine loader distributed through pirated games and software" (2026-02-23): https://me-en.kaspersky.com/about/press-releases/kaspersky-identifies-renengine-loader-distributed-through-pirated-games-and-software
 - AhnLab ASEC, "February 2026 Infostealer Trend Report" (2026-03-11): https://asec.ahnlab.com/en/92902/
 - Microsoft Security Intelligence, "Trojan:Win32/Amatera.A!AMTB" (published 2026-02-05, accessed 2026-04-18): https://www.microsoft.com/en-us/wdsi/threats/malware-encyclopedia-description?Name=Trojan%3AWin32%2FAmatera.A%21AMTB&ThreatID=2147962444
+- Microsoft Security Blog, "New ClickFix variant 'CrashFix' deploying Python RAT trojan" (2026-02-05): https://www.microsoft.com/en-us/security/blog/2026/02/05/clickfix-variant-crashfix-deploying-python-rat-trojan/
 - Malwarebytes, "Can you try a game I made? Fake game sites lead to information stealers" (2025-01-03): https://www.malwarebytes.com/it/blog/news/2025/01/can-you-try-a-game-i-made-fake-game-sites-lead-to-information-stealers
+- Malwarebytes, "From fake Proton VPN sites to gaming mods, this Windows infostealer is everywhere" (2026-04-15): https://www.malwarebytes.com/blog/threat-intel/2026/04/from-fake-proton-vpn-sites-to-gaming-mods-this-windows-infostealer-is-everywhere
 - Malwarebytes, "Can you test my game? Fake itch.io pages spread hidden malware to gamers" (2025-10-24): https://www.malwarebytes.com/blog/threat-intel/2025/10/can-you-test-my-game-fake-itch-io-pages-spread-hidden-malware-to-gamers
+- Bitdefender, "The Fake Game Playtest Scam Explained" (2026-03-30): https://www.bitdefender.com/en-gb/blog/hotforsecurity/fake-game-playtest-scam/
+- BleepingComputer, "FBI seeks victims of Steam games used to spread malware" (2026-03-13): https://www.bleepingcomputer.com/news/security/fbi-seeks-victims-of-steam-games-used-to-spread-malware/
+- BleepingComputer, "QuickLens Chrome extension steals crypto, shows ClickFix attack" (2026-02-28): https://www.bleepingcomputer.com/news/security/quicklens-chrome-extension-steals-crypto-shows-clickfix-attack/amp/
 - Discord Support, "My Discord Account was Hacked or Compromised" (accessed 2026-04-17): https://support.discord.com/hc/en-us/articles/24160905919511-My-Discord-Account-was-Hacked-or-Compromised
 - Discord Safety, "Tips to Prevent Spam and Hacking" (accessed 2026-04-17): https://discord.com/safety/360044104071-Tips-against-spam-and-hacking
 - Google Account Help, "See devices with account access" (accessed 2026-04-17): https://support.google.com/accounts/answer/3067630?hl=en
