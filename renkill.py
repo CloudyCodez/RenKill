@@ -1636,7 +1636,8 @@ class ScanEngine:
         self._threat_keys.add(threat_key)
         t = Threat(severity, category, description, path, action, trust_path=trust_path)
         self.threats.append(t)
-        self.log(f"{description}", severity, trust_path)
+        log_trust_path = trust_path if trust_path is not None else normalized_path
+        self.log(f"{description}", severity, log_trust_path)
         return t
 
     def _note_exposure(self, description, path=None):
@@ -6507,8 +6508,6 @@ class ScanEngine:
                     row.get("TargetPath"),
                     row.get("Arguments"),
                     row.get("WorkingDirectory"),
-                    row.get("TriggerTypes"),
-                    row.get("RunLevel"),
                 )
                 if not finding:
                     continue
@@ -11056,12 +11055,24 @@ class App(tk.Tk):
     def _qualify_log_trust_path(self, raw_path):
         if not raw_path:
             return ""
-        normalized = os.path.normcase(os.path.normpath(os.path.abspath(str(raw_path))))
+        raw_text = str(raw_path).strip()
+        if not (re.match(r"^[A-Za-z]:\\", raw_text) or raw_text.startswith("\\\\")):
+            return ""
+        normalized = os.path.normcase(os.path.normpath(os.path.abspath(raw_text)))
         if normalized.startswith(("hkcu\\", "hklm\\", "root\\", "microsoft-windows-")):
             return ""
         if normalized in self._user_trusted_paths:
             return ""
         if self._scanner and self._scanner._is_local_tool_path(normalized):
+            return ""
+        if self._scanner and (
+            self._scanner._is_protected_system_path(normalized)
+            or self._scanner._is_trusted_vendor_path(normalized)
+            or self._scanner._has_trusted_file_metadata(normalized)
+        ):
+            return ""
+        parent = os.path.dirname(normalized)
+        if not (os.path.exists(normalized) or (parent and os.path.exists(parent))):
             return ""
         return normalized
 
