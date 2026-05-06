@@ -1,3 +1,5 @@
+Join the Server: https://discord.gg/82Mwq8Wj
+
 # RenKill v1.6.1
 
 Windows cleanup tool for the fake Ren'Py `Instaler.exe` / RenEngine loader chain.
