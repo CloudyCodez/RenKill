@@ -1,4 +1,4 @@
-# RenKill v1.6.1
+# RenKill v1.6.2
 
 Windows cleanup tool for the fake Ren'Py `Instaler.exe` / RenEngine loader chain.
 It focuses on the stuff this infection tends to leave behind: staged payloads,
@@ -19,11 +19,12 @@ Current release notes live in [CHANGELOG.md](C:/Users/conno/Documents/RenKill/CH
 | Persistence staging (`broker_crypt_v4_i386`) | `%ProgramData%` / `%AppData%` path match |
 | Persistence payloads (`Froodjurain.wkk`, `VSDebugScriptAgent170.dll`, `chime.exe`, `ZoneInd.exe`) | High-confidence filename + location match |
 | Malicious desktop shortcuts (`.lnk`) | Shortcut target and argument review |
-| Defender exclusions | FRST-style Defender posture review |
+| Defender exclusions | FRST-style Defender posture review plus browser/session-target exclusion scoring |
 | Disabled startup leftovers | `StartupApproved` plus autorun correlation |
 | Firewall allow-rules for suspicious programs | Rule target review with safe removal gates |
 | Payload decrypt keys (`.key`) and Ren'Py payload scripts | Filename + location |
-| Scheduled task persistence | `schtasks` query + keyword match |
+| Scheduled task persistence | Task action, trigger, privilege, and userland masquerade review |
+| Malicious services / fake helpers | Service path plus user-writable masquerade review |
 | Registry autorun / IFEO / AppInit persistence | Registry review |
 | Active Setup, policy autoruns, SafeBoot, logon-script drift | FRST-style startup and policy review |
 | Winlogon Notify / Explorer hook persistence | Legacy logon and Explorer review |
@@ -46,7 +47,7 @@ Requirements: Python 3.10+ in `PATH`.
 ## Release Builds
 
 ```text
-1. Push a version tag like v1.6.1
+1. Push a version tag like v1.6.2
 2. GitHub Actions builds the RenKill folder package on windows-latest
 3. The workflow attaches a zipped Windows package and SHA256 checksum to the GitHub Release
 ```
@@ -110,6 +111,7 @@ What it looks for:
 - Loaded modules for suspicious processes
 - Active network connections
 - Scheduled tasks
+- Windows services
 - Registry autoruns, IFEO, and AppInit
 - WMI subscriptions
 - Browser extensions
@@ -141,7 +143,8 @@ From a separate clean device:
 
 ## Source Trail
 
-- Cyderes Howler Cell (Feb 2026)
-- Kaspersky Securelist (Feb 2026)
+- Cyderes Howler Cell (Feb 4, 2026)
+- Kaspersky / Securelist (Feb 11 and Feb 23, 2026)
+- Falcon Sandbox / Hybrid Analysis field samples (April to May 2026)
 - Malwarebytes threat research on fake game / cracked software lure chains
 - FRST helper workflows and remediation guidance from BleepingComputer, Emsisoft, and current Reddit cleanup threads

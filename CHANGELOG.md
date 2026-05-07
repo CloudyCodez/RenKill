@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.6.2 - 2026-05-06
+
+This release folds in the latest proofing around trainer-style follow-ons and the May 2026 check on RenEngine-adjacent persistence. The important update is that the chain looks broader, but not fundamentally different: the operator is still leaning on user-writable relaunch points, scheduled tasks, and browser/session theft.
+
+- Hardened persistence detection around the newer follow-on sample pattern:
+  - scheduled-task review now escalates logon + highest-privilege relaunches that point at double-extension payloads like `*.exe.exe`
+  - user-writable task/service payloads that typo-squat core helper names like `svchost` are now treated as masquerade hits, not just generic suspicious executables
+  - service cleanup notes are clearer when the binary is a fake helper / fake system host in `%AppData%`, `%ProgramData%`, or similar writable roots
+- Tightened Defender-exclusion scoring for stealer tradecraft:
+  - exclusions targeting browser application paths, browser profile roots, or other high-value session stores are now treated as strong signals
+  - process exclusions aimed at common browser/session targets like `chrome.exe`, `msedge.exe`, `firefox.exe`, `discord.exe`, `steam.exe`, or `telegram.exe` now surface as suspicious
+- Refreshed the release notes and research brief so each release keeps a clearer source trail and explains whether the campaign actually changed or just rotated wrappers
+
 ## v1.6.1 - 2026-05-04
 
 This release folds in the latest field update around fake playtests, malicious Steam titles, compromised extensions, ClickFix-style command lures, and safer user-driven review suppression.
