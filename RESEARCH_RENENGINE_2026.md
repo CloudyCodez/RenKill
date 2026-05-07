@@ -1,6 +1,6 @@
 # RenEngine / "RenLoader" Notes
 
-Last updated: 2026-05-04 (RenKill 1.6.1 field update)
+Last updated: 2026-05-06 (RenKill 1.6.2 field update)
 
 ## Snapshot
 
@@ -128,6 +128,12 @@ That means RenKill should keep moving toward:
 
 The last few days did not show a brand-new persistence chain so much as more proof that the same account-hijack ecosystem is spreading through additional lure surfaces.
 
+As of May 6, 2026, the best primary-source picture is still:
+
+- Cyderes / Howler Cell on February 4, 2026: RenEngine handing off to HijackLoader, `broker_crypt_v4_i386` staging, desktop-link persistence, and broad anti-VM checks.
+- Kaspersky on February 23, 2026: same loader family still active, but payload delivery broadened from earlier Lumma cases to ACR Stealer and some Vidar chains, with distribution extending beyond cracked games into pirated software.
+- newer April to May 2026 sandboxed samples: no clean proof of a brand-new persistence architecture, but more evidence of the same operators or adjacent stealers using scheduled tasks, browser-targeted Defender exclusions, and user-writable masquerade names to survive long enough for account theft and follow-on abuse.
+
 What changed in the reporting:
 
 - BleepingComputer's March 13, 2026 FBI follow-up says victims were sought for multiple Steam titles used to spread malware between May 2024 and January 2026, including `BlockBlasters`, `Chemia`, `Dashverse` / `DashFPS`, `Lampy`, `Lunara`, `PirateFi`, and `Tokenova`.
@@ -152,6 +158,24 @@ The practical takeaway for RenKill is the same:
 - stay aggressive on startup/task/WMI/process correlation
 - keep browser-extension and browser-policy aftermath in the same loop as malware cleanup
 - treat Steam, Discord, email, password managers, VPNs, FTP clients, wallets, and 2FA apps as part of the same incident when local exposure is plausible
+
+## May 2026 Trainer Follow-On Proofing
+
+The trainer sample linked for this release did not prove that RenEngine suddenly switched to an entirely new persistence chain. What it did prove is that RenKill should stay aggressive about the relaunch surfaces around the same post-compromise symptom set.
+
+The strongest behaviors from the late-April / early-May 2026 field samples are:
+
+- scheduled tasks that run at logon with highest privileges
+- payloads staged in user-writable locations like `%AppData%\Roaming\`
+- typo-squatted or fake helper names meant to resemble system binaries, including `svchost`-style naming
+- double-extension payload names such as `*.exe.exe`
+- Defender exclusions aimed at browsers or other high-value session stores before theft or session replay
+
+That is why the May 6, 2026 RenKill update focuses on:
+
+- stronger scheduled-task scoring for logon + highest-privilege relaunches
+- better detection of fake helper / fake host payload names in writable roots
+- higher suspicion for Defender exclusions that shield browser application paths, browser profile trees, or similar session-rich software
 
 ## Steam / Email Compromise Matters
 

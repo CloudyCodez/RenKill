@@ -41,7 +41,7 @@ except ImportError:
 
 # IOC definitions
 
-VERSION = "1.6.1"
+VERSION = "1.6.2"
 TOOL_NAME = "RenKill"
 UPDATE_REPO_OWNER = "CloudyCodez"
 UPDATE_REPO_NAME = "RenKill"
@@ -532,6 +532,26 @@ MASQUERADE_EXECUTABLE_NAMES = {
     "winlogon.exe",
     "wmiprvse.exe",
 }
+MASQUERADE_EXECUTABLE_STEMS = {
+    "conhost",
+    "csrss",
+    "dllhost",
+    "explorer",
+    "lsass",
+    "rundll32",
+    "searchhost",
+    "searchindexer",
+    "services",
+    "smss",
+    "spoolsv",
+    "steamservice",
+    "steamwebhelper",
+    "svchost",
+    "taskhostw",
+    "wininit",
+    "winlogon",
+    "wmiprvse",
+}
 
 SAFE_PROCESS_NAMES = {
     "code.exe",
@@ -679,6 +699,32 @@ TRUSTED_VENDOR_PATH_MARKERS = (
     "\\program files\\netsupport\\",
     "\\program files (x86)\\netsupport\\",
 )
+HIGH_VALUE_DEFENDER_PATH_MARKERS = (
+    "\\appdata\\local\\google\\chrome\\application\\",
+    "\\appdata\\local\\google\\chrome\\user data\\",
+    "\\appdata\\local\\microsoft\\edge\\application\\",
+    "\\appdata\\local\\microsoft\\edge\\user data\\",
+    "\\appdata\\local\\bravesoftware\\brave-browser\\application\\",
+    "\\appdata\\local\\bravesoftware\\brave-browser\\user data\\",
+    "\\appdata\\roaming\\mozilla\\firefox\\profiles\\",
+    "\\appdata\\roaming\\telegram desktop\\",
+    "\\appdata\\roaming\\atomic\\",
+    "\\appdata\\roaming\\exodus\\",
+    "\\appdata\\roaming\\ledger live\\",
+)
+HIGH_VALUE_DEFENDER_PROCESS_NAMES = {
+    "brave.exe",
+    "chrome.exe",
+    "discord.exe",
+    "filezilla.exe",
+    "firefox.exe",
+    "msedge.exe",
+    "opera.exe",
+    "steam.exe",
+    "steamwebhelper.exe",
+    "telegram.exe",
+    "winscp.exe",
+}
 
 TRUSTED_COMPANY_TOKENS = (
     "advanced micro devices",
@@ -4434,11 +4480,17 @@ class ScanEngine:
 
         target = self._extract_command_target(raw)
         normalized_target = self._normalized_path(target)
+        if any(marker in normalized for marker in HIGH_VALUE_DEFENDER_PATH_MARKERS):
+            return True
+        if any(marker in normalized_target for marker in HIGH_VALUE_DEFENDER_PATH_MARKERS):
+            return True
         if normalized_target in risky_roots:
             return True
 
         if kind == "Process":
             target_name = os.path.basename(normalized_target)
+            if target_name in HIGH_VALUE_DEFENDER_PROCESS_NAMES:
+                return True
             return bool(
                 normalized_target
                 and self._path_in_user_writable_exec_zone(normalized_target)
@@ -4655,18 +4707,89 @@ class ScanEngine:
 
         return normalized_executable.endswith(".exe")
 
+    @staticmethod
+    def _looks_like_suspicious_double_extension(path_or_name):
+        name = os.path.basename(str(path_or_name or "")).lower()
+        return name.endswith((".bat.exe", ".cmd.exe", ".dll.exe", ".exe.exe", ".js.exe", ".ps1.exe", ".vbs.exe"))
+
+    @staticmethod
+    def _masquerade_name_stem(name):
+        stem = os.path.basename(str(name or "")).lower()
+        while stem.endswith(".exe"):
+            stem = stem[:-4]
+        return re.sub(r"[^a-z0-9]", "", stem)
+
+    @staticmethod
+    def _looks_like_close_name_variant(candidate, expected):
+        if not candidate or not expected:
+            return False
+        if candidate == expected:
+            return True
+        if candidate[0] != expected[0] or candidate[-1] != expected[-1]:
+            return False
+        if abs(len(candidate) - len(expected)) > 1:
+            return False
+
+        if len(candidate) == len(expected):
+            diffs = [idx for idx, (left, right) in enumerate(zip(candidate, expected)) if left != right]
+            if len(diffs) == 1:
+                return True
+            if len(diffs) == 2:
+                first, second = diffs
+                return (
+                    second == first + 1
+                    and candidate[first] == expected[second]
+                    and candidate[second] == expected[first]
+                )
+            return False
+
+        if len(candidate) < len(expected):
+            shorter, longer = candidate, expected
+        else:
+            shorter, longer = expected, candidate
+
+        short_idx = 0
+        long_idx = 0
+        mismatches = 0
+        while short_idx < len(shorter) and long_idx < len(longer):
+            if shorter[short_idx] == longer[long_idx]:
+                short_idx += 1
+                long_idx += 1
+                continue
+            mismatches += 1
+            if mismatches > 1:
+                return False
+            long_idx += 1
+        return True
+
+    def _looks_like_masquerade_variant_name(self, executable_name):
+        stem = self._masquerade_name_stem(executable_name)
+        if not stem or len(stem) < 6:
+            return False
+        if stem in MASQUERADE_EXECUTABLE_STEMS:
+            return True
+        if not any(token in stem for token in ("host", "service", "steam", "search", "logon", "spool", "wmip")):
+            return False
+        return any(self._looks_like_close_name_variant(stem, trusted) for trusted in MASQUERADE_EXECUTABLE_STEMS)
+
     def _looks_like_masquerading_userland_executable(self, executable, cmdline=""):
         normalized_executable = self._normalized_path(executable)
         if not normalized_executable:
             return False
         executable_name = os.path.basename(normalized_executable).lower()
-        if executable_name not in MASQUERADE_EXECUTABLE_NAMES:
+        if not self._path_in_user_writable_exec_zone(normalized_executable):
+            return False
+        if not (
+            executable_name in MASQUERADE_EXECUTABLE_NAMES
+            or self._looks_like_masquerade_variant_name(executable_name)
+            or self._looks_like_suspicious_double_extension(executable_name)
+        ):
             return False
         if self._is_local_tool_context(normalized_executable, cmdline):
             return False
         if self._is_safe_process_context(executable_name, executable, cmdline, allow_metadata=True):
             return False
-        return self._path_in_user_writable_exec_zone(normalized_executable)
+        return True
 
     def _looks_suspicious_service(self, service_name, display_name, path_name):
         blob = " ".join(part for part in (service_name, display_name, path_name) if part)
@@ -4683,7 +4806,9 @@ class ScanEngine:
         if not executable or self._is_safe_process_context(service_name.lower(), executable, path_name) or self._has_trusted_file_metadata(executable):
             return None
         if self._looks_like_masquerading_userland_executable(executable, path_name):
-            return "HIGH", "Malicious Service", f"Service points at a masquerading system/helper executable in a user-writable path: {service_name} -> {path_name}"
+            return "HIGH", "Malicious Service", f"Service points at a masquerading or typo-squatted system/helper executable in a user-writable path: {service_name} -> {path_name}"
+        if self._looks_like_suspicious_double_extension(normalized_executable) and self._path_in_user_writable_exec_zone(normalized_executable):
+            return "HIGH", "Malicious Service", f"Service points at a suspicious double-extension payload in a user-writable path: {service_name} -> {path_name}"
         if self._looks_like_suspicious_netsupport_path(executable, allow_metadata=True):
             return "HIGH", "Malicious Service", f"Service points at a NetSupport-style remote-control payload in a suspicious location: {service_name} -> {path_name}"
         if any(marker in normalized_executable for marker in COMMON_USERLAND_EXEC_MARKERS) and (
@@ -5709,10 +5834,18 @@ class ScanEngine:
                 return (
                     "CRITICAL",
                     "Malicious Scheduled Task",
-                    f"Scheduled task relaunches a masquerading user-writable payload at logon with highest privileges: {task_label}",
+                    f"Scheduled task relaunches a masquerading or typo-squatted user-writable payload at logon with highest privileges: {task_label}",
                 )
             if normalized_executable and self._path_in_user_writable_exec_zone(normalized_executable):
                 base_name = os.path.splitext(executable_name)[0]
+                if self._looks_like_suspicious_double_extension(normalized_executable) and not self._is_safe_process_context(
+                    executable_name, executable, arguments, allow_metadata=True
+                ):
+                    return (
+                        "CRITICAL",
+                        "Malicious Scheduled Task",
+                        f"Scheduled task relaunches a double-extension payload at logon with highest privileges: {task_label}",
+                    )
                 if (
                     self._contains_marker(normalized_executable, PROCESS_IOC_MARKERS)
                     or self._looks_random(base_name)
