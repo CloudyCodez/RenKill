@@ -1,6 +1,6 @@
 # RenEngine / "RenLoader" Notes
 
-Last updated: 2026-05-06 (RenKill 1.6.2 field update)
+Last updated: 2026-05-12 (RenKill 1.6.2 FRST + lure update)
 
 ## Snapshot
 
@@ -79,6 +79,25 @@ The big change in the newer Reddit cases is not a completely different loader. I
 
 That reinforces the same detection strategy for RenKill:
 
+## FRST Residue Pattern Update (May 12, 2026)
+
+The most useful FRST lesson from the latest user logs is not a brand-new persistence trick. It is how much stale residue a real cleanup leaves behind on gamer-heavy systems, and how often that residue still deserves removal.
+
+Repeated patterns across the shared FRST / Addition logs included:
+
+- dead `Run` / `RunOnce` values for removed software and old startup helpers
+- dead scheduled tasks pointing at removed updaters, game utilities, or old downloads
+- disabled `StartupApproved` entries whose backing file or Run value is already gone
+- firewall rules tied to missing executables, especially older Discord / Steam / browser / game paths
+- toast / shell registration leftovers such as `-ToastActivated`, `InprocServer32 => No File`, or stale context-menu DLL registrations
+- missing driver / service image paths in suspicious locations like `%TEMP%`
+
+This matters because helpers often clean those by hand after the "main malware" is gone. If RenKill misses them, the user is left with a scan that still looks noisy or half-clean. The right model is:
+
+- do not treat dead residue as active malware by default
+- do surface it as cleanable broken persistence when it sits on startup, task, service, shell, or firewall surfaces
+- reserve stronger severity for cases where the missing target still carries campaign context, temp execution context, or user-writable persistence context
+
 ## Lures Are Widening Beyond Ren'Py
 
 The core account-hijack symptom pattern is no longer limited to the classic fake Ren'Py `Instaler.exe` wrapper.
@@ -90,6 +109,8 @@ Recent public reports and infected-user threads now point to several adjacent lu
 - fake game playtest invitations shared through Steam, Discord, or YouTube
 - phishing-style "gift", trade, or vote links sent through already hijacked Steam / Discord accounts
 - ClickFix / fake CAPTCHA / fake browser-error flows that talk the victim into pasting commands into `Run`, `Windows Terminal`, or `PowerShell`
+- compromised or trojanized official-looking software downloads, including fresh 2026 reporting around `DAEMON Tools Lite` and `JDownloader`
+- fake brand download pages for tools like `Claude`, `CleanMyMac`, and `Proton VPN`
 
 Two public write-ups are especially useful here:
 

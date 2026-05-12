@@ -1,13 +1,23 @@
 # Changelog
 
-## v1.6.2 - 2026-05-06
+## v1.6.2 - 2026-05-12
 
-This release folds in the latest proofing around trainer-style follow-ons and the May 2026 check on RenEngine-adjacent persistence. The important update is that the chain looks broader, but not fundamentally different: the operator is still leaning on user-writable relaunch points, scheduled tasks, and browser/session theft.
+This release folds in the latest proofing around trainer-style follow-ons, FRST residue cleanup patterns, and the May 2026 check on RenEngine-adjacent persistence. The important update is that the chain looks broader, but not fundamentally different: the operator is still leaning on user-writable relaunch points, scheduled tasks, browser/session theft, and increasingly trusted-looking delivery surfaces.
 
 - Hardened persistence detection around the newer follow-on sample pattern:
   - scheduled-task review now escalates logon + highest-privilege relaunches that point at double-extension payloads like `*.exe.exe`
   - user-writable task/service payloads that typo-squat core helper names like `svchost` are now treated as masquerade hits, not just generic suspicious executables
   - service cleanup notes are clearer when the binary is a fake helper / fake system host in `%AppData%`, `%ProgramData%`, or similar writable roots
+- Added safer cleanup for the stale residue FRST helpers keep removing by hand:
+  - dead `Run` / `RunOnce` autoruns are now surfaced as `Broken Autorun Residue` or `Broken Persistence Residue`
+  - missing scheduled-task targets now surface as cleanable broken persistence instead of lingering as scan noise
+  - broken service image paths in temp / user-writable or otherwise suspicious contexts are now called out for cleanup
+  - missing firewall-rule program targets can now be removed as `Broken Firewall Rule`
+  - broken `Active Setup`, `Winlogon`, Explorer-hook, and toast-activation registrations now get their own safe residue cleanup paths
+- Broadened lure awareness around current delivery surfaces:
+  - stronger OneDrive / SharePoint download marker coverage for archive lures like `CrackFix` wrappers
+  - added `stitchcraftx` coverage from CastleLoader / Lumma reporting
+  - HTML / saved-link lure review now recognizes more of the current fake-brand / fake-verification ecosystem, including Steam / Discord plus newer fake `Claude`, `CleanMyMac`, `DAEMON Tools`, `JDownloader`, and `Proton VPN` style pages when paired with real remote-lure context
 - Tightened Defender-exclusion scoring for stealer tradecraft:
   - exclusions targeting browser application paths, browser profile roots, or other high-value session stores are now treated as strong signals
   - process exclusions aimed at common browser/session targets like `chrome.exe`, `msedge.exe`, `firefox.exe`, `discord.exe`, `steam.exe`, or `telegram.exe` now surface as suspicious

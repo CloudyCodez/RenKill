@@ -17,6 +17,8 @@ import json
 import re
 import base64
 import csv
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import random
 import tempfile
 import traceback
 import urllib.error
@@ -49,6 +51,7 @@ UPDATE_API_URL = f"https://api.github.com/repos/{UPDATE_REPO_OWNER}/{UPDATE_REPO
 UPDATE_RELEASES_URL = f"https://github.com/{UPDATE_REPO_OWNER}/{UPDATE_REPO_NAME}/releases"
 UPDATE_ASSET_SUFFIX = "-windows.zip"
 UPDATE_STATE_FILE = "update_state.txt"
+ACCOUNT_LOCKDOWN_STATE_FILE = "account_lockdown_state.json"
 
 MALICIOUS_FILENAMES = {
     "instaler.exe",
@@ -111,6 +114,7 @@ PROCESS_IOC_MARKERS = {
     "gayal.asp",
     "hap.eml",
     "soft-gets.com",
+    "stitchcraftx",
     "worker.ps1",
     "w8cpbgqi.exe",
     "zt5qwyucfl.txt",
@@ -253,9 +257,13 @@ SOURCE_LURE_KEYWORDS = {
     "rhadamanthys",
     "vidar",
     "crack",
+    "crackfix",
     "cracked",
     "keygen",
     "repack",
+    "clickfix",
+    "castleloader",
+    "playtest",
     "mrbeast",
     "crypto",
     "dodi-repacks",
@@ -263,13 +271,18 @@ SOURCE_LURE_KEYWORDS = {
     "mega",
     "go.zovo",
     "silent-harvester",
+    "stitchcraftx",
     "coreldraw",
     "artistapirata",
     "awdescargas",
     "filedownloads",
+    "fickle",
     "gamesleech",
     "parapcc",
+    "piratefi",
+    "quicklens",
     "saglamindir",
+    "tokenova",
     "zdescargas",
     "hentakugames",
 }
@@ -290,9 +303,12 @@ SOURCE_LURE_FILENAME_STRONG = {
     "rhadamanthys",
     "vidar",
     "crack",
+    "crackfix",
     "cracked",
     "keygen",
     "repack",
+    "clickfix",
+    "castleloader",
     "mrbeast",
     "crypto",
     "dodi-repacks",
@@ -300,6 +316,7 @@ SOURCE_LURE_FILENAME_STRONG = {
     "mega",
     "go.zovo",
     "coreldraw",
+    "stitchcraftx",
 }
 
 GENERIC_LAUNCHER_KEYWORDS = (
@@ -861,6 +878,7 @@ MANUAL_REVIEW_CATEGORIES = {
 C2_IPS = {"78.40.193.126"}
 
 PARANOID_NAME_TOKENS = ("update", "helper", "service", "runtime", "host")
+GLITCH_ACTION_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#$%?!"
 COMMON_USERLAND_EXEC_MARKERS = (
     "\\programdata\\",
     "\\appdata\\roaming\\",
@@ -935,15 +953,21 @@ SCRIPT_LURE_REMOTE_MARKERS = (
     "catbox.moe",
     "cdn.discordapp.com/attachments/",
     "discordapp.com/attachments/",
+    "download.aspx?uniqueid=",
     "http://",
     "https://",
+    "1drv.ms",
     "discord.gg",
     "dropbox",
     "gofile.io",
     "go.zovo",
     "mediafire",
     "mega",
+    "my.microsoftpersonalcontent.com",
+    "onedrive.live.com",
     "pastebin",
+    "pixeldrain",
+    "sharepoint.com/:u:/",
     "silent-harvester.cc",
     "soft-gets.com",
     "telegram.me",
@@ -996,7 +1020,12 @@ CLICKFIX_SUSPICIOUS_TLDS = (
     ".top",
 )
 ACCOUNT_HIJACK_BRAND_TOKENS = (
+    "claude.ai",
+    "cleanmymac",
+    "daemon tools",
     "discord",
+    "jdownloader",
+    "proton vpn",
     "steamcommunity",
     "steampowered",
     "youtube.com",
@@ -1549,6 +1578,11 @@ def _user_trust_store_path():
     return os.path.join(root, USER_TRUST_STATE_FILE) if root else ""
 
 
+def _account_lockdown_state_path():
+    root = _renkill_state_root()
+    return os.path.join(root, ACCOUNT_LOCKDOWN_STATE_FILE) if root else ""
+
+
 def load_user_trusted_paths():
     path = _user_trust_store_path()
     if not path or not os.path.exists(path):
@@ -1589,6 +1623,30 @@ def save_user_trusted_paths(paths):
     try:
         with open(store_path, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2)
+        return True
+    except Exception:
+        return False
+
+
+def load_account_lockdown_state():
+    store_path = _account_lockdown_state_path()
+    if not store_path or not os.path.exists(store_path):
+        return {}
+    try:
+        with open(store_path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_account_lockdown_state(payload):
+    store_path = _account_lockdown_state_path()
+    if not store_path:
+        return False
+    try:
+        with open(store_path, "w", encoding="utf-8") as handle:
+            json.dump(payload or {}, handle, indent=2)
         return True
     except Exception:
         return False
@@ -1685,6 +1743,59 @@ def _iter_steam_session_paths():
             continue
 
 
+def _iter_chromium_profile_dirs(root):
+    if not os.path.isdir(root):
+        return []
+    base = os.path.basename(root).lower()
+    if base != "user data":
+        return [root]
+    out = []
+    try:
+        for entry in os.listdir(root):
+            full = os.path.join(root, entry)
+            if not os.path.isdir(full):
+                continue
+            if entry == "Default" or entry.startswith("Profile ") or entry in {"Guest Profile", "System Profile"}:
+                out.append(full)
+    except Exception:
+        return []
+    return out
+
+
+def _iter_session_reset_targets(profile_root=None):
+    profile = profile_root or os.environ.get("USERPROFILE", "")
+    for app in SESSION_RESET_APPS:
+        kind = app["kind"]
+        if kind == "steam":
+            yield from _iter_steam_session_paths()
+            continue
+        for rel_root in app["roots"]:
+            root = os.path.join(profile, rel_root)
+            if kind == "flat":
+                if not os.path.isdir(root):
+                    continue
+                for sub in app["subpaths"]:
+                    yield app["label"], os.path.join(root, sub)
+            elif kind == "chromium":
+                for profile_dir in _iter_chromium_profile_dirs(root):
+                    for sub in CHROMIUM_SESSION_SUBPATHS:
+                        yield app["label"], os.path.join(profile_dir, sub)
+            elif kind == "firefox":
+                if not os.path.isdir(root):
+                    continue
+                try:
+                    for entry in os.listdir(root):
+                        profile_dir = os.path.join(root, entry)
+                        if not os.path.isdir(profile_dir):
+                            continue
+                        for fname in FIREFOX_SESSION_FILES:
+                            yield app["label"], os.path.join(profile_dir, fname)
+                        for sub in FIREFOX_SESSION_DIRS:
+                            yield app["label"], os.path.join(profile_dir, sub)
+                except Exception:
+                    continue
+
+
 # Admin elevation
 
 def is_admin():
@@ -1726,10 +1837,11 @@ class Threat:
 # Scanner engine
 
 class ScanEngine:
-    def __init__(self, log_cb, progress_cb, paranoid=False, user_trusted_paths=None):
+    def __init__(self, log_cb, progress_cb, paranoid=False, turbo=False, user_trusted_paths=None):
         self.log = log_cb
         self.progress = progress_cb
         self.paranoid = paranoid
+        self.turbo = turbo
         self.threats: list = []
         self.killed = 0
         self.removed = 0
@@ -1756,38 +1868,82 @@ class ScanEngine:
         self._shell_rows = None
         self._logon_rows = None
         self._explorer_hijack_rows = None
+        self._toast_activation_rows = None
         self._shell_history_rows = None
         self._threat_keys = set()
         self._timestamp_cache = {}
+        self._state_lock = threading.Lock()
         self.user_trusted_paths = list(user_trusted_paths or load_user_trusted_paths())
+        self.account_lockdown_state = load_account_lockdown_state()
         self._reset_recovery_state()
 
     def _add(self, severity, category, description, path=None, action=None, trust_path=None):
         normalized_path = self._normalized_path(path) if path else ""
+        if (
+            normalized_path
+            and category in MANUAL_REVIEW_CATEGORIES
+            and self._is_user_trusted_path(normalized_path)
+            and not self._has_strong_campaign_context(normalized_path, str(description or ""))
+        ):
+            return None
         timestamp_note = self._path_timestamp_note(path)
         if timestamp_note and timestamp_note not in str(description or ""):
             description = f"{description} {timestamp_note}".strip()
         threat_key = (category, str(description or "").strip(), normalized_path)
-        if threat_key in self._threat_keys:
-            return None
-        self._threat_keys.add(threat_key)
-        t = Threat(severity, category, description, path, action, trust_path=trust_path)
-        self.threats.append(t)
+        with self._state_lock:
+            if threat_key in self._threat_keys:
+                return None
+            self._threat_keys.add(threat_key)
+            t = Threat(severity, category, description, path, action, trust_path=trust_path)
+            self.threats.append(t)
         log_trust_path = trust_path if trust_path is not None else normalized_path
         self.log(f"{description}", severity, log_trust_path)
         return t
 
     def _note_exposure(self, description, path=None):
         note = (description, path or "")
-        if note not in self.exposure_notes:
+        with self._state_lock:
+            if note in self.exposure_notes:
+                return
             self.exposure_notes.append(note)
-            self.log(description if not path else f"{description}: {path}", "WARN")
+        self.log(description if not path else f"{description}: {path}", "WARN")
+
+    def _account_lockdown_reset_epoch(self, label):
+        labels = self.account_lockdown_state.get("labels") if isinstance(self.account_lockdown_state, dict) else {}
+        if not isinstance(labels, dict):
+            return 0.0
+        entry = labels.get(label) or {}
+        try:
+            return float(entry.get("reset_at_epoch") or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _resettable_exposure_is_current(self, label, root_path, candidate_paths):
+        if not os.path.exists(root_path):
+            return False
+
+        live_artifacts = [path for path in candidate_paths if os.path.exists(path)]
+        if not live_artifacts:
+            return False
+
+        reset_epoch = self._account_lockdown_reset_epoch(label)
+        if reset_epoch <= 0:
+            return True
+
+        for path in live_artifacts:
+            try:
+                if os.path.getmtime(path) > reset_epoch + 1.0:
+                    return True
+            except OSError:
+                return True
+        return False
 
     def _path_timestamp_note(self, path):
         normalized = self._normalized_path(path)
         if not normalized or normalized.startswith(("hkcu\\", "hklm\\", "root\\", "microsoft-windows-")):
             return ""
-        cached = self._timestamp_cache.get(normalized)
+        with self._state_lock:
+            cached = self._timestamp_cache.get(normalized)
         if cached is not None:
             return cached
         try:
@@ -1796,7 +1952,8 @@ class ScanEngine:
             note = f"[created {created} | modified {modified}]"
         except Exception:
             note = ""
-        self._timestamp_cache[normalized] = note
+        with self._state_lock:
+            self._timestamp_cache[normalized] = note
         return note
 
     def _has_timestamp_cluster(self, window_seconds=600, min_hits=3):
@@ -4621,6 +4778,59 @@ class ScanEngine:
             return remote_hit and brand_hits >= 1 and lure_hits >= 2
         return strong_hits >= 2 or (remote_hit and strong_hits >= 1)
 
+    def _missing_command_target_details(self, command_text, context_label=""):
+        raw = self._normalize_cmdline(command_text).strip()
+        if not raw:
+            return None
+
+        target = self._extract_command_target(raw)
+        if not self._is_pathlike_command_target(target):
+            return None
+
+        normalized_target = self._normalized_path(target)
+        if (
+            not normalized_target
+            or normalized_target.startswith(("hkcu\\", "hklm\\", "root\\", "microsoft-windows-"))
+            or self._is_local_tool_path(normalized_target)
+            or os.path.exists(normalized_target)
+        ):
+            return None
+
+        stem = os.path.splitext(os.path.basename(normalized_target))[0]
+        score = 0
+        reasons = []
+
+        if self._has_strong_campaign_context(raw, normalized_target, context_label):
+            score += 4
+            reasons.append("campaign markers")
+        if self._contains_remote_loader_marker(raw):
+            score += 2
+            reasons.append("remote loader marker")
+        if self._in_temp(normalized_target):
+            score += 3
+            reasons.append("temp path")
+        if self._contains_marker(normalized_target, PROCESS_IOC_MARKERS):
+            score += 3
+            reasons.append("known suspicious path marker")
+        if self._looks_random(stem):
+            score += 2
+            reasons.append("random-looking target name")
+        if self._path_in_user_writable_exec_zone(normalized_target):
+            score += 1
+            reasons.append("user-writable path")
+
+        return {
+            "raw": raw,
+            "target": target,
+            "normalized_target": normalized_target,
+            "score": score,
+            "reasons": reasons,
+        }
+
+    def _format_missing_target_reason(self, details):
+        reasons = list((details or {}).get("reasons") or [])
+        return ", ".join(reasons) if reasons else "missing target"
+
     def _value_has_malware_signal(self, value):
         raw = self._normalize_cmdline(value)
         lowered = raw.lower()
@@ -5559,6 +5769,73 @@ class ScanEngine:
         self._explorer_hijack_rows = rows
         return rows
 
+    def _collect_toast_activation_rows(self):
+        if self._toast_activation_rows is not None:
+            return self._toast_activation_rows
+
+        rows = []
+        if not WINREG_OK:
+            self._toast_activation_rows = rows
+            return rows
+
+        candidate_roots = [
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Classes\CLSID", "HKCU"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Classes\CLSID", "HKLM"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Classes\CLSID", "HKLM"),
+        ]
+
+        for hive, root_path, hive_name in candidate_roots:
+            try:
+                root = winreg.OpenKey(hive, root_path)
+            except (FileNotFoundError, PermissionError):
+                continue
+
+            index = 0
+            while True:
+                try:
+                    clsid = winreg.EnumKey(root, index)
+                except OSError:
+                    break
+                index += 1
+
+                localserver_path = root_path + "\\" + clsid + "\\LocalServer32"
+                try:
+                    localserver_key = winreg.OpenKey(hive, localserver_path)
+                except (FileNotFoundError, PermissionError):
+                    continue
+
+                try:
+                    value = str(winreg.QueryValueEx(localserver_key, "")[0] or "").strip()
+                except OSError:
+                    value = ""
+                finally:
+                    try:
+                        winreg.CloseKey(localserver_key)
+                    except Exception:
+                        pass
+
+                if "-toastactivated" not in value.lower():
+                    continue
+
+                rows.append(
+                    {
+                        "Hive": hive,
+                        "HiveName": hive_name,
+                        "Subkey": localserver_path,
+                        "ValueName": "",
+                        "CLSID": clsid,
+                        "Value": value,
+                    }
+                )
+
+            try:
+                winreg.CloseKey(root)
+            except Exception:
+                pass
+
+        self._toast_activation_rows = rows
+        return rows
+
     def _looks_suspicious_shell_persistence(self, value_name, value):
         raw = self._normalize_cmdline(value).strip()
         if not raw:
@@ -5659,6 +5936,12 @@ class ScanEngine:
                 return "HIGH", "Logon Script Persistence", f"UserInitMprLogonScript references a remote loader or downloader command: {raw}"
             if self._looks_suspicious_userland_payload(normalized_target):
                 return "HIGH", "Logon Script Persistence", f"UserInitMprLogonScript launches a suspicious user-writable payload: {raw}"
+            missing = self._missing_command_target_details(raw, kind)
+            if missing:
+                reason_text = self._format_missing_target_reason(missing)
+                severity = "HIGH" if missing["score"] >= 3 else "MEDIUM"
+                category = "Broken Persistence Residue" if missing["score"] >= 3 else "Broken Logon Residue"
+                return severity, category, f"UserInitMprLogonScript still points at a missing target and can be cleaned safely: {raw} [{reason_text}]"
             return None
 
         if kind == "WinlogonTaskman":
@@ -5666,6 +5949,12 @@ class ScanEngine:
                 return "HIGH", "Logon Script Persistence", f"Winlogon Taskman points at a suspicious logon command: {raw}"
             if normalized_target and self._path_in_user_writable_exec_zone(normalized_target):
                 return "MEDIUM", "Logon Script Persistence", f"Winlogon Taskman points outside the normal system path: {raw}"
+            missing = self._missing_command_target_details(raw, kind)
+            if missing:
+                reason_text = self._format_missing_target_reason(missing)
+                severity = "HIGH" if missing["score"] >= 3 else "MEDIUM"
+                category = "Broken Persistence Residue" if missing["score"] >= 3 else "Broken Logon Residue"
+                return severity, category, f"Winlogon Taskman still points at a missing target and can be cleaned safely: {raw} [{reason_text}]"
             return None
 
         if kind == "WinlogonNotify":
@@ -5678,6 +5967,12 @@ class ScanEngine:
                 stem = os.path.splitext(os.path.basename(normalized_target))[0]
                 if self._looks_random(stem):
                     return "MEDIUM", "Winlogon Notify Review", f"Winlogon Notify uses an unusual DLL name or path: {notify_name} -> {raw}"
+            missing = self._missing_command_target_details(raw, notify_name or kind)
+            if missing:
+                reason_text = self._format_missing_target_reason(missing)
+                severity = "HIGH" if missing["score"] >= 3 else "MEDIUM"
+                category = "Broken Persistence Residue" if missing["score"] >= 3 else "Broken Logon Residue"
+                return severity, category, f"Winlogon Notify still references a missing DLL and can be cleaned safely: {notify_name or '(unnamed)'} -> {raw} [{reason_text}]"
             return None
 
         return None
@@ -5694,6 +5989,13 @@ class ScanEngine:
         if self._value_has_malware_signal(clsid) or self._value_has_malware_signal(resolved_path):
             return "HIGH", "Explorer Hijack Review", f"{kind} resolves to a suspicious Explorer hook: {value_name} -> {resolved_path or clsid}"
 
+        missing = self._missing_command_target_details(resolved_path, f"{kind}:{value_name}")
+        if missing:
+            reason_text = self._format_missing_target_reason(missing)
+            severity = "HIGH" if missing["score"] >= 3 else "MEDIUM"
+            category = "Broken Persistence Residue" if missing["score"] >= 3 else "Broken Shell Extension Residue"
+            return severity, category, f"{kind} still resolves to a missing Explorer hook target and can be cleaned safely: {value_name} -> {resolved_path} [{reason_text}]"
+
         normalized_target = self._normalized_path(self._extract_command_target(resolved_path) or resolved_path)
         if normalized_target and self._path_in_user_writable_exec_zone(normalized_target):
             return "HIGH", "Explorer Hijack Review", f"{kind} resolves to a user-writable Explorer hook DLL: {value_name} -> {resolved_path}"
@@ -5704,6 +6006,22 @@ class ScanEngine:
                 return "MEDIUM", "Explorer Hijack Review", f"{kind} resolves to an unusual Explorer hook DLL: {value_name} -> {resolved_path}"
 
         return None
+
+    def _looks_suspicious_toast_activation(self, row):
+        raw = self._normalize_cmdline((row or {}).get("Value")).strip()
+        if not raw:
+            return None
+
+        missing = self._missing_command_target_details(raw, (row or {}).get("Subkey") or "ToastActivation")
+        if not missing:
+            return None
+
+        reason_text = self._format_missing_target_reason(missing)
+        severity = "HIGH" if missing["score"] >= 3 else "MEDIUM"
+        category = "Broken Persistence Residue" if missing["score"] >= 3 else "Broken Notification Registration"
+        clsid = str((row or {}).get("CLSID") or "").strip()
+        label = clsid or "Toast activation registration"
+        return severity, category, f"Toast activation registration still points at a missing executable and can be cleaned safely: {label} -> {raw} [{reason_text}]"
 
     def _looks_suspicious_active_setup(self, row):
         raw = self._normalize_cmdline((row or {}).get("StubPath")).strip()
@@ -5734,6 +6052,12 @@ class ScanEngine:
             return "HIGH", "Active Setup Persistence", f"Active Setup component launches a temp-stage executable: {display} -> {raw}"
         if self._looks_suspicious_userland_payload(normalized_target):
             return "HIGH", "Active Setup Persistence", f"Active Setup component launches a suspicious user-writable payload: {display} -> {raw}"
+        missing = self._missing_command_target_details(raw, display)
+        if missing:
+            reason_text = self._format_missing_target_reason(missing)
+            severity = "HIGH" if missing["score"] >= 3 else "MEDIUM"
+            category = "Broken Persistence Residue" if missing["score"] >= 3 else "Broken Active Setup Residue"
+            return severity, category, f"Active Setup component still points at a missing target and can be cleaned safely: {display} -> {raw} [{reason_text}]"
         return None
 
     def _looks_suspicious_runonceex(self, row):
@@ -5866,6 +6190,17 @@ class ScanEngine:
                     "Malicious Scheduled Task",
                     f"Scheduled task launches a script host with remote loader behavior: {task_label}",
                 )
+
+        missing = self._missing_command_target_details(execute, task_label)
+        if missing:
+            reason_text = self._format_missing_target_reason(missing)
+            severity = "HIGH" if missing["score"] >= 3 else "MEDIUM"
+            category = "Broken Scheduled Task Residue" if missing["score"] < 3 else "Broken Persistence Residue"
+            return (
+                severity,
+                category,
+                f"Scheduled task still points at a missing target and can be cleaned safely: {task_label} -> {missing['raw']} [{reason_text}]",
+            )
 
         return None
 
@@ -6223,22 +6558,7 @@ class ScanEngine:
 
     @staticmethod
     def _chromium_profile_dirs(root):
-        if not os.path.isdir(root):
-            return []
-        base = os.path.basename(root).lower()
-        if base != "user data":
-            return [root]
-        out = []
-        try:
-            for entry in os.listdir(root):
-                full = os.path.join(root, entry)
-                if not os.path.isdir(full):
-                    continue
-                if entry == "Default" or entry.startswith("Profile ") or entry in {"Guest Profile", "System Profile"}:
-                    out.append(full)
-        except Exception:
-            return []
-        return out
+        return _iter_chromium_profile_dirs(root)
 
     def _iter_chromium_extension_manifests(self):
         profile = os.environ.get("USERPROFILE", "")
@@ -6536,8 +6856,18 @@ class ScanEngine:
             return
 
         profile = os.environ.get("USERPROFILE", "")
+        session_targets = {}
+        for label, target_path in _iter_session_reset_targets(profile):
+            session_targets.setdefault(label, []).append(target_path)
         for label, rel_path in EXPOSURE_DIRS:
             full_path = os.path.join(profile, rel_path)
+            if label in session_targets:
+                if self._resettable_exposure_is_current(label, full_path, session_targets[label]):
+                    self._note_exposure(
+                        f"Exposure warning - {label} data may have been accessed. Revoke sessions from a clean device",
+                        full_path
+                    )
+                continue
             if os.path.exists(full_path):
                 self._note_exposure(
                     f"Exposure warning — {label} data may have been accessed. Revoke sessions from a clean device",
@@ -6555,8 +6885,9 @@ class ScanEngine:
                     full_path,
                 )
 
+        steam_targets = [path for found_label, path in _iter_steam_session_paths() if found_label == "Steam"]
         for steam_root in _steam_install_roots():
-            if not any(os.path.exists(os.path.join(steam_root, rel_path)) for rel_path in STEAM_SESSION_FILES):
+            if not self._resettable_exposure_is_current("Steam", steam_root, steam_targets):
                 continue
             self._note_exposure(
                 "Exposure warning — Steam client/session data may have been accessed. Change the Steam password, secure the tied email, and deauthorize devices from a clean device",
@@ -6795,6 +7126,7 @@ class ScanEngine:
                         continue
 
                     if child_name in actual_run_keys:
+                        run_value_found = False
                         for run_hive, run_key, run_hive_name in actual_run_keys[child_name]:
                             try:
                                 run_handle = winreg.OpenKey(run_hive, run_key)
@@ -6803,7 +7135,22 @@ class ScanEngine:
                             except (FileNotFoundError, PermissionError, OSError):
                                 continue
 
+                            run_value_found = True
                             if not self._value_has_malware_signal(run_value):
+                                missing = self._missing_command_target_details(run_value, item_name)
+                                if not missing:
+                                    continue
+                                location = f"{run_hive_name}\\{run_key}"
+                                self._add(
+                                    "MEDIUM",
+                                    "Disabled Startup Residue",
+                                    f"Disabled startup entry still references a missing target and can be cleaned safely: {item_name} -> {missing['raw']}",
+                                    location,
+                                    lambda approved_hive=hive, approved_key=subkey, approved_name=item_name,
+                                    value_hive=run_hive, value_key=run_key, value_name=item_name: self._remediate_disabled_startup_entry(
+                                        [(approved_hive, approved_key, approved_name), (value_hive, value_key, value_name)]
+                                    ),
+                                )
                                 continue
                             location = f"{run_hive_name}\\{run_key}"
                             self._add(
@@ -6817,6 +7164,17 @@ class ScanEngine:
                                 ),
                             )
                             break
+                        if not run_value_found:
+                            location = f"{subkey}\\{item_name}"
+                            self._add(
+                                "MEDIUM",
+                                "Disabled Startup Residue",
+                                f"Disabled startup entry no longer has a backing Run value and can be cleaned safely: {item_name}",
+                                location,
+                                lambda approved_hive=hive, approved_key=subkey, approved_name=item_name: self._remediate_disabled_startup_entry(
+                                    [(approved_hive, approved_key, approved_name)]
+                                ),
+                            )
                         continue
 
                     for startup_root in self._startup_shortcut_roots():
@@ -6857,6 +7215,17 @@ class ScanEngine:
                                     [(approved_hive, approved_key, approved_name)]
                                 ),
                             )
+                        elif child_name == "StartupFolder":
+                            location = f"{subkey}\\{item_name}"
+                            self._add(
+                                "MEDIUM",
+                                "Disabled Startup Residue",
+                                f"Disabled startup shortcut no longer exists on disk and can be cleaned safely: {item_name}",
+                                location,
+                                lambda approved_hive=hive, approved_key=subkey, approved_name=item_name: self._remediate_disabled_startup_entry(
+                                    [(approved_hive, approved_key, approved_name)]
+                                ),
+                            )
 
                 try:
                     winreg.CloseKey(key)
@@ -6883,7 +7252,18 @@ class ScanEngine:
                 path_name = str(row.get("PathName") or "")
                 finding = self._looks_suspicious_service(name, display_name, path_name)
                 if not finding:
-                    continue
+                    missing = self._missing_command_target_details(path_name, name or display_name)
+                    if not missing:
+                        continue
+                    if missing["score"] < 2:
+                        continue
+                    reason_text = self._format_missing_target_reason(missing)
+                    severity = "HIGH" if missing["score"] >= 4 else "MEDIUM"
+                    finding = (
+                        severity,
+                        "Broken Service Residue",
+                        f"Service still references a missing payload and should be cleaned: {name or display_name} -> {missing['raw']} [{reason_text}]",
+                    )
                 severity, category, description = finding
                 self._add(
                     severity,
@@ -7639,6 +8019,29 @@ class ScanEngine:
             "actionable": suspicious_score >= 3 and "inbound" in direction.lower(),
         }
 
+    def _evaluate_missing_firewall_program(self, rule_name, display_name, direction, program):
+        normalized_program = self._normalized_path(program)
+        if (
+            not normalized_program
+            or os.path.exists(normalized_program)
+            or self._is_local_tool_path(normalized_program)
+            or self._is_benign_firewall_rule_name(rule_name, display_name)
+        ):
+            return None
+
+        missing = self._missing_command_target_details(program, display_name or rule_name)
+        if not missing:
+            return None
+
+        severity = "HIGH" if missing["score"] >= 3 else "MEDIUM"
+        return {
+            "severity": severity,
+            "description": (
+                f"Firewall rule points at a missing program and can be cleaned safely: "
+                f"{display_name or rule_name} -> {missing['raw']}"
+            ),
+        }
+
     def scan_firewall_rules(self):
         self.log("FIREWALL RULE REVIEW", "SECTION")
         rows = self._run_powershell_json(
@@ -7670,6 +8073,18 @@ class ScanEngine:
                 direction = str(row.get("Direction") or "")
                 program = str(row.get("Program") or "")
                 if not program:
+                    continue
+
+                missing_finding = self._evaluate_missing_firewall_program(rule_name, display_name, direction, program)
+                if missing_finding:
+                    self._add(
+                        missing_finding["severity"],
+                        "Broken Firewall Rule",
+                        missing_finding["description"],
+                        rule_name or display_name,
+                        lambda name=rule_name: self._delete_firewall_rule(name),
+                        trust_path=program,
+                    )
                     continue
 
                 finding = self._evaluate_firewall_rule(rule_name, display_name, direction, program)
@@ -7786,6 +8201,21 @@ class ScanEngine:
     # ── Filesystem scan ─────────────────────────────────────────────────────
 
     def scan_filesystem(self):
+        roots = [root for root in SCAN_ROOTS if root and os.path.isdir(root)]
+        if self.turbo and len(roots) > 1:
+            shared_state = {"visited": 0, "lock": threading.Lock()}
+            workers = min(self._filesystem_worker_count(), len(roots))
+            self.log(f"Turbo mode       : using {workers} filesystem workers and elevated priority where available.", "INFO")
+            with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="renkill-fs") as pool:
+                futures = [pool.submit(self._scan_filesystem_root, root, shared_state) for root in roots]
+                for future in as_completed(futures):
+                    if self._stop:
+                        break
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        self.log(f"Walk error: {exc}", "WARN")
+            return
         self.log("── FILESYSTEM SCAN ────────────────────────────────────", "SECTION")
         visited = 0
 
@@ -8452,12 +8882,26 @@ class ScanEngine:
                     while True:
                         try:
                             name, value, _ = winreg.EnumValue(key, i)
+                            full_key = f"{hive_name}\\{subkey}"
                             if self._value_has_malware_signal(value):
-                                full_key = f"{hive_name}\\{subkey}"
                                 self._add("HIGH", "Registry Persistence",
                                           f"Autorun: {full_key}  [{name}] = {value[:100]}",
                                           full_key,
                                           lambda h=hive, sk=subkey, n=name: self._delete_reg_val(h, sk, n))
+                            else:
+                                missing = self._missing_command_target_details(value, f"{full_key}[{name}]")
+                                if missing:
+                                    score = missing["score"]
+                                    reason_text = self._format_missing_target_reason(missing)
+                                    category = "Broken Autorun Residue" if score < 3 else "Broken Persistence Residue"
+                                    severity = "MEDIUM" if score < 3 else "HIGH"
+                                    self._add(
+                                        severity,
+                                        category,
+                                        f"Autorun still points at a missing target and can be cleaned safely: {name} -> {missing['raw']} [{reason_text}]",
+                                        full_key,
+                                        lambda h=hive, sk=subkey, n=name: self._delete_reg_val(h, sk, n),
+                                    )
                             i += 1
                         except OSError:
                             break
@@ -8863,7 +9307,7 @@ class ScanEngine:
             severity, category, description = finding
             location = f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]"
             action = None
-            if category == "Logon Script Persistence" and severity == "HIGH":
+            if category in {"Logon Script Persistence", "Broken Persistence Residue", "Broken Logon Residue"}:
                 action = lambda h=row.get("Hive"), sk=row.get("Subkey"), n=row.get("ValueName"): self._delete_reg_val(h, sk, n)
             self._add(
                 severity,
@@ -8887,11 +9331,37 @@ class ScanEngine:
                 continue
             severity, category, description = finding
             location = f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]"
+            action = None
+            if category in {"Explorer Hijack Review", "Broken Persistence Residue", "Broken Shell Extension Residue"}:
+                action = lambda h=row.get("Hive"), sk=row.get("Subkey"), n=row.get("ValueName"): self._delete_reg_val(h, sk, n)
             self._add(
                 severity,
                 category,
                 description,
                 location,
+                action,
+            )
+
+    def scan_toast_activation_residue(self):
+        self.log("NOTIFICATION REGISTRATION REVIEW", "SECTION")
+        if not WINREG_OK:
+            self.log("winreg unavailable - notification registration review skipped", "WARN")
+            return
+
+        for row in self._collect_toast_activation_rows():
+            if self._stop:
+                return
+            finding = self._looks_suspicious_toast_activation(row)
+            if not finding:
+                continue
+            severity, category, description = finding
+            location = f"{row.get('HiveName')}\\{row.get('Subkey')}[(Default)]"
+            self._add(
+                severity,
+                category,
+                description,
+                location,
+                lambda h=row.get("Hive"), sk=row.get("Subkey"): self._delete_reg_val(h, sk, ""),
             )
 
     def scan_shell_persistence(self):
@@ -9407,6 +9877,215 @@ class ScanEngine:
 
     # Scan orchestration
 
+    def _filesystem_worker_count(self):
+        cores = os.cpu_count() or 4
+        return max(2, min(8, cores))
+
+    def _enter_turbo_priority(self):
+        if not self.turbo or not PSUTIL_OK:
+            return None
+        try:
+            proc = psutil.Process(os.getpid())
+            original = proc.nice()
+            high_class = getattr(psutil, "HIGH_PRIORITY_CLASS", None)
+            if high_class is None:
+                return None
+            proc.nice(high_class)
+            self.log("Turbo mode raised RenKill process priority for a faster scan pass.", "INFO")
+            return original
+        except Exception as exc:
+            self.log(f"Turbo mode could not raise process priority: {exc}", "WARN")
+            return None
+
+    @staticmethod
+    def _restore_turbo_priority(previous_priority):
+        if previous_priority is None or not PSUTIL_OK:
+            return
+        try:
+            psutil.Process(os.getpid()).nice(previous_priority)
+        except Exception:
+            pass
+
+    def _bump_filesystem_progress(self, shared_state, dirpath):
+        with shared_state["lock"]:
+            shared_state["visited"] += 1
+            visited = shared_state["visited"]
+        if visited % 40 == 0:
+            self.progress(f"Walked {visited} dirs...  {dirpath[:65]}")
+
+    def _scan_filesystem_root(self, root, shared_state):
+        if not root or not os.path.isdir(root):
+            return
+        self.log(f"Entering: {root}", "INFO")
+
+        try:
+            for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+                if self._stop:
+                    return
+                dirpath_lower = dirpath.lower()
+                if self._is_local_tool_path(dirpath):
+                    dirnames.clear()
+                    continue
+                if self._should_skip_walk_dir(dirpath) and not self._contains_marker(dirpath_lower, CAMPAIGN_DIR_MARKERS):
+                    dirnames.clear()
+                    continue
+
+                dirnames[:] = [
+                    d for d in dirnames
+                    if not self._is_local_tool_path(os.path.join(dirpath, d))
+                    and (
+                        not self._should_skip_walk_dir(os.path.join(dirpath, d))
+                        or self._contains_marker(os.path.join(dirpath, d).lower(), CAMPAIGN_DIR_MARKERS)
+                    )
+                ]
+
+                depth = dirpath.replace(root, "").count(os.sep)
+                if depth > 7:
+                    dirnames.clear()
+                    continue
+
+                self._bump_filesystem_progress(shared_state, dirpath)
+
+                dir_names_lower = {d.lower() for d in dirnames}
+                file_names_lower = {f.lower() for f in filenames}
+                bundle_hit = self._evaluate_renpy_bundle(dirpath, dir_names_lower, filenames)
+                if bundle_hit:
+                    sev, category, description = bundle_hit
+                    dp = dirpath
+                    self._add(
+                        sev,
+                        category,
+                        description,
+                        dp,
+                        lambda p=dp: self._nuke_directory(p),
+                    )
+
+                if self._contains_marker(dirpath, CAMPAIGN_DIR_MARKERS):
+                    dp = dirpath
+                    self._add("CRITICAL", "Persistence Staging Directory",
+                              f"HijackLoader persistence directory at: {dp}", dp,
+                              lambda p=dp: self._nuke_directory(p))
+
+                if self._looks_like_hijackloader_stage_dir(dirpath, file_names_lower):
+                    dp = dirpath
+                    self._add("CRITICAL", "HijackLoader Stage Directory",
+                              f"HijackLoader stage directory at: {dp}", dp,
+                              lambda p=dp: self._nuke_directory(p))
+                elif self._looks_like_netsupport_stage_dir(dirpath, file_names_lower):
+                    dp = dirpath
+                    self._add("HIGH", "Suspicious Loader Stage Directory",
+                              f"NetSupport-style RAT staging directory detected in a suspicious location: {dp}", dp,
+                              lambda p=dp: self._nuke_directory(p))
+                elif self._looks_like_compiled_temp_stage_dir(dirpath, file_names_lower):
+                    dp = dirpath
+                    self._add("HIGH", "Compiled Temp Stage Directory",
+                              f"Temp compiler stage shows random PowerShell/C# payload build layout: {dp}", dp,
+                              lambda p=dp: self._nuke_directory(p))
+                elif self._looks_like_suspicious_temp_stage_dir(dirpath, file_names_lower):
+                    dp = dirpath
+                    self._add("HIGH", "Suspicious Temp Stage Directory",
+                              f"Temp staging directory shows downloader or sideload layout: {dp}", dp,
+                              lambda p=dp: self._nuke_directory(p))
+                elif self._looks_like_generic_loader_stage_dir(dirpath, file_names_lower):
+                    dp = dirpath
+                    self._add("HIGH", "Suspicious Loader Stage Directory",
+                              f"Loader staging directory pattern detected: {dp}", dp,
+                              lambda p=dp: self._nuke_directory(p))
+
+                for fname in filenames:
+                    fl = fname.lower()
+                    fpath = os.path.join(dirpath, fname)
+                    fpath_lower = fpath.lower()
+                    if self._is_local_tool_path(fpath):
+                        continue
+
+                    exact_ioc = self._matches_exact_ioc_hash(fpath, fname)
+                    if exact_ioc:
+                        self._add("CRITICAL", "Exact IOC Hash",
+                                  f"Exact IOC hash match ({exact_ioc}): {fpath}", fpath,
+                                  lambda p=fpath: self._delete_file(p))
+                        continue
+
+                    if fl in ("instaler.exe", "instaler.py", "instaler.pyo",
+                              "instaler.pyc", "lnstaier.exe", "iviewers.dll"):
+                        self._add("CRITICAL", "Malicious File",
+                                  f"Known RenKill IOC: {fpath}", fpath,
+                                  lambda p=fpath: self._delete_file(p))
+
+                    elif fl in ("archive.rpa", "script.rpyc") and self._in_temp(dirpath):
+                        self._add("HIGH", "Malicious Archive/Script",
+                                  f"RenEngine payload in temp: {fpath}", fpath,
+                                  lambda p=fpath: self._delete_file(p))
+
+                    elif fl in NETSUPPORT_STAGE_FILENAMES and self._looks_like_suspicious_netsupport_path(fpath, allow_metadata=True):
+                        category = "Dropped Executable" if fl.endswith((".exe", ".dll")) else "Persistence Artifact"
+                        description = (
+                            f"NetSupport-style RAT component found in a suspicious location: {fpath}"
+                            if category == "Dropped Executable"
+                            else f"NetSupport-style RAT configuration or license artifact found in a suspicious location: {fpath}"
+                        )
+                        self._add("HIGH", category, description, fpath,
+                                  lambda p=fpath: self._delete_file(p))
+
+                    elif fl == "__init__.py" and "renpy" in dirpath.lower() and self._in_temp(dirpath):
+                        self._add("HIGH", "Hijacked Module Init",
+                                  f"Malicious __init__.py in renpy temp dir: {fpath}", fpath,
+                                  lambda p=fpath: self._delete_file(p))
+
+                    elif fl.endswith(".key") and self._in_temp(dirpath):
+                        self._add("MEDIUM", "Payload Key File",
+                                  f"Encrypted payload .key in temp: {fpath}", fpath,
+                                  lambda p=fpath: self._delete_file(p))
+
+                    elif fl in HIJACKLOADER_STAGE_FILES and self._looks_like_hijackloader_stage_dir(dirpath, file_names_lower):
+                        sev = "CRITICAL" if fl in {"w8cpbgqi.exe", "cc32290mt.dll"} else "HIGH"
+                        self._add(sev, "HijackLoader Stage Artifact",
+                                  f"HijackLoader stage artifact: {fpath}", fpath,
+                                  lambda p=fpath: self._delete_file(p))
+
+                    elif fl in LOADER_CONTAINER_DLLS and self._looks_like_hijackloader_stage_dir(dirpath, file_names_lower):
+                        self._add("HIGH", "Loader Container DLL",
+                                  f"Suspicious loader container DLL in stage directory: {fpath}",
+                                  fpath, lambda p=fpath: self._delete_file(p))
+
+                    elif fl in CAMPAIGN_FILENAMES and (
+                        self._contains_marker(fpath, CAMPAIGN_DIR_MARKERS)
+                        or "\\programdata\\" in fpath_lower
+                        or "\\appdata\\roaming\\" in fpath_lower
+                        or "\\appdata\\local\\" in fpath_lower
+                    ):
+                        sev = "CRITICAL" if fl in {"froodjurain.wkk", "chime.exe", "zoneind.exe"} else "HIGH"
+                        self._add(sev, "Persistence Artifact",
+                                  f"HijackLoader/ACR persistence artifact: {fpath}", fpath,
+                                  lambda p=fpath: self._delete_file(p))
+
+                    elif fl.endswith(".lnk") and (
+                        "\\desktop\\" in fpath_lower
+                        or fpath_lower.endswith("\\desktop")
+                    ) and self._file_contains_ascii_or_utf16le(
+                        fpath,
+                        ("broker_crypt_v4_i386", "chime.exe", "zoneind.exe", "froodjurain.wkk")
+                    ):
+                        self._add("HIGH", "Malicious Shortcut",
+                                  f"Desktop shortcut referencing RenEngine persistence: {fpath}",
+                                  fpath, lambda p=fpath: self._delete_file(p))
+
+                    elif (fl.endswith(".exe") and self._in_temp(dirpath)
+                          and self._looks_random(fname[:-4])):
+                        self._add("HIGH", "Dropped Executable",
+                                  f"Random-named EXE in temp (likely HijackLoader drop): {fpath}",
+                                  fpath, lambda p=fpath: self._delete_file(p))
+
+                    elif self._is_user_visible_root(root) and self._is_probable_source_lure(fpath, fname):
+                        self._add("MEDIUM", "Source Lure Artifact",
+                                  f"Possible infection source or lure file: {fpath}",
+                                  fpath, lambda p=fpath: self._delete_file(p))
+
+        except PermissionError:
+            return
+        except Exception as exc:
+            self.log(f"Walk error: {exc}", "WARN")
+
     def run_full_scan(self):
         self.threats.clear()
         self._threat_keys.clear()
@@ -9422,6 +10101,7 @@ class ScanEngine:
         self._scheduled_task_rows = None
         self._autorun_rows = None
         self._run_mru_rows = None
+        self._runonceex_rows = None
         self._policy_rows = None
         self._active_setup_rows = None
         self._disabled_startup_rows = None
@@ -9429,37 +10109,43 @@ class ScanEngine:
         self._shell_rows = None
         self._logon_rows = None
         self._explorer_hijack_rows = None
+        self._toast_activation_rows = None
         self._shell_history_rows = None
-        self.scan_network()
-        self.scan_processes()
-        self.scan_process_modules()
-        self.scan_filesystem()
-        self.scan_startup_persistence()
-        self.scan_shortcut_targets()
-        self.scan_disabled_startup_items()
-        self.scan_services()
-        self.scan_wmi_persistence()
-        self.scan_scheduled_tasks()
-        self.scan_registry()
-        self.scan_command_history_review()
-        self.scan_runonceex_persistence()
-        self.scan_policy_persistence()
-        self.scan_active_setup_persistence()
-        self.scan_session_manager_review()
-        self.scan_safeboot_review()
-        self.scan_logon_persistence()
-        self.scan_explorer_hijacks()
-        self.scan_shell_persistence()
-        self.scan_startup_correlations()
-        self.scan_alternate_data_streams()
-        self.scan_system_tampering()
-        self.scan_defender_posture()
-        self.scan_security_posture()
-        self.scan_browser_policies()
-        self.scan_security_events()
-        self.scan_firewall_rules()
-        self.scan_installed_programs()
-        self.scan_browser_extensions()
+        priority_token = self._enter_turbo_priority()
+        try:
+            self.scan_network()
+            self.scan_processes()
+            self.scan_process_modules()
+            self.scan_filesystem()
+            self.scan_startup_persistence()
+            self.scan_shortcut_targets()
+            self.scan_disabled_startup_items()
+            self.scan_services()
+            self.scan_wmi_persistence()
+            self.scan_scheduled_tasks()
+            self.scan_registry()
+            self.scan_command_history_review()
+            self.scan_runonceex_persistence()
+            self.scan_policy_persistence()
+            self.scan_active_setup_persistence()
+            self.scan_toast_activation_residue()
+            self.scan_session_manager_review()
+            self.scan_safeboot_review()
+            self.scan_logon_persistence()
+            self.scan_explorer_hijacks()
+            self.scan_shell_persistence()
+            self.scan_startup_correlations()
+            self.scan_alternate_data_streams()
+            self.scan_system_tampering()
+            self.scan_defender_posture()
+            self.scan_security_posture()
+            self.scan_browser_policies()
+            self.scan_security_events()
+            self.scan_firewall_rules()
+            self.scan_installed_programs()
+            self.scan_browser_extensions()
+        finally:
+            self._restore_turbo_priority(priority_token)
         self.threats.sort()
         crit = sum(1 for t in self.threats if t.severity == "CRITICAL")
         high = sum(1 for t in self.threats if t.severity == "HIGH")
@@ -9768,8 +10454,9 @@ SEV_COLORS = {
     "DEFAULT":  FG,
 }
 
-LOG_ACTION_TRUST_COLORS = (CYAN, LIME, YELLOW, PINK)
-LOG_ACTION_OPEN_COLORS = (AMBER, CYAN, PINK, GREEN)
+def _rgb_to_hex(rgb_triplet):
+    r, g, b = (max(0, min(255, int(channel))) for channel in rgb_triplet)
+    return f"#{r:02X}{g:02X}{b:02X}"
 
 
 class App(tk.Tk):
@@ -9783,6 +10470,7 @@ class App(tk.Tk):
 
         self._scanner = None
         self._thread = None
+        self._turbo_var = tk.BooleanVar(value=False)
         self._paranoid_var = tk.BooleanVar(value=False)
         self._action_hint_var = tk.StringVar(
             value="Scan first to map the infection. ACCOUNT LOCKDOWN is ready any time for a one-click local browser, Discord, Telegram, and Steam session wipe on this PC."
@@ -9796,13 +10484,14 @@ class App(tk.Tk):
         self._startup_update_prompted = set()
         self._user_trusted_paths = load_user_trusted_paths()
         self._log_action_tag_counter = 0
-        self._log_action_color_phase = 0
+        self._log_action_specs = {}
+        self._turbo_warned = False
 
         self._build()
         self._fit_window_to_content()
         self.bind("<Configure>", self._refresh_status_layout)
         self.after(0, self._refresh_status_layout)
-        self.after(0, self._animate_log_action_tags)
+        self.after(0, self._tick_log_action_glitch)
         self._check_admin()
         self._startup_msg()
         self._report_update_state()
@@ -9828,18 +10517,99 @@ class App(tk.Tk):
         current_height = max(self.winfo_height(), 700, min_height)
         self.geometry(f"{current_width}x{current_height}")
 
-    def _animate_log_action_tags(self):
+    @staticmethod
+    def _glitch_char(target_char):
+        if target_char == " ":
+            return " "
+        if random.random() < 0.12:
+            return target_char
+        return random.choice(GLITCH_ACTION_CHARS)
+
+    def _render_glitch_action_label(self, label, frame, settle=0.0):
+        width = len(label)
+        if width <= 0:
+            return "[ ]"
+
+        wave_center = ((frame * 0.55) % (width + 6)) - 3.0
+        settle_edge = settle * (width + 2) - 1.0
+        chars = []
+
+        for index, target_char in enumerate(label):
+            if target_char == " ":
+                chars.append(" ")
+                continue
+
+            if settle >= 0.999:
+                chars.append(target_char)
+                continue
+
+            wave_distance = abs(index - wave_center)
+            if settle > 0.0:
+                if index < settle_edge - 0.8:
+                    chars.append(target_char)
+                    continue
+                if index <= settle_edge + 1.2:
+                    chars.append(
+                        target_char if random.random() < 0.72 else self._glitch_char(target_char)
+                    )
+                    continue
+
+            if wave_distance < 0.45:
+                chars.append(target_char)
+            elif wave_distance < 1.2:
+                chars.append(
+                    target_char.lower() if target_char.isalpha() and random.random() < 0.35
+                    else self._glitch_char(target_char)
+                )
+            elif wave_distance < 2.2 and random.random() < 0.22:
+                chars.append(target_char)
+            else:
+                chars.append(self._glitch_char(target_char))
+
+        return f"[ {''.join(chars)} ]"
+
+    def _set_log_action_label(self, tag_name, text):
+        spec = self._log_action_specs.get(tag_name)
+        if not spec or not hasattr(self, "_log_txt"):
+            return
+        ranges = self._log_txt.tag_ranges(tag_name)
+        if len(ranges) < 2:
+            return
+        start, end = ranges[0], ranges[1]
+        self._log_txt.configure(state="normal")
+        self._log_txt.delete(start, end)
+        self._log_txt.insert(start, text, (spec["base_tag"], tag_name))
+        self._log_txt.configure(state="disabled")
+
+    def _set_log_action_hover(self, tag_name, hovered):
+        spec = self._log_action_specs.get(tag_name)
+        if not spec:
+            return
+        spec["hover_target"] = hovered
+
+    def _tick_log_action_glitch(self):
         if not hasattr(self, "_log_txt") or not self.winfo_exists():
             return
-        trust_color = LOG_ACTION_TRUST_COLORS[self._log_action_color_phase % len(LOG_ACTION_TRUST_COLORS)]
-        open_color = LOG_ACTION_OPEN_COLORS[self._log_action_color_phase % len(LOG_ACTION_OPEN_COLORS)]
-        self._log_txt.tag_configure("TRUST_LINK", foreground=trust_color)
-        self._log_txt.tag_configure("OPEN_LINK", foreground=open_color)
-        self._log_action_color_phase = (self._log_action_color_phase + 1) % max(
-            len(LOG_ACTION_TRUST_COLORS),
-            len(LOG_ACTION_OPEN_COLORS),
-        )
-        self.after(420, self._animate_log_action_tags)
+        for tag_name, spec in list(self._log_action_specs.items()):
+            spec["frame"] = spec.get("frame", 0.0) + 1.0
+            settle = spec.get("settle", 0.0)
+            target = 1.0 if spec.get("hover_target") else 0.0
+            if target > settle:
+                settle = min(1.0, settle + 0.24)
+            elif target < settle:
+                settle = max(0.0, settle - 0.16)
+            spec["settle"] = settle
+
+            if settle >= 0.999 and spec.get("hover_target"):
+                rendered = spec["proper"]
+            else:
+                rendered = self._render_glitch_action_label(
+                    spec["label"],
+                    spec["frame"],
+                    settle=settle,
+                )
+            self._set_log_action_label(tag_name, rendered)
+        self.after(70, self._tick_log_action_glitch)
 
     def _build(self):
         # Title bar
@@ -9898,8 +10668,32 @@ class App(tk.Tk):
         self._btn_update = self._btn(secondary_actions, "CHECK UPDATES", BLUE, self._do_update)
         self._btn_recovery = self._btn(secondary_actions, "ACCOUNT RECOVERY", AMBER, self._do_recovery_plan)
 
+        mode_flags = tk.Frame(secondary_actions, bg=BG)
+        mode_flags.pack(side="right", padx=(12, 0), pady=2)
+
+        self._turbo_chk = tk.Checkbutton(
+            mode_flags,
+            text="TURBO MODE",
+            variable=self._turbo_var,
+            onvalue=True,
+            offvalue=False,
+            command=self._on_toggle_turbo,
+            selectcolor=BG3,
+            activebackground=BG,
+            activeforeground=CYAN,
+            bg=BG,
+            fg=CYAN,
+            font=(MONO, 9, "bold"),
+            relief="flat",
+            bd=0,
+            highlightthickness=0,
+            anchor="e",
+            justify="right",
+        )
+        self._turbo_chk.pack(anchor="e")
+
         self._paranoid_chk = tk.Checkbutton(
-            secondary_actions,
+            mode_flags,
             text="PARANOID MODE",
             variable=self._paranoid_var,
             onvalue=True,
@@ -9914,7 +10708,7 @@ class App(tk.Tk):
             bd=0,
             highlightthickness=0,
         )
-        self._paranoid_chk.pack(side="right", padx=(12, 0), pady=2)
+        self._paranoid_chk.pack(anchor="e")
 
         self._btn_kill.configure(state="disabled")
         self._btn_revert.configure(state="disabled")
@@ -9962,13 +10756,13 @@ class App(tk.Tk):
         self._log_txt.tag_configure(
             "TRUST_LINK",
             foreground=CYAN,
-            background="#101823",
+            background="#0d1320",
             font=(MONO, 9, "bold"),
         )
         self._log_txt.tag_configure(
             "OPEN_LINK",
             foreground=AMBER,
-            background="#1d140a",
+            background="#1a1408",
             font=(MONO, 9, "bold"),
         )
         self._log_txt.configure(state="disabled")
@@ -10457,22 +11251,7 @@ class App(tk.Tk):
 
     @staticmethod
     def _chromium_profile_dirs(root):
-        if not os.path.isdir(root):
-            return []
-        base = os.path.basename(root).lower()
-        if base != "user data":
-            return [root]
-        out = []
-        try:
-            for entry in os.listdir(root):
-                full = os.path.join(root, entry)
-                if not os.path.isdir(full):
-                    continue
-                if entry == "Default" or entry.startswith("Profile ") or entry in {"Guest Profile", "System Profile"}:
-                    out.append(full)
-        except Exception:
-            return []
-        return out
+        return _iter_chromium_profile_dirs(root)
 
     def _delete_path_force(self, path):
         if not os.path.exists(path):
@@ -10526,37 +11305,7 @@ class App(tk.Tk):
         return killed
 
     def _iter_session_reset_paths(self):
-        profile = os.environ.get("USERPROFILE", "")
-        for app in SESSION_RESET_APPS:
-            kind = app["kind"]
-            if kind == "steam":
-                yield from _iter_steam_session_paths()
-                continue
-            for rel_root in app["roots"]:
-                root = os.path.join(profile, rel_root)
-                if kind == "flat":
-                    if not os.path.isdir(root):
-                        continue
-                    for sub in app["subpaths"]:
-                        yield app["label"], os.path.join(root, sub)
-                elif kind == "chromium":
-                    for profile_dir in self._chromium_profile_dirs(root):
-                        for sub in CHROMIUM_SESSION_SUBPATHS:
-                            yield app["label"], os.path.join(profile_dir, sub)
-                elif kind == "firefox":
-                    if not os.path.isdir(root):
-                        continue
-                    try:
-                        for entry in os.listdir(root):
-                            profile_dir = os.path.join(root, entry)
-                            if not os.path.isdir(profile_dir):
-                                continue
-                            for fname in FIREFOX_SESSION_FILES:
-                                yield app["label"], os.path.join(profile_dir, fname)
-                            for sub in FIREFOX_SESSION_DIRS:
-                                yield app["label"], os.path.join(profile_dir, sub)
-                    except Exception:
-                        continue
+        yield from _iter_session_reset_targets(os.environ.get("USERPROFILE", ""))
 
     @staticmethod
     def _flush_dns_cache():
@@ -10579,19 +11328,31 @@ class App(tk.Tk):
         self._log_txt.tag_bind(
             tag_name,
             "<Enter>",
-            lambda _event: self._log_txt.configure(cursor="hand2"),
+            lambda _event, name=tag_name: (self._set_log_action_hover(name, True), self._log_txt.configure(cursor="hand2")),
         )
         self._log_txt.tag_bind(
             tag_name,
             "<Leave>",
-            lambda _event: self._log_txt.configure(cursor="xterm"),
+            lambda _event, name=tag_name: (self._set_log_action_hover(name, False), self._log_txt.configure(cursor="xterm")),
         )
 
     def _append_log_action(self, label, base_tag, callback):
         self._log_action_tag_counter += 1
         action_tag = f"log_action_{self._log_action_tag_counter}"
+        self._log_action_specs[action_tag] = {
+            "label": label,
+            "proper": f"[ {label} ]",
+            "base_tag": base_tag,
+            "hover_target": False,
+            "frame": random.uniform(0.0, 12.0),
+            "settle": 0.0,
+        }
         self._bind_log_action(action_tag, callback)
-        self._log_txt.insert("end", f"  [ {label} ]", (base_tag, action_tag))
+        self._log_txt.insert(
+            "end",
+            "  " + self._render_glitch_action_label(label, self._log_action_specs[action_tag]["frame"]),
+            (base_tag, action_tag),
+        )
 
     def _append_log_path_actions(self, raw_path):
         open_target = self._qualify_log_open_path(raw_path)
@@ -10656,6 +11417,21 @@ class App(tk.Tk):
         self._status_lbl.configure(wraplength=wrap)
         if hasattr(self, "_action_hint_lbl"):
             self._action_hint_lbl.configure(wraplength=wrap)
+
+    def _on_toggle_turbo(self):
+        if not self._turbo_var.get():
+            return
+        if not self._turbo_warned:
+            self._turbo_warned = True
+            messagebox.showwarning(
+                "Turbo Mode",
+                "Turbo mode lets RenKill use more system resources to scan faster.\n\n"
+                "This can make other programs sluggish or unstable while the scan is running."
+            )
+        self._set_action_hint(
+            "Turbo mode is armed. RenKill will push harder on CPU and filesystem work to finish scans faster, which can make other apps feel sluggish until the scan ends.",
+            CYAN,
+        )
 
     def _set_action_hint(self, msg, color=FG3):
         def _apply():
@@ -10851,14 +11627,25 @@ class App(tk.Tk):
         self._btn_report.configure(state="disabled")
         self._btn_update.configure(state="disabled")
         self._count_var.set("Scanning…")
-        scan_mode = "PARANOID" if self._paranoid_var.get() else "STANDARD"
-        self._set_status(f"Scanning system ({scan_mode})…", BLUE)
+        if self._turbo_var.get() and self._paranoid_var.get():
+            scan_mode = "TURBO + PARANOID"
+        elif self._turbo_var.get():
+            scan_mode = "TURBO"
+        elif self._paranoid_var.get():
+            scan_mode = "PARANOID"
+        else:
+            scan_mode = "STANDARD"
+        mode_color = CYAN if self._turbo_var.get() else RED if self._paranoid_var.get() else BLUE
+        self._set_status(f"Scanning system ({scan_mode})...", mode_color)
         self._log(f"Scan mode         : {scan_mode}", "WARN" if self._paranoid_var.get() else "INFO")
+        if self._turbo_var.get():
+            self._log("Turbo note        : RenKill may temporarily make other apps sluggish while this scan is running.", "INFO")
 
         self._scanner = ScanEngine(
             self._log,
             self._set_progress,
             paranoid=self._paranoid_var.get(),
+            turbo=self._turbo_var.get(),
             user_trusted_paths=self._user_trusted_paths,
         )
         self._scanner.post_cleanup_scan = self._last_remediation_ts > 0
@@ -11384,6 +12171,8 @@ class App(tk.Tk):
             dns_flushed = False
             dns_detail = ""
             touched_apps = set()
+            attempted_apps = {app["label"] for app in SESSION_RESET_APPS}
+            touched_counts = {}
             process_names = set()
             for app in SESSION_RESET_APPS:
                 process_names.update(name.lower() for name in app["processes"])
@@ -11395,7 +12184,23 @@ class App(tk.Tk):
                 if self._delete_path_force(path):
                     removed += 1
                     touched_apps.add(label)
+                    touched_counts[label] = touched_counts.get(label, 0) + 1
                     self._log(f"Cleared local session data: {path}", "SUCCESS")
+
+            reset_epoch = time.time()
+            reset_stamp = datetime.datetime.fromtimestamp(reset_epoch).strftime("%Y-%m-%d %H:%M:%S")
+            save_account_lockdown_state({
+                "updated_at": reset_stamp,
+                "updated_at_epoch": reset_epoch,
+                "labels": {
+                    label: {
+                        "reset_at": reset_stamp,
+                        "reset_at_epoch": reset_epoch,
+                        "cleared": touched_counts.get(label, 0),
+                    }
+                    for label in sorted(attempted_apps)
+                },
+            })
 
             dns_flushed, dns_detail = self._flush_dns_cache()
             if dns_flushed:
@@ -11405,6 +12210,8 @@ class App(tk.Tk):
 
             def _done():
                 app_list = ", ".join(sorted(touched_apps)) if touched_apps else "none found"
+                if self._scanner is not None:
+                    self._scanner.account_lockdown_state = load_account_lockdown_state()
                 self._set_status(
                     f"Account lockdown complete — {removed} storage item(s) cleared.",
                     GREEN if removed else AMBER
