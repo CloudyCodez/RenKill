@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.6.3 - 2026-05-17
+
+This release focuses on polish and security confidence. The inline log actions are quieter, the README has been rewritten into a cleaner maintainer-style overview, and the scanner gets another small accuracy pass around current infostealer delivery and session-theft behavior.
+
+- Simplified inline log actions:
+  - removed the animated glitch text from `TRUST` and `OPEN`
+  - kept the actions readable and direct with simple badge styling
+  - removed the animation timer and random text machinery from the UI code
+- Tightened current infostealer awareness:
+  - added fake `OpenClaw` / `Hologram` / `cloudvideo.exe` context from May 2026 fake-installer reporting
+  - kept those markers tied into existing lure, process, and persistence scoring instead of making them broad standalone detections
+- Improved release consistency:
+  - bumped app, README, and Windows version metadata to `1.6.3`
+  - refreshed the README so it explains RenKill plainly: what it scans, what it cleans, what `ACCOUNT LOCKDOWN` does, and what account recovery still requires from a clean device
+
 ## v1.6.2 - 2026-05-12
 
 This release folds in the latest proofing around trainer-style follow-ons, FRST residue cleanup patterns, and the May 2026 check on RenEngine-adjacent persistence. The important update is that the chain looks broader, but not fundamentally different: the operator is still leaning on user-writable relaunch points, scheduled tasks, browser/session theft, and increasingly trusted-looking delivery surfaces.

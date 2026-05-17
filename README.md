@@ -1,152 +1,113 @@
-Join the Server: https://discord.gg/82Mwq8Wj
+# RenKill v1.6.3
 
-# RenKill v1.6.2
+RenKill is a Windows cleanup tool for the fake Ren'Py `Instaler.exe` / `setup.exe` loader chain and the nearby infostealer and account-hijacker cases that now show up through trainers, cracks, fake playtests, fake VPNs, fake utilities, and Discord or Steam lures.
 
-Windows cleanup tool for the fake Ren'Py `Instaler.exe` / RenEngine loader chain.
-It focuses on the stuff this infection tends to leave behind: staged payloads,
-persistence, session fallout, and the same review surfaces people keep seeing in
-FRST cleanup threads.
+The tool is built around behavior and persistence, not one filename. These infections rotate names quickly, but they still tend to leave the same kinds of evidence: staged payload folders, scheduled tasks, startup relaunchers, policy drift, suspicious browser or extension state, and account-session fallout.
 
-Current release notes live in [CHANGELOG.md](C:/Users/conno/Documents/RenKill/CHANGELOG.md).
+RenKill is not a replacement for changing passwords and revoking sessions from a clean device. It is meant to remove the local infection and give the user a clearer answer about whether persistence stayed gone after cleanup.
 
----
+Current release notes are in [CHANGELOG.md](./CHANGELOG.md).
 
-## Coverage
+## What RenKill Looks For
 
-| Artifact or Behavior | How RenKill Looks For It |
+| Area | What RenKill Reviews |
 |---|---|
-| RenEngine Loader (`Instaler.exe`, `Instaler.py`) | Filename + folder structure match |
-| HijackLoader DLL (`iviewers.dll`, randomname EXEs) | Filename + entropy heuristic |
-| Ren'Py bundle structure (`renpy/` + `data/` + `lib/`) | Directory signature |
-| Persistence staging (`broker_crypt_v4_i386`) | `%ProgramData%` / `%AppData%` path match |
-| Persistence payloads (`Froodjurain.wkk`, `VSDebugScriptAgent170.dll`, `chime.exe`, `ZoneInd.exe`) | High-confidence filename + location match |
-| Malicious desktop shortcuts (`.lnk`) | Shortcut target and argument review |
-| Defender exclusions | FRST-style Defender posture review plus browser/session-target exclusion scoring |
-| Disabled startup leftovers | `StartupApproved` plus autorun correlation |
-| Firewall allow-rules for suspicious programs | Rule target review with safe removal gates |
-| Payload decrypt keys (`.key`) and Ren'Py payload scripts | Filename + location |
-| Scheduled task persistence | Task action, trigger, privilege, and userland masquerade review |
-| Malicious services / fake helpers | Service path plus user-writable masquerade review |
-| Registry autorun / IFEO / AppInit persistence | Registry review |
-| Active Setup, policy autoruns, SafeBoot, logon-script drift | FRST-style startup and policy review |
-| Winlogon Notify / Explorer hook persistence | Legacy logon and Explorer review |
-| WMI persistence | Subscription review |
-| Active C2 connections | Network scan for known bad IPs |
+| Fake Ren'Py bundles | `Instaler.exe`, `setup.exe`, Ren'Py folder layout, `archive.rpa`, `script.rpyc`, `.key` payload clues |
+| Loader staging | HijackLoader-style side-load folders, odd `.dll` / `.exe` pairs, temp compile stages, Godot `app_userdata` + `.asar` payloads |
+| Startup persistence | Startup folder files, shortcuts, `Run`, `RunOnce`, `RunOnceEx`, `StartupApproved`, Active Setup, policy autoruns |
+| Scheduled tasks | Logon relaunchers, highest-privilege tasks, script hosts, staged Python payloads, missing task targets |
+| WMI and services | WMI consumers, fake helper services, missing or user-writable service paths |
+| Shell and logon hooks | Winlogon shell/userinit drift, Notify DLLs, Explorer hooks, toast activation residue |
+| Browser and session state | Chromium, Firefox, Discord, Telegram, Steam, wallet, VPN, password-manager, and FileZilla exposure indicators |
+| Security posture | Defender exclusions, Defender policy drift, proxy settings, Security Center service state, suspicious firewall rules |
+| Post-clean confidence | Reboot/rescan comparison for startup persistence and suspicious browser residue |
 
----
+## How Cleanup Works
 
-## Build
+RenKill separates findings into confirmed malware-style items, review-first items, and lower-confidence residue. High-confidence items can be quarantined or removed by `KILL & CLEAN`. Review-first findings are shown to the user and can be trusted when the user recognizes a local tool, server, or game path.
 
-Requirements: Python 3.10+ in `PATH`.
+When RenKill quarantines a file, it moves it out of the live path, gives risky payloads inert names, and records recovery data where possible. `REVERT LAST CLEAN` can restore reversible changes from the most recent cleanup session.
 
-```text
-1. Place renkill.py and build.bat in the same folder
-2. Double-click build.bat (or run from cmd)
-3. Wait ~60 seconds for PyInstaller to compile
-4. RenKill.exe appears in the same folder
-```
+`REPAIR DEFAULTS` handles safe protection repairs such as suspicious Defender exclusions, policy drift, proxy tampering, and suspicious firewall rules. It is intentionally separate from malware removal so security posture repair stays easy to reason about.
 
-## Release Builds
+## Account Lockdown
 
-```text
-1. Push a version tag like v1.6.2
-2. GitHub Actions builds the RenKill folder package on windows-latest
-3. The workflow attaches a zipped Windows package and SHA256 checksum to the GitHub Release
-```
+`ACCOUNT LOCKDOWN` clears local session material from this PC, including supported browser profiles and common desktop app session stores. It helps reduce the chance that leftover local cookies, tokens, or web data can be reused after cleanup.
 
-The public build now ships as a packaged app folder instead of a onefile EXE.
-That is partly for reliability and partly to reduce the "fresh packed utility"
-look that tends to trip aggressive AV heuristics.
+After running malware, users should still use a clean device to:
 
----
+1. Secure the email account tied to Steam, Discord, Google, Microsoft, and other important services.
+2. Change passwords for saved browser accounts.
+3. Revoke active sessions and trusted devices.
+4. Review Discord Authorized Apps, Steam device trust, Steam Web API access, and mailbox forwarding rules.
+5. Move crypto assets to fresh wallets if wallet software or browser wallets were present.
 
-## How To Use It
+## Typical Use
 
-1. Right-click and run as Administrator for full registry, service, and persistence cleanup coverage
-2. Click `SCAN SYSTEM`
-3. Read the verdict, confidence readout, and findings
-4. Click `KILL & CLEAN` to remove high-confidence artifacts
-5. If prompted, use `ACCOUNT LOCKDOWN` to clear local browser and Discord session material
-6. Reboot and run one more scan
+1. Extract the release zip.
+2. Run `RenKill.exe` as Administrator.
+3. Click `SCAN SYSTEM`.
+4. Review the verdict and findings.
+5. Use `KILL & CLEAN` for confirmed traces.
+6. Use `ACCOUNT LOCKDOWN` if the user ran the malware or account abuse already happened.
+7. Reboot and scan again.
+8. Use the exported report if another helper needs a readable case log.
 
----
+## Trusted Paths
+
+Some legitimate private servers, game tools, mods, or local projects can look unusual because they listen on the network or create firewall rules. RenKill lets the user trust a specific file or folder so review-only noise from that exact path stops appearing.
+
+Trusted paths do not suppress strong campaign markers or high-confidence malware findings.
 
 ## RenInspect
 
-`reninspect.py` is the safe microscope for suspicious packages.
-It is static-only and never executes the sample.
+`reninspect.py` is the static-only package inspector. It never executes the sample.
 
-Use it when you want to inspect:
-
-- a suspicious extracted folder
-- a suspicious `.zip`
-- a possible fake Ren'Py game bundle before you ever run it
-
-Example:
+Use it on suspicious archives or extracted folders before running anything:
 
 ```text
 python reninspect.py "C:\path\to\suspicious-folder"
 python reninspect.py "C:\path\to\sample.zip" --report-out "C:\path\to\reninspect_report.txt"
 ```
 
-What it looks for:
+It looks for Ren'Py bundle structure, suspicious side-load files, random launchers, payload clues, Godot `.asar` chains, and campaign-linked markers.
 
-- Ren'Py folder layout (`data`, `lib`, `renpy`)
-- `archive.rpa`, `script.rpyc`, and `.key` payload clues
-- suspicious DLL sideload names
-- temp-stage launcher patterns
-- Godot `app_userdata` + `.asar` clues
-- random-looking launchers and campaign-linked markers
+## Build
 
----
+Requirements: Python 3.10+ in `PATH`.
 
-## What It Reviews
+```text
+.\build.bat
+```
 
-- `%TEMP%` and `%TMP%`
-- `%APPDATA%` and `%LOCALAPPDATA%`
-- `%PROGRAMDATA%`
-- `%USERPROFILE%\Downloads`
-- `%USERPROFILE%\Desktop`
-- `%USERPROFILE%\Documents`
-- `%LOCALAPPDATA%\Programs`
-- Running processes and process trees
-- Loaded modules for suspicious processes
-- Active network connections
-- Scheduled tasks
-- Windows services
-- Registry autoruns, IFEO, and AppInit
-- WMI subscriptions
-- Browser extensions
-- Hosts, proxy, Defender exclusions, and firewall rules
+The build creates:
 
----
+```text
+dist\RenKill\RenKill.exe
+```
 
-## Research
+## Release Builds
 
-- See [`RESEARCH_RENENGINE_2026.md`](./RESEARCH_RENENGINE_2026.md) for campaign notes,
-  cleanup patterns, and the sources behind the current detection coverage.
-- See [`ROADMAP_1_5_0.md`](./ROADMAP_1_5_0.md) for the next release target and the FRST-style parity work planned for it.
-- See [`ROADMAP_2_0.md`](./ROADMAP_2_0.md) for the bigger Account Recovery Center / FRST parity / finding-separation push.
+GitHub Actions builds release packages from version tags:
 
----
+```text
+v1.6.3
+```
 
-## After Cleanup
+The public release ships as a folder package instead of a single packed EXE. That keeps updates more reliable and reduces the amount of AV friction caused by fresh one-file packers.
 
-Removing the local infection does not undo stolen sessions or stolen data.
-From a separate clean device:
+## Research Notes
 
-1. Change saved browser passwords
-2. Revoke active sessions for Discord, Google, Steam, email, finance, and anything important
-3. Move crypto assets to a fresh wallet if wallets were exposed
-4. Re-enable strong MFA on critical accounts
-5. Run Microsoft Defender Full Scan and Defender Offline after cleanup
+The campaign notes and source trail live in [RESEARCH_RENENGINE_2026.md](./RESEARCH_RENENGINE_2026.md).
 
----
+RenKill currently tracks patterns from:
 
-## Source Trail
+- Cyderes and Kaspersky reporting on RenEngine / HijackLoader.
+- Microsoft reporting on Lumma and ClickFix-style delivery.
+- BleepingComputer reporting on Steam-distributed malware and REMUS session theft.
+- Malwarebytes reporting on fake game, fake VPN, fake utility, and gaming-mod infostealer lures.
+- FRST helper workflows and real-world cleanup logs.
 
-- Cyderes Howler Cell (Feb 4, 2026)
-- Kaspersky / Securelist (Feb 11 and Feb 23, 2026)
-- Falcon Sandbox / Hybrid Analysis field samples (April to May 2026)
-- Malwarebytes threat research on fake game / cracked software lure chains
-- FRST helper workflows and remediation guidance from BleepingComputer, Emsisoft, and current Reddit cleanup threads
+## Important Limit
+
+RenKill can remove local persistence and help clear local session material. It cannot undo data that was already stolen. If a user ran the malware, account recovery from a clean device is still part of the cleanup.

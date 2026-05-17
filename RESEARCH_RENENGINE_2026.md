@@ -1,6 +1,6 @@
 # RenEngine / "RenLoader" Notes
 
-Last updated: 2026-05-16 (RenKill 1.6.2 browser-confidence + FRST residue pass)
+Last updated: 2026-05-17 (RenKill 1.6.3 fake-installer + session-confidence pass)
 
 ## Snapshot
 
@@ -133,6 +133,17 @@ For RenKill, the practical lesson is:
 - keep hunting the stable relaunch surfaces and temp/cache staging paths
 - widen lure recognition around fake utilities, fake VPNs, fake playtests, and trusted-looking download wrappers
 - be much stricter about calling a browser/session surface "compromised" unless the scan actually has browser-, social-, credential-, or wallet-specific evidence behind it
+
+## May 17, 2026 Follow-Up
+
+The newer OpenClaw/Hologram reporting fits the same defensive model. It is not Ren'Py-specific, but it matters because the lure is familiar: a trusted-looking installer for a real tool, followed by layered userland persistence and credential/session theft.
+
+Useful traits to keep in RenKill's model:
+
+- fake installer names and brand impersonation still matter only when paired with execution or persistence context
+- `Run`, Winlogon/Userinit, and scheduled-task relaunches remain high-value places to look
+- browser cookies, saved credentials, Telegram/Discord/Steam data, password managers, and wallet extensions remain the account-risk surfaces worth prioritizing
+- fake installer ecosystems are expanding into AI/dev tools, VPNs, hardware utilities, and game/mod downloads, so stable behavior is still more valuable than exact filenames
 
 - the lure surface keeps changing
 - the account-hijack aftermath does not

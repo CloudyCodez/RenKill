@@ -18,7 +18,6 @@ import re
 import base64
 import csv
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import random
 import tempfile
 import traceback
 import urllib.error
@@ -44,7 +43,7 @@ except ImportError:
 
 # IOC definitions
 
-VERSION = "1.6.2"
+VERSION = "1.6.3"
 TOOL_NAME = "RenKill"
 UPDATE_REPO_OWNER = "CloudyCodez"
 UPDATE_REPO_NAME = "RenKill"
@@ -104,8 +103,10 @@ PROCESS_IOC_MARKERS = {
     "acrstealer",
     "ageo",
     "hexon",
+    "hologram",
     "lumma",
     "nova stealer",
+    "openclaw",
     "rhadamanthys",
     "vidar",
     "silent-harvester.cc",
@@ -117,6 +118,7 @@ PROCESS_IOC_MARKERS = {
     "fickle",
     "gayal.asp",
     "hap.eml",
+    "cloudvideo.exe",
     "soft-gets.com",
     "stitchcraftx",
     "craftstitch studios inc",
@@ -260,10 +262,12 @@ SOURCE_LURE_KEYWORDS = {
     "acrstealer",
     "ageo",
     "hexon",
+    "hologram",
     "lumma",
     "nwhstealer",
     "nova stealer",
     "ohmgraphite",
+    "openclaw",
     "pachtop",
     "hardwarevisualizer",
     "sidebar diagnostics",
@@ -276,6 +280,8 @@ SOURCE_LURE_KEYWORDS = {
     "repack",
     "clickfix",
     "castleloader",
+    "hologram",
+    "openclaw",
     "playtest",
     "mrbeast",
     "crypto",
@@ -323,6 +329,8 @@ SOURCE_LURE_FILENAME_STRONG = {
     "repack",
     "clickfix",
     "castleloader",
+    "hologram",
+    "openclaw",
     "mrbeast",
     "crypto",
     "dodi-repacks",
@@ -949,7 +957,6 @@ MANUAL_REVIEW_CATEGORIES = {
 C2_IPS = {"78.40.193.126"}
 
 PARANOID_NAME_TOKENS = ("update", "helper", "service", "runtime", "host")
-GLITCH_ACTION_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#$%?!"
 COMMON_USERLAND_EXEC_MARKERS = (
     "\\programdata\\",
     "\\appdata\\roaming\\",
@@ -10915,14 +10922,12 @@ class App(tk.Tk):
         self._startup_update_prompted = set()
         self._user_trusted_paths = load_user_trusted_paths()
         self._log_action_tag_counter = 0
-        self._log_action_specs = {}
         self._turbo_warned = False
 
         self._build()
         self._fit_window_to_content()
         self.bind("<Configure>", self._refresh_status_layout)
         self.after(0, self._refresh_status_layout)
-        self.after(0, self._tick_log_action_glitch)
         self._check_admin()
         self._startup_msg()
         self._report_update_state()
@@ -10947,100 +10952,6 @@ class App(tk.Tk):
         current_width = max(self.winfo_width(), 940, min_width)
         current_height = max(self.winfo_height(), 700, min_height)
         self.geometry(f"{current_width}x{current_height}")
-
-    @staticmethod
-    def _glitch_char(target_char):
-        if target_char == " ":
-            return " "
-        if random.random() < 0.12:
-            return target_char
-        return random.choice(GLITCH_ACTION_CHARS)
-
-    def _render_glitch_action_label(self, label, frame, settle=0.0):
-        width = len(label)
-        if width <= 0:
-            return "[ ]"
-
-        wave_center = ((frame * 0.55) % (width + 6)) - 3.0
-        settle_edge = settle * (width + 2) - 1.0
-        chars = []
-
-        for index, target_char in enumerate(label):
-            if target_char == " ":
-                chars.append(" ")
-                continue
-
-            if settle >= 0.999:
-                chars.append(target_char)
-                continue
-
-            wave_distance = abs(index - wave_center)
-            if settle > 0.0:
-                if index < settle_edge - 0.8:
-                    chars.append(target_char)
-                    continue
-                if index <= settle_edge + 1.2:
-                    chars.append(
-                        target_char if random.random() < 0.72 else self._glitch_char(target_char)
-                    )
-                    continue
-
-            if wave_distance < 0.45:
-                chars.append(target_char)
-            elif wave_distance < 1.2:
-                chars.append(
-                    target_char.lower() if target_char.isalpha() and random.random() < 0.35
-                    else self._glitch_char(target_char)
-                )
-            elif wave_distance < 2.2 and random.random() < 0.22:
-                chars.append(target_char)
-            else:
-                chars.append(self._glitch_char(target_char))
-
-        return f"[ {''.join(chars)} ]"
-
-    def _set_log_action_label(self, tag_name, text):
-        spec = self._log_action_specs.get(tag_name)
-        if not spec or not hasattr(self, "_log_txt"):
-            return
-        ranges = self._log_txt.tag_ranges(tag_name)
-        if len(ranges) < 2:
-            return
-        start, end = ranges[0], ranges[1]
-        self._log_txt.configure(state="normal")
-        self._log_txt.delete(start, end)
-        self._log_txt.insert(start, text, (spec["base_tag"], tag_name))
-        self._log_txt.configure(state="disabled")
-
-    def _set_log_action_hover(self, tag_name, hovered):
-        spec = self._log_action_specs.get(tag_name)
-        if not spec:
-            return
-        spec["hover_target"] = hovered
-
-    def _tick_log_action_glitch(self):
-        if not hasattr(self, "_log_txt") or not self.winfo_exists():
-            return
-        for tag_name, spec in list(self._log_action_specs.items()):
-            spec["frame"] = spec.get("frame", 0.0) + 1.0
-            settle = spec.get("settle", 0.0)
-            target = 1.0 if spec.get("hover_target") else 0.0
-            if target > settle:
-                settle = min(1.0, settle + 0.24)
-            elif target < settle:
-                settle = max(0.0, settle - 0.16)
-            spec["settle"] = settle
-
-            if settle >= 0.999 and spec.get("hover_target"):
-                rendered = spec["proper"]
-            else:
-                rendered = self._render_glitch_action_label(
-                    spec["label"],
-                    spec["frame"],
-                    settle=settle,
-                )
-            self._set_log_action_label(tag_name, rendered)
-        self.after(70, self._tick_log_action_glitch)
 
     def _build(self):
         # Title bar
@@ -11186,15 +11097,17 @@ class App(tk.Tk):
             )
         self._log_txt.tag_configure(
             "TRUST_LINK",
-            foreground=CYAN,
-            background="#0d1320",
+            foreground="#9DE7A7",
+            background="#101810",
             font=(MONO, 9, "bold"),
+            underline=False,
         )
         self._log_txt.tag_configure(
             "OPEN_LINK",
-            foreground=AMBER,
-            background="#1a1408",
+            foreground="#8CC8FF",
+            background="#10141A",
             font=(MONO, 9, "bold"),
+            underline=False,
         )
         self._log_txt.configure(state="disabled")
 
@@ -11759,29 +11672,21 @@ class App(tk.Tk):
         self._log_txt.tag_bind(
             tag_name,
             "<Enter>",
-            lambda _event, name=tag_name: (self._set_log_action_hover(name, True), self._log_txt.configure(cursor="hand2")),
+            lambda _event: self._log_txt.configure(cursor="hand2"),
         )
         self._log_txt.tag_bind(
             tag_name,
             "<Leave>",
-            lambda _event, name=tag_name: (self._set_log_action_hover(name, False), self._log_txt.configure(cursor="xterm")),
+            lambda _event: self._log_txt.configure(cursor="xterm"),
         )
 
     def _append_log_action(self, label, base_tag, callback):
         self._log_action_tag_counter += 1
         action_tag = f"log_action_{self._log_action_tag_counter}"
-        self._log_action_specs[action_tag] = {
-            "label": label,
-            "proper": f"[ {label} ]",
-            "base_tag": base_tag,
-            "hover_target": False,
-            "frame": random.uniform(0.0, 12.0),
-            "settle": 0.0,
-        }
         self._bind_log_action(action_tag, callback)
         self._log_txt.insert(
             "end",
-            "  " + self._render_glitch_action_label(label, self._log_action_specs[action_tag]["frame"]),
+            f"  [ {label} ]",
             (base_tag, action_tag),
         )
 
