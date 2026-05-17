@@ -96,10 +96,6 @@ v1.6.3
 
 The public release ships as a folder package instead of a single packed EXE. That keeps updates more reliable and reduces the amount of AV friction caused by fresh one-file packers.
 
-## Research Notes
-
-The campaign notes and source trail live in [RESEARCH_RENENGINE_2026.md](./RESEARCH_RENENGINE_2026.md).
-
 RenKill currently tracks patterns from:
 
 - Cyderes and Kaspersky reporting on RenEngine / HijackLoader.
@@ -108,6 +104,6 @@ RenKill currently tracks patterns from:
 - Malwarebytes reporting on fake game, fake VPN, fake utility, and gaming-mod infostealer lures.
 - FRST helper workflows and real-world cleanup logs.
 
-## Important Limit
+## Important Note
 
 RenKill can remove local persistence and help clear local session material. It cannot undo data that was already stolen. If a user ran the malware, account recovery from a clean device is still part of the cleanup.
