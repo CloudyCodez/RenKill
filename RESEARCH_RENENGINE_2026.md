@@ -1,6 +1,6 @@
 # RenEngine / "RenLoader" Notes
 
-Last updated: 2026-05-12 (RenKill 1.6.2 FRST + lure update)
+Last updated: 2026-05-16 (RenKill 1.6.2 browser-confidence + FRST residue pass)
 
 ## Snapshot
 
@@ -118,6 +118,21 @@ Two public write-ups are especially useful here:
 - Malwarebytes' January 3, 2025 "Can you try a game I made?" campaign write-up describes Discord DMs, archive passwords, Dropbox / Catbox / Discord CDN delivery, and info-stealer follow-ons that specifically target Discord and Steam sessions.
 
 From a defender point of view, those write-ups reinforce a useful split:
+
+## May 2026 Session-Theft And Delivery Update
+
+The newest public reporting still does not point to a brand-new "RenEngine-only" persistence chain. What it does show is a wider ecosystem of delivery fronts and a stronger business focus on session theft.
+
+- Microsoft's Lumma write-up still describes the same broad playbook: multi-vector delivery, trusted-platform abuse, and flexible post-execution payloading rather than one static installer name.
+- Malwarebytes' April 15, 2026 `NWHStealer` report broadens the lure set further with fake `Proton VPN` downloads, hardware utilities like `OhmGraphite`, `Pachtop`, `HardwareVisualizer`, and gaming mods.
+- BleepingComputer's May 15, 2026 `REMUS` coverage reinforces that current stealers are explicitly prioritizing cookie theft, session theft, Discord/Telegram delivery, and password-manager collection as product features, not side effects.
+- The FBI's March 2026 Steam notice reinforces that apparently legitimate game titles can still be part of the same practical outcome: account hijack, session theft, and wallet theft after execution.
+
+For RenKill, the practical lesson is:
+
+- keep hunting the stable relaunch surfaces and temp/cache staging paths
+- widen lure recognition around fake utilities, fake VPNs, fake playtests, and trusted-looking download wrappers
+- be much stricter about calling a browser/session surface "compromised" unless the scan actually has browser-, social-, credential-, or wallet-specific evidence behind it
 
 - the lure surface keeps changing
 - the account-hijack aftermath does not

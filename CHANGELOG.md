@@ -4,6 +4,13 @@
 
 This release folds in the latest proofing around trainer-style follow-ons, FRST residue cleanup patterns, and the May 2026 check on RenEngine-adjacent persistence. The important update is that the chain looks broader, but not fundamentally different: the operator is still leaning on user-writable relaunch points, scheduled tasks, browser/session theft, and increasingly trusted-looking delivery surfaces.
 
+- Tightened account/session compromise scoring so RenKill depends more on direct theft signals and less on broad app-folder presence:
+  - browser, Discord, Telegram, credential-store, wallet, and Steam exposure notes now require stronger per-surface evidence before they surface
+  - exported reports and recovery guidance now read more like a structured incident log instead of one long wrapped blob
+- Reduced false positives around FRST-style stale residue:
+  - dead Discord/game/browser/update firewall rules are now filtered more aggressively when they match normal version churn or removed game-library paths
+  - newer lure context from `NWHStealer`, fake `Proton VPN` downloads, hardware-utility wrappers like `OhmGraphite` / `Pachtop` / `HardwareVisualizer`, and the May 2026 `REMUS` session-theft reporting now feed the review logic
+
 - Hardened persistence detection around the newer follow-on sample pattern:
   - scheduled-task review now escalates logon + highest-privilege relaunches that point at double-extension payloads like `*.exe.exe`
   - user-writable task/service payloads that typo-squat core helper names like `svchost` are now treated as masquerade hits, not just generic suspicious executables

@@ -24,6 +24,7 @@ import traceback
 import urllib.error
 import urllib.request
 import zipfile
+import textwrap
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, filedialog
 
@@ -101,7 +102,10 @@ PROCESS_IOC_MARKERS = {
     "renpy",
     "acr",
     "acrstealer",
+    "ageo",
+    "hexon",
     "lumma",
+    "nova stealer",
     "rhadamanthys",
     "vidar",
     "silent-harvester.cc",
@@ -115,6 +119,7 @@ PROCESS_IOC_MARKERS = {
     "hap.eml",
     "soft-gets.com",
     "stitchcraftx",
+    "craftstitch studios inc",
     "worker.ps1",
     "w8cpbgqi.exe",
     "zt5qwyucfl.txt",
@@ -253,7 +258,15 @@ SOURCE_LURE_KEYWORDS = {
     "iviewers",
     "acr",
     "acrstealer",
+    "ageo",
+    "hexon",
     "lumma",
+    "nwhstealer",
+    "nova stealer",
+    "ohmgraphite",
+    "pachtop",
+    "hardwarevisualizer",
+    "sidebar diagnostics",
     "rhadamanthys",
     "vidar",
     "crack",
@@ -272,6 +285,7 @@ SOURCE_LURE_KEYWORDS = {
     "go.zovo",
     "silent-harvester",
     "stitchcraftx",
+    "craftstitch studios inc",
     "coreldraw",
     "artistapirata",
     "awdescargas",
@@ -421,6 +435,22 @@ CHROMIUM_SESSION_SUBPATHS = (
     "SharedStorage",
 )
 
+CHROMIUM_EXPOSURE_SUBPATHS = (
+    "Current Session",
+    "Current Tabs",
+    "Last Session",
+    "Last Tabs",
+    os.path.join("Network", "Cookies"),
+    os.path.join("Network", "Cookies-journal"),
+    "Cookies",
+    "Local Storage",
+    "Session Storage",
+    "IndexedDB",
+    "Login Data",
+    "Login Data For Account",
+    "Web Data",
+)
+
 DISCORD_SESSION_SUBPATHS = (
     "Local State",
     os.path.join("Network", "Cookies"),
@@ -444,6 +474,16 @@ DISCORD_SESSION_SUBPATHS = (
     "Partitions",
 )
 
+DISCORD_EXPOSURE_SUBPATHS = (
+    "Local State",
+    os.path.join("Network", "Cookies"),
+    os.path.join("Network", "Cookies-journal"),
+    "Cookies",
+    "Local Storage",
+    "Session Storage",
+    "IndexedDB",
+)
+
 FIREFOX_SESSION_FILES = (
     "cookies.sqlite",
     "webappsstore.sqlite",
@@ -456,6 +496,37 @@ FIREFOX_SESSION_DIRS = (
     os.path.join("storage", "default"),
     "cache2",
     "OfflineCache",
+)
+
+FIREFOX_EXPOSURE_FILES = (
+    "cookies.sqlite",
+    "webappsstore.sqlite",
+    "sessionstore.jsonlz4",
+)
+
+FIREFOX_EXPOSURE_DIRS = (
+    "sessionstore-backups",
+    os.path.join("storage", "default"),
+)
+
+RESETTABLE_EXPOSURE_PATHS = {
+    "Discord": DISCORD_EXPOSURE_SUBPATHS,
+    "Telegram Desktop": ("tdata",),
+    "Chrome": CHROMIUM_EXPOSURE_SUBPATHS,
+    "Edge": CHROMIUM_EXPOSURE_SUBPATHS,
+    "Brave": CHROMIUM_EXPOSURE_SUBPATHS,
+    "Opera": CHROMIUM_EXPOSURE_SUBPATHS,
+    "Opera GX": CHROMIUM_EXPOSURE_SUBPATHS,
+    "WebView2": CHROMIUM_EXPOSURE_SUBPATHS,
+}
+
+STEAM_EXPOSURE_FILES = (
+    os.path.join("config", "config.vdf"),
+    os.path.join("config", "loginusers.vdf"),
+)
+
+STEAM_USERDATA_EXPOSURE_FILES = (
+    os.path.join("config", "localconfig.vdf"),
 )
 
 SESSION_RESET_APPS = (
@@ -943,11 +1014,37 @@ BENIGN_FIREWALL_PROGRAM_ROOT_TOKENS = (
     "\\windowsapps\\",
     "\\appdata\\local\\microsoft\\windowsapps\\",
 )
+BENIGN_MISSING_FIREWALL_PATH_MARKERS = (
+    "\\steam\\bin\\cef\\",
+    "\\steamapps\\common\\",
+    "\\steamlibrary\\steamapps\\common\\",
+    "\\ea games\\",
+    "\\xbox\\",
+    "\\games\\",
+    "\\appdata\\local\\discord\\app-",
+    "\\tiktok live studio\\",
+    "\\google\\chrome\\application\\chrome.exe",
+    "\\appdata\\local\\temp\\acfl",
+    "\\acsetup\\acsetup.exe",
+)
 BENIGN_ACTIVE_SETUP_SWITCHES = (
     "--application-host=",
     "--configure-user-settings",
     "--system-level",
     "--verbose-logging",
+)
+SUSPICIOUS_POLICY_DROP_PATHS = (
+    os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "NTUSER.pol"),
+    os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "ntuser.pol"),
+)
+PYTHON_TASK_STAGE_PATH_MARKERS = (
+    "\\temporary internet files\\content.ie5\\",
+    "\\appdata\\local\\augusta\\saved\\",
+    "\\appdata\\local\\discovery\\saved\\",
+    "\\appdata\\roaming\\archon app\\dawngraphitecache\\",
+)
+PYTHON_TASK_STAGE_SCRIPT_MARKERS = (
+    "gamelan.py",
 )
 SCRIPT_LURE_REMOTE_MARKERS = (
     "catbox.moe",
@@ -1030,6 +1127,51 @@ ACCOUNT_HIJACK_BRAND_TOKENS = (
     "steampowered",
     "youtube.com",
     "youtu.be",
+)
+SESSION_SIGNAL_BROWSER_TOKENS = (
+    "cookie",
+    "session storage",
+    "current session",
+    "login data",
+    "web data",
+    "local storage",
+    "indexeddb",
+    "token",
+)
+SESSION_SIGNAL_SOCIAL_TOKENS = (
+    "discord",
+    "telegram",
+    "steam",
+    "loginusers.vdf",
+    "config.vdf",
+    "localconfig.vdf",
+)
+SESSION_SIGNAL_CREDENTIAL_TOKENS = (
+    "filezilla",
+    "winscp",
+    "bitwarden",
+    "1password",
+    "keepass",
+    "authy",
+    "openvpn",
+    "nordvpn",
+)
+SESSION_SIGNAL_WALLET_TOKENS = (
+    "wallet",
+    "metamask",
+    "exodus",
+    "atomic wallet",
+    "ledger live",
+    "seed phrase",
+    "phantom",
+    "coinbase wallet",
+)
+EXPOSURE_BROWSER_LABELS = {"Chrome", "Edge", "Brave", "Opera", "Opera GX", "Firefox", "WebView2"}
+EXPOSURE_CREDENTIAL_LABELS = {"FileZilla", "1Password", "Authy Desktop", "Bitwarden", "KeePass", "NordVPN", "OpenVPN Connect", "WinSCP"}
+EXPOSURE_WALLET_LABELS = {"MetaMask (Chrome)", "MetaMask (Edge)", "MetaMask (Brave)", "Exodus", "Atomic Wallet", "Ledger Live"}
+FILEZILLA_EXPOSURE_PATHS = (
+    os.path.join("AppData", "Roaming", "FileZilla", "recentservers.xml"),
+    os.path.join("AppData", "Roaming", "FileZilla", "sitemanager.xml"),
 )
 ACCOUNT_HIJACK_LURE_TOKENS = (
     "accidentally reported you",
@@ -1743,6 +1885,41 @@ def _iter_steam_session_paths():
             continue
 
 
+def _iter_steam_exposure_paths():
+    seen = set()
+    for root in _steam_install_roots():
+        for rel_path in STEAM_EXPOSURE_FILES:
+            target = os.path.join(root, rel_path)
+            if target not in seen:
+                seen.add(target)
+                yield "Steam", target
+        try:
+            for entry in os.listdir(root):
+                if entry.lower().startswith("ssfn"):
+                    target = os.path.join(root, entry)
+                    if target not in seen:
+                        seen.add(target)
+                        yield "Steam", target
+        except Exception:
+            pass
+
+        userdata_root = os.path.join(root, "userdata")
+        if not os.path.isdir(userdata_root):
+            continue
+        try:
+            for account_id in os.listdir(userdata_root):
+                config_root = os.path.join(userdata_root, account_id)
+                if not os.path.isdir(config_root):
+                    continue
+                for rel_path in STEAM_USERDATA_EXPOSURE_FILES:
+                    target = os.path.join(config_root, rel_path)
+                    if target not in seen:
+                        seen.add(target)
+                        yield "Steam", target
+        except Exception:
+            continue
+
+
 def _iter_chromium_profile_dirs(root):
     if not os.path.isdir(root):
         return []
@@ -1792,6 +1969,42 @@ def _iter_session_reset_targets(profile_root=None):
                             yield app["label"], os.path.join(profile_dir, fname)
                         for sub in FIREFOX_SESSION_DIRS:
                             yield app["label"], os.path.join(profile_dir, sub)
+                except Exception:
+                    continue
+
+
+def _iter_exposure_indicator_targets(profile_root=None):
+    profile = profile_root or os.environ.get("USERPROFILE", "")
+    for app in SESSION_RESET_APPS:
+        label = app["label"]
+        kind = app["kind"]
+        if kind == "steam":
+            yield from _iter_steam_exposure_paths()
+            continue
+
+        for rel_root in app["roots"]:
+            root = os.path.join(profile, rel_root)
+            if kind == "flat":
+                if not os.path.isdir(root):
+                    continue
+                for sub in RESETTABLE_EXPOSURE_PATHS.get(label, ()):
+                    yield label, os.path.join(root, sub)
+            elif kind == "chromium":
+                for profile_dir in _iter_chromium_profile_dirs(root):
+                    for sub in RESETTABLE_EXPOSURE_PATHS.get(label, CHROMIUM_EXPOSURE_SUBPATHS):
+                        yield label, os.path.join(profile_dir, sub)
+            elif kind == "firefox":
+                if not os.path.isdir(root):
+                    continue
+                try:
+                    for entry in os.listdir(root):
+                        profile_dir = os.path.join(root, entry)
+                        if not os.path.isdir(profile_dir):
+                            continue
+                        for fname in FIREFOX_EXPOSURE_FILES:
+                            yield label, os.path.join(profile_dir, fname)
+                        for sub in FIREFOX_EXPOSURE_DIRS:
+                            yield label, os.path.join(profile_dir, sub)
                 except Exception:
                     continue
 
@@ -2427,6 +2640,9 @@ class ScanEngine:
 
                 for addon in addons:
                     if not isinstance(addon, dict) or not addon.get("active", True):
+                        continue
+                    addon_id = str(addon.get("id") or "").lower()
+                    if addon.get("isBuiltin") or addon_id.endswith("@mozilla.org"):
                         continue
                     location = str(addon.get("location") or "").lower()
                     if location in {"app-system-defaults", "app-system-addons"}:
@@ -3205,35 +3421,134 @@ class ScanEngine:
             return "System Posture / Policy"
         return "Other Findings"
 
+    @staticmethod
+    def _report_divider(char="=", width=92):
+        return char * width
+
+    @staticmethod
+    def _append_report_field(lines, label, value, width=92):
+        label_text = f"{label:<16}: "
+        available = max(24, width - len(label_text))
+        wrapped = textwrap.wrap(str(value or "").strip(), width=available) or [""]
+        for index, chunk in enumerate(wrapped):
+            prefix = label_text if index == 0 else " " * len(label_text)
+            lines.append(prefix + chunk)
+
+    @classmethod
+    def _append_report_section(cls, lines, title, width=92):
+        lines.extend(("", cls._report_divider("=", width), title, cls._report_divider("=", width)))
+
+    @staticmethod
+    def _append_report_bullets(lines, entries, width=92, indent="  - "):
+        initial_indent = indent
+        subsequent_indent = " " * len(indent)
+        for entry in entries:
+            wrapped = textwrap.wrap(str(entry or "").strip(), width=width, initial_indent=initial_indent, subsequent_indent=subsequent_indent) or [initial_indent.rstrip()]
+            lines.extend(wrapped)
+
+    def _session_compromise_signal_profile(self):
+        profile = self._threat_confidence_profile()
+        categories = set(profile["categories"])
+        text_blob = " ".join(
+            f"{t.category} {t.description} {t.path}".lower()
+            for t in self.threats
+        )
+
+        browser_direct = 0
+        social_direct = 0
+        credential_direct = 0
+        wallet_direct = 0
+        global_signal = 0
+
+        if profile["generic_stealer_hits"] >= 2:
+            global_signal += 3
+        elif profile["generic_stealer_hits"] >= 1:
+            global_signal += 2
+
+        if "Active C2 Connection" in categories:
+            browser_direct += 1
+            social_direct += 1
+            credential_direct += 1
+            wallet_direct += 1
+            global_signal += 2
+        if "Command History Review" in categories:
+            browser_direct += 1
+            social_direct += 1
+            global_signal += 1
+        if "Browser Extension Review" in categories:
+            browser_direct += 2
+            credential_direct += 1
+            wallet_direct += 1
+        if "Browser Policy Review" in categories:
+            browser_direct += 2
+            credential_direct += 1
+        if "Defender Exclusion" in categories:
+            global_signal += 1
+        if categories & {"Source Lure Artifact", "Malicious Archive/Script", "Stealer Script Host", "Compiler Stage Process", "Stealth Profiling Script Host"}:
+            global_signal += 2
+
+        if any(token in text_blob for token in SESSION_SIGNAL_BROWSER_TOKENS):
+            browser_direct += 2
+            social_direct += 1
+        if any(token in text_blob for token in SESSION_SIGNAL_SOCIAL_TOKENS):
+            social_direct += 2
+        if any(token in text_blob for token in SESSION_SIGNAL_CREDENTIAL_TOKENS):
+            credential_direct += 2
+        if any(token in text_blob for token in SESSION_SIGNAL_WALLET_TOKENS):
+            wallet_direct += 3
+            credential_direct += 1
+
+        browser_signal = browser_direct + global_signal
+        social_signal = social_direct + global_signal
+        credential_signal = credential_direct + global_signal
+        wallet_signal = wallet_direct + global_signal
+
+        return {
+            "browser_direct": browser_direct,
+            "social_direct": social_direct,
+            "credential_direct": credential_direct,
+            "wallet_direct": wallet_direct,
+            "browser_signal": browser_signal,
+            "social_signal": social_signal,
+            "credential_signal": credential_signal,
+            "wallet_signal": wallet_signal,
+            "global_signal": global_signal,
+            "browser_compromise_suspected": browser_direct >= 3 or (browser_direct >= 1 and browser_signal >= 5),
+            "social_compromise_suspected": social_direct >= 2 or (social_direct >= 1 and social_signal >= 5),
+            "credential_store_suspected": credential_direct >= 2 or (credential_direct >= 1 and credential_signal >= 5),
+            "wallet_compromise_suspected": wallet_direct >= 2 or (wallet_direct >= 1 and wallet_signal >= 5),
+        }
+
     def assess_account_exposure(self):
         exposure_count = len(self.exposure_notes)
         profile = self._threat_confidence_profile()
+        signals = self._session_compromise_signal_profile()
 
         score = 0
-        if profile["generic_stealer_hits"] >= 2:
-            score += 26
-        elif profile["generic_stealer_hits"] >= 1:
-            score += 14
+        if signals["browser_compromise_suspected"]:
+            score += 10 + min(10, signals["browser_direct"] * 3) + min(6, signals["global_signal"] * 2)
+        if signals["social_compromise_suspected"]:
+            score += 9 + min(8, signals["social_direct"] * 3) + min(4, signals["global_signal"] * 2)
+        if signals["credential_store_suspected"]:
+            score += 10 + min(10, signals["credential_direct"] * 3) + min(4, signals["global_signal"] * 2)
+        if signals["wallet_compromise_suspected"]:
+            score += 14 + min(12, signals["wallet_direct"] * 3) + min(4, signals["global_signal"] * 2)
         if "Active C2 Connection" in profile["categories"]:
-            score += 16
-        if "Defender Exclusion" in profile["categories"]:
-            score += 8
-        if "Command History Review" in profile["categories"]:
             score += 10
-        if "Browser Extension Review" in profile["categories"] or "Browser Policy Review" in profile["categories"]:
-            score += 8
+        if "Command History Review" in profile["categories"]:
+            score += 6
         if exposure_count:
-            score += min(32, exposure_count * 10)
+            score += min(18, exposure_count * 4)
 
         notes_blob = " ".join(f"{desc} {path}".lower() for desc, path in self.exposure_notes)
         if any(token in notes_blob for token in ("steam", "discord", "google", "microsoft", "firefox", "chrome", "edge", "brave", "opera", "filezilla", "nordvpn", "openvpn", "bitwarden", "1password", "keepass", "winscp")):
-            score += 8
+            score += 4
         if "telegram" in notes_blob:
-            score += 6
+            score += 3
         if any(token in notes_blob for token in ("wallet", "metamask", "crypto", "exodus", "atomic wallet", "ledger live")):
-            score += 10
-        if any(token in notes_blob for token in ("authy", "otp", "2fa")):
             score += 6
+        if any(token in notes_blob for token in ("authy", "otp", "2fa")):
+            score += 4
 
         score = self._clamp_score(score, lower=0, upper=98)
 
@@ -3260,6 +3575,25 @@ class ScanEngine:
             "detail": detail,
             "color": color,
         }
+
+    @staticmethod
+    def _iter_filezilla_exposure_paths(profile_root):
+        for rel_path in FILEZILLA_EXPOSURE_PATHS:
+            yield os.path.join(profile_root, rel_path)
+
+    @staticmethod
+    def _is_exposure_label_relevant(label, signals):
+        if label in EXPOSURE_BROWSER_LABELS:
+            return signals["browser_compromise_suspected"]
+        if label in {"Discord", "Telegram Desktop"}:
+            return signals["social_compromise_suspected"]
+        if label == "Steam":
+            return signals["social_compromise_suspected"] or signals["browser_compromise_suspected"]
+        if label in EXPOSURE_CREDENTIAL_LABELS:
+            return signals["credential_store_suspected"]
+        if label in EXPOSURE_WALLET_LABELS:
+            return signals["wallet_compromise_suspected"]
+        return False
 
     @staticmethod
     def _format_account_risk_value(exposure, compact=False):
@@ -4796,6 +5130,12 @@ class ScanEngine:
         ):
             return None
 
+        if (
+            self._is_protected_system_path(normalized_target)
+            or self._is_trusted_vendor_path(normalized_target)
+        ) and not self._has_strong_campaign_context(raw, normalized_target, context_label):
+            return None
+
         stem = os.path.splitext(os.path.basename(normalized_target))[0]
         score = 0
         reasons = []
@@ -6083,6 +6423,41 @@ class ScanEngine:
     def _format_task_label(task_path, task_name):
         return f"{str(task_path or '')}{str(task_name or '')}"
 
+    def _looks_like_python_stager_task(self, task_name, task_path, execute, arguments="", working_directory=""):
+        executable = self._extract_command_target(execute)
+        normalized_executable = self._normalized_path(executable)
+        executable_name = os.path.basename(normalized_executable).lower()
+        if executable_name not in {"python.exe", "pythonw.exe"}:
+            return None
+
+        argument_blob = self._normalize_cmdline(arguments).lower()
+        working_lower = self._normalized_path(working_directory)
+        combined = " ".join(
+            part for part in (
+                normalized_executable,
+                argument_blob,
+                working_lower,
+                str(task_name or "").lower(),
+                str(task_path or "").lower(),
+            )
+            if part
+        )
+        if not combined:
+            return None
+
+        if not any(marker in combined for marker in PYTHON_TASK_STAGE_PATH_MARKERS):
+            return None
+        if not any(marker in combined for marker in PYTHON_TASK_STAGE_SCRIPT_MARKERS):
+            return None
+        if self._is_safe_process_context(executable_name, executable, arguments):
+            return None
+
+        return (
+            "CRITICAL",
+            "Malicious Scheduled Task",
+            f"Scheduled task relaunches a staged Python payload from a suspicious cache or staging directory: {self._format_task_label(task_path, task_name)}",
+        )
+
     def _evaluate_scheduled_task_entry(self, task_name, task_path, execute, arguments="", working_directory="", trigger_types="", run_level=""):
         task_name = str(task_name or "")
         task_path = str(task_path or "")
@@ -6102,6 +6477,10 @@ class ScanEngine:
                 "Malicious Scheduled Task",
                 f"Scheduled task references RenEngine/HijackLoader artifacts: {task_label}",
             )
+
+        python_stage = self._looks_like_python_stager_task(task_name, task_path, execute, arguments, working_directory)
+        if python_stage:
+            return python_stage
 
         executable = self._extract_command_target(execute)
         normalized_executable = self._normalized_path(executable)
@@ -6856,10 +7235,14 @@ class ScanEngine:
             return
 
         profile = os.environ.get("USERPROFILE", "")
+        signals = self._session_compromise_signal_profile()
+
         session_targets = {}
-        for label, target_path in _iter_session_reset_targets(profile):
+        for label, target_path in _iter_exposure_indicator_targets(profile):
             session_targets.setdefault(label, []).append(target_path)
         for label, rel_path in EXPOSURE_DIRS:
+            if not self._is_exposure_label_relevant(label, signals):
+                continue
             full_path = os.path.join(profile, rel_path)
             if label in session_targets:
                 if self._resettable_exposure_is_current(label, full_path, session_targets[label]):
@@ -6870,27 +7253,25 @@ class ScanEngine:
                 continue
             if os.path.exists(full_path):
                 self._note_exposure(
-                    f"Exposure warning — {label} data may have been accessed. Revoke sessions from a clean device",
+                    f"Exposure warning - {label} data may have been accessed. Revoke sessions from a clean device",
                     full_path
                 )
 
-        for rel_path in (
-            os.path.join("AppData", "Roaming", "FileZilla", "recentservers.xml"),
-            os.path.join("AppData", "Roaming", "FileZilla", "sitemanager.xml"),
-        ):
-            full_path = os.path.join(profile, rel_path)
+        for full_path in (() if not signals["credential_store_suspected"] else self._iter_filezilla_exposure_paths(profile)):
             if os.path.isfile(full_path):
                 self._note_exposure(
-                    "Exposure warning — FileZilla saved server credentials may have been accessible. Rotate downstream credentials from a clean device",
+                    "Exposure warning - FileZilla saved server credentials may have been accessible. Rotate downstream credentials from a clean device",
                     full_path,
                 )
+        if not self._is_exposure_label_relevant("Steam", signals):
+            return
 
-        steam_targets = [path for found_label, path in _iter_steam_session_paths() if found_label == "Steam"]
+        steam_targets = [path for found_label, path in _iter_steam_exposure_paths() if found_label == "Steam"]
         for steam_root in _steam_install_roots():
             if not self._resettable_exposure_is_current("Steam", steam_root, steam_targets):
                 continue
             self._note_exposure(
-                "Exposure warning — Steam client/session data may have been accessed. Change the Steam password, secure the tied email, and deauthorize devices from a clean device",
+                "Exposure warning - Steam client/session data may have been accessed. Change the Steam password, secure the tied email, and deauthorize devices from a clean device",
                 steam_root,
             )
 
@@ -6942,7 +7323,7 @@ class ScanEngine:
             return
 
         if not self.paranoid and not self._module_scan_pid_targets:
-            self.log("No suspicious process targets surfaced in standard mode â€” deep module walk skipped", "INFO")
+            self.log("No suspicious process targets surfaced in standard mode - deep module walk skipped", "INFO")
             return
 
         seen = set()
@@ -7603,6 +7984,23 @@ class ScanEngine:
             except Exception:
                 pass
 
+        for policy_path in SUSPICIOUS_POLICY_DROP_PATHS:
+            normalized_policy_path = self._normalized_path(policy_path)
+            if not normalized_policy_path or not os.path.isfile(policy_path):
+                continue
+            try:
+                if os.path.getsize(policy_path) <= 0:
+                    continue
+            except OSError:
+                continue
+            self._add(
+                "HIGH",
+                "Defender Policy Review",
+                f"Suspicious local policy payload can be cleaned safely: {policy_path}",
+                policy_path,
+                lambda p=policy_path: self._delete_file(p),
+            )
+
     def scan_installed_programs(self):
         self.log("INSTALLED PROGRAM REVIEW", "SECTION")
         if not WINREG_OK:
@@ -8019,6 +8417,24 @@ class ScanEngine:
             "actionable": suspicious_score >= 3 and "inbound" in direction.lower(),
         }
 
+    def _is_benign_missing_firewall_target(self, normalized_program, rule_name="", display_name=""):
+        if not normalized_program:
+            return False
+        context_blob = " ".join(part for part in (normalized_program, rule_name, display_name) if part)
+        if self._has_strong_campaign_context(context_blob):
+            return False
+        if any(marker in normalized_program for marker in BENIGN_MISSING_FIREWALL_PATH_MARKERS):
+            return True
+        if "\\appdata\\local\\discord\\app-" in normalized_program and normalized_program.endswith("\\discord.exe"):
+            return True
+        if "\\programdata\\" in normalized_program and "\\discord\\app-" in normalized_program and normalized_program.endswith("\\discord.exe"):
+            return True
+        if "\\steam\\bin\\cef\\" in normalized_program and normalized_program.endswith("\\steamwebhelper.exe"):
+            return True
+        if any(marker in normalized_program for marker in ("\\steamapps\\common\\", "\\steamlibrary\\steamapps\\common\\")):
+            return normalized_program.endswith(".exe")
+        return False
+
     def _evaluate_missing_firewall_program(self, rule_name, display_name, direction, program):
         normalized_program = self._normalized_path(program)
         if (
@@ -8027,6 +8443,8 @@ class ScanEngine:
             or self._is_local_tool_path(normalized_program)
             or self._is_benign_firewall_rule_name(rule_name, display_name)
         ):
+            return None
+        if self._is_benign_missing_firewall_target(normalized_program, rule_name, display_name):
             return None
 
         missing = self._missing_command_target_details(program, display_name or rule_name)
@@ -10290,81 +10708,94 @@ class ScanEngine:
             group_name = self._report_group_name(threat.category)
             grouped.setdefault(group_name, []).append(threat)
 
-        lines = [
-            "=" * 64,
-            "RENKILL THREAT REPORT",
-            "=" * 64,
-            f"Generated : {now}",
-            f"Machine   : {os.environ.get('COMPUTERNAME', 'Unknown')}",
-            f"User      : {os.environ.get('USERNAME', 'Unknown')}",
-            f"Tool ver  : {VERSION}",
-            "",
-            f"Threats found   : {len(self.threats)}  ({crit} CRITICAL, {high} HIGH)",
-            f"Confirmed items : {breakdown['confirmed']}",
-            f"Review-first    : {breakdown['review']}",
-            f"Other findings  : {breakdown['other']}",
-            f"Processes killed: {self.killed}",
-            f"Files removed   : {self.removed}",
-            f"Recovery undo   : {'Available' if recovery['available'] else 'Not available'}",
-            "",
-            f"Summary verdict : {summary['label']}",
-            f"Assessment      : {summary['detail']}",
-            f"Local confidence: {cleanup['score']}% - {cleanup['label']}",
-            f"Confidence note : {cleanup['detail']}",
-            f"Account risk    : {self._format_account_risk_summary(exposure)}",
-            f"Account note    : {exposure['detail']}",
-        ]
+        lines = []
+        self._append_report_section(lines, "RENKILL INCIDENT REPORT")
+        self._append_report_field(lines, "Generated On", now)
+        self._append_report_field(lines, "Computer", os.environ.get("COMPUTERNAME", "Unknown"))
+        self._append_report_field(lines, "User", os.environ.get("USERNAME", "Unknown"))
+        self._append_report_field(lines, "Tool Version", VERSION)
+
+        self._append_report_section(lines, "FINDING SUMMARY")
+        self._append_report_field(lines, "Threats Found", f"{len(self.threats)} total ({crit} CRITICAL, {high} HIGH)")
+        self._append_report_field(lines, "Confirmed", breakdown["confirmed"])
+        self._append_report_field(lines, "Review-First", breakdown["review"])
+        self._append_report_field(lines, "Other Findings", breakdown["other"])
+        self._append_report_field(lines, "Processes Killed", self.killed)
+        self._append_report_field(lines, "Files Removed", self.removed)
+        self._append_report_field(lines, "Recovery Undo", "Available" if recovery["available"] else "Not available")
+        self._append_report_field(lines, "Summary Verdict", summary["label"])
+        self._append_report_field(lines, "Assessment", summary["detail"])
+        self._append_report_field(lines, "Local Confidence", f"{cleanup['score']}% - {cleanup['label']}")
+        self._append_report_field(lines, "Confidence Note", cleanup["detail"])
+        self._append_report_field(lines, "Account Risk", self._format_account_risk_summary(exposure))
+        self._append_report_field(lines, "Account Note", exposure["detail"])
 
         if self.post_cleanup_scan:
-            lines.append(f"Post-clean mode  : {'yes' if self.post_cleanup_scan else 'no'}")
-            lines.append(f"Reboot observed  : {'yes' if self.rebooted_after_cleanup else 'no'}")
+            self._append_report_field(lines, "Post-Clean Mode", "yes")
+            self._append_report_field(lines, "Reboot Observed", "yes" if self.rebooted_after_cleanup else "no")
 
         if persistence_compare:
-            lines += [
-                f"Startup snapshot: {persistence_compare['before_count']} before cleanup, {persistence_compare['current_count']} on this scan",
-                f"Snapshot change : {persistence_compare['cleared_count']} cleared, {persistence_compare['reappeared_count']} reappeared",
-            ]
+            self._append_report_field(
+                lines,
+                "Startup Snapshot",
+                f"{persistence_compare['before_count']} before cleanup, {persistence_compare['current_count']} on this scan",
+            )
+            self._append_report_field(
+                lines,
+                "Snapshot Change",
+                f"{persistence_compare['cleared_count']} cleared, {persistence_compare['reappeared_count']} reappeared",
+            )
         if browser_compare:
-            lines += [
-                f"Browser snapshot: {browser_compare['before_count']} suspicious item(s) before cleanup, {browser_compare['current_count']} on this scan",
-                f"Browser change  : {browser_compare['cleared_count']} cleared, {browser_compare['reappeared_count']} reappeared",
-            ]
+            self._append_report_field(
+                lines,
+                "Browser Snapshot",
+                f"{browser_compare['before_count']} suspicious item(s) before cleanup, {browser_compare['current_count']} on this scan",
+            )
+            self._append_report_field(
+                lines,
+                "Browser Change",
+                f"{browser_compare['cleared_count']} cleared, {browser_compare['reappeared_count']} reappeared",
+            )
 
         if recovery["available"]:
-            lines.append(
-                f"Recovery items  : {recovery['reversible_count']} reversible change(s), "
-                f"{recovery['note_count']} non-reversible note(s)"
+            self._append_report_field(
+                lines,
+                "Recovery Items",
+                f"{recovery['reversible_count']} reversible change(s), {recovery['note_count']} non-reversible note(s)",
             )
             created_at = str(recovery.get("created_at") or "")
             if created_at:
-                lines.append(f"Cleanup snapshot : {created_at}")
+                self._append_report_field(lines, "Cleanup Snapshot", created_at)
         if restore_point:
             status = str(restore_point.get("status") or "")
             if status == "created":
-                lines.append("Restore point   : Created before cleanup")
+                self._append_report_field(lines, "Restore Point", "Created before cleanup")
             elif status == "recently_created":
-                lines.append("Restore point   : Windows already had a recent restore point")
+                self._append_report_field(lines, "Restore Point", "Windows already had a recent restore point")
             elif status == "unavailable":
                 detail = str(restore_point.get("detail") or "")
-                lines.append("Restore point   : Not available" + (f" ({detail})" if detail else ""))
+                self._append_report_field(lines, "Restore Point", "Not available" + (f" ({detail})" if detail else ""))
+
         if quarantine["items"]:
-            lines += [
-                "",
-                "Quarantine:",
-                f"Quarantine items: {quarantine['items']} isolated",
-                f"Quarantine files: {quarantine['files']}",
-                f"Quarantine dirs : {quarantine['dirs']}",
-                f"Neutralized     : {quarantine['neutralized']} inert payload copy/copies",
-            ]
+            self._append_report_section(lines, "QUARANTINE SUMMARY")
+            self._append_report_field(lines, "Items Isolated", quarantine["items"])
+            self._append_report_field(lines, "Files", quarantine["files"])
+            self._append_report_field(lines, "Directories", quarantine["dirs"])
+            self._append_report_field(lines, "Neutralized", f"{quarantine['neutralized']} inert payload copy/copies")
 
-        lines += ["", "Exposure notes:"]
+        self._append_report_section(lines, "EXPOSURE NOTES")
         if self.exposure_notes:
-            for description, path_text in self.exposure_notes:
-                lines.append(f"- {description}" + (f" | {path_text}" if path_text else ""))
+            self._append_report_bullets(
+                lines,
+                [
+                    f"{description}" + (f" | {path_text}" if path_text else "")
+                    for description, path_text in self.exposure_notes
+                ],
+            )
         else:
-            lines.append("- No high-confidence account exposure paths were flagged.")
+            self._append_report_bullets(lines, ["No high-confidence account exposure paths were flagged."])
 
-        lines += ["", "=" * 64, "FINDINGS BY SURFACE", "=" * 64]
+        self._append_report_section(lines, "FINDINGS BY SURFACE")
         group_order = (
             "Startup / Persistence",
             "Process / Memory / Network",
@@ -10377,51 +10808,51 @@ class ScanEngine:
             items = grouped.get(group_name) or []
             if not items:
                 continue
-            lines += ["", group_name]
+            lines.extend(("", group_name, self._report_divider("-", 92)))
             for threat in items:
-                lines += [
-                    f"[{item_index:03d}] [{threat.severity:<8}] {threat.category}",
-                    f"       {threat.description}",
-                    f"       Path      : {threat.path}",
-                    f"       Detected  : {threat.timestamp}",
-                    f"       Remediated: {'Yes' if threat.remediated else 'No - MANUAL ACTION REQUIRED'}",
-                ]
+                lines.append(f"[{item_index:03d}] {threat.severity:<8} {threat.category}")
+                self._append_report_field(lines, "Surface", group_name)
+                self._append_report_field(lines, "Summary", threat.description)
+                if threat.path:
+                    self._append_report_field(lines, "Path", threat.path)
+                self._append_report_field(lines, "Detected", threat.timestamp)
+                self._append_report_field(
+                    lines,
+                    "Action",
+                    "Remediated by RenKill" if threat.remediated else "Manual review required",
+                )
+                lines.append("")
                 item_index += 1
 
-        lines += [
-            "",
-            "=" * 64,
-            "RECOVERY CENTER",
-            "=" * 64,
-        ]
-        lines.extend(recovery_plan)
+        self._append_report_section(lines, "RECOVERY CENTER")
+        self._append_report_bullets(lines, recovery_plan, indent="  ")
 
-        lines += [
-            "",
-            "=" * 64,
-            "POST-INFECTION CHECKLIST (do from a CLEAN device)",
-            "=" * 64,
-            " 1. Change the tied email password first, then every password saved in the browser or desktop apps",
-            " 2. Revoke all active sessions and deauthorize trusted devices (Google, banking, Discord, Steam)",
-            " 3. Move crypto assets to a fresh wallet / new seed phrase",
-            " 4. Review Google devices and sign out anything unfamiliar",
-            " 5. Turn off Chrome sync and clear synced data before turning sync back on",
-            " 6. Review Discord Authorized Apps, Steam device trust, and submit hacked-account tickets if needed",
-            " 7. Run Microsoft Defender Full Scan, then Microsoft Defender Offline",
-            " 8. Re-enable MFA on critical accounts",
-            " 9. Run RenKill again after reboot to confirm clean",
-            "10. Reinstall Windows if CRITICAL threats persist",
-            "",
-            "=" * 64,
-            "IOC REFERENCE",
-            "=" * 64,
-            " Loader   : RenEngine (Trojan.Python.Agent.nb)",
-            " Stage 2  : HijackLoader (Trojan.Win32.Penguish)",
-            " Payload  : ACR Stealer | Lumma | Rhadamanthys | Vidar",
-            " C2 IP    : 78.40.193.126",
-            " Distrib  : dodi-repacks[.]site -> MediaFire ZIP",
-        ]
-        return sanitize_for_display("\\n".join(lines))
+        self._append_report_section(lines, "POST-INFECTION CHECKLIST (DO FROM A CLEAN DEVICE)")
+        self._append_report_bullets(
+            lines,
+            [
+                "Change the tied email password first, then every password saved in the browser or desktop apps.",
+                "Revoke all active sessions and deauthorize trusted devices (Google, banking, Discord, Steam).",
+                "Move crypto assets to a fresh wallet or new seed phrase.",
+                "Review Google devices and sign out anything unfamiliar.",
+                "Turn off Chrome sync and clear synced data before turning sync back on.",
+                "Review Discord Authorized Apps, Steam device trust, and submit hacked-account tickets if needed.",
+                "Run Microsoft Defender Full Scan, then Microsoft Defender Offline.",
+                "Re-enable MFA on critical accounts.",
+                "Run RenKill again after reboot to confirm clean.",
+                "Reinstall Windows if CRITICAL threats persist.",
+            ],
+            indent="  ",
+        )
+
+        self._append_report_section(lines, "IOC REFERENCE")
+        self._append_report_field(lines, "Loader", "RenEngine (Trojan.Python.Agent.nb)")
+        self._append_report_field(lines, "Stage 2", "HijackLoader (Trojan.Win32.Penguish)")
+        self._append_report_field(lines, "Payloads", "ACR Stealer | Lumma | Rhadamanthys | Vidar")
+        self._append_report_field(lines, "C2 IP", "78.40.193.126")
+        self._append_report_field(lines, "Distribution", "dodi-repacks[.]site -> MediaFire ZIP")
+
+        return sanitize_for_display("\n".join(lines))
 
 
 # GUI
