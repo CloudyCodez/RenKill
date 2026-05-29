@@ -1,5 +1,40 @@
 # Changelog
 
+## v1.7.1 - 2026-05-29
+
+- Tuned scan accuracy using the 2026-05-30 RenKill reports:
+  - fixed the `acr` marker so Adobe Acrobat paths no longer look like ACR Stealer evidence
+  - treated known Lenovo Vantage / UDC helper components as vendor context instead of suspicious ProgramData processes when the path/name match the Lenovo layout
+  - suppressed stale Adobe, Lenovo Vantage, Microsoft Edge Update, and OneNote disabled-startup or missing-task residue unless real malware context is present
+- Added current late-May 2026 hiding and delivery context:
+  - covers UNC `rundll32` / script-host loader commands seen in newer ACR Stealer delivery
+  - adds CountLoader, OpenClaw/Hologram, fake Claude Code, and related delivery markers without making broad vendor-name matches dangerous
+  - account recovery guidance now calls out suspicious OAuth/app grants and Microsoft device-code sign-ins
+
+## v1.7.0 - 2026-05-25
+
+- Added a browser-history review pass for staged fake-download redirect chains:
+  - looks for generated `get*`, `generate*`, and `file*` hosts
+  - safely decodes base64/base64url query state when it appears in browser history
+  - raises confidence when encoded redirects line up with nearby account, payment, password, or risky download activity
+- Added a hard-stop account safety warning after `KILL & CLEAN`:
+  - makes it clear that cleaning local files does not revoke stolen browser cookies or app sessions
+  - pushes the user to secure email, Steam, Discord, browser sync, payment, and wallet accounts from a clean device
+  - keeps the normal remediation summary afterward for reboot/rescan instructions
+- Simplified the main toolbar:
+  - keeps the first-run path focused on `SCAN`, `CLEAN`, `REPAIR`, and `ACCOUNT LOCKDOWN`
+  - moves report export, recovery checklist, trust-path management, log clearing, revert, and updates into a compact `UTILITIES` menu
+  - leaves Turbo and Paranoid visible as advanced scan options without crowding the main actions
+- Added a visible red `!` account-safety button that opens the same clean-device account warning shown after cleanup.
+- Added a FRST-style scanner parity pass:
+  - reviews suspicious `App Paths` launch hijacks
+  - reviews `netsvcs` service membership for missing or suspicious service images
+  - adds a remediation-plan section to exported reports so RenKill can show what it would clean, repair, or leave for manual review
+- Added system-language-aware UI output:
+  - RenKill now detects the Windows UI language and localizes the main shell, critical safety warning, Turbo warning, and primary action labels
+  - key scan-status text, recovery snapshot notices, and exposure warnings now use the same language path instead of dropping back to raw English-only status lines
+  - missing strings still fall back cleanly to English so the app stays usable while the translation set grows
+
 ## v1.6.3 - 2026-05-17
 
 This release focuses on polish and security confidence. The inline log actions are quieter, the README has been rewritten into a cleaner maintainer-style overview, and the scanner gets another small accuracy pass around current infostealer delivery and session-theft behavior.

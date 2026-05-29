@@ -17,6 +17,9 @@ import json
 import re
 import base64
 import csv
+import locale
+import sqlite3
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import tempfile
 import traceback
@@ -25,7 +28,7 @@ import urllib.request
 import zipfile
 import textwrap
 import tkinter as tk
-from tkinter import scrolledtext, messagebox, filedialog
+from tkinter import scrolledtext, messagebox, filedialog, Menu
 
 # Windows-only imports
 try:
@@ -43,7 +46,7 @@ except ImportError:
 
 # IOC definitions
 
-VERSION = "1.6.3"
+VERSION = "1.7.1"
 TOOL_NAME = "RenKill"
 UPDATE_REPO_OWNER = "CloudyCodez"
 UPDATE_REPO_NAME = "RenKill"
@@ -52,6 +55,155 @@ UPDATE_RELEASES_URL = f"https://github.com/{UPDATE_REPO_OWNER}/{UPDATE_REPO_NAME
 UPDATE_ASSET_SUFFIX = "-windows.zip"
 UPDATE_STATE_FILE = "update_state.txt"
 ACCOUNT_LOCKDOWN_STATE_FILE = "account_lockdown_state.json"
+
+UI_TRANSLATIONS = {
+    "subtitle": {
+        "en": "v{version}  |  RenEngine / HijackLoader Removal Tool",
+        "es": "v{version}  |  Herramienta de eliminacion de RenEngine / HijackLoader",
+        "pt": "v{version}  |  Ferramenta de remocao RenEngine / HijackLoader",
+        "fr": "v{version}  |  Outil de suppression RenEngine / HijackLoader",
+        "de": "v{version}  |  Entfernungswerkzeug fuer RenEngine / HijackLoader",
+        "ru": "v{version}  |  Instrument udaleniya RenEngine / HijackLoader",
+        "tr": "v{version}  |  RenEngine / HijackLoader temizleme araci",
+        "th": "v{version}  |  tool samrap lae lom RenEngine / HijackLoader",
+        "ja": "v{version}  |  RenEngine / HijackLoader no joqyo tsuru",
+        "ko": "v{version}  |  RenEngine / HijackLoader jegeo do-gu",
+        "zh": "v{version}  |  RenEngine / HijackLoader qingchu gongju",
+    },
+    "admin": {"en": "ADMIN", "es": "ADMIN", "pt": "ADMIN", "fr": "ADMIN", "de": "ADMIN", "ru": "ADMIN", "tr": "ADMIN", "th": "ADMIN", "ja": "ADMIN", "ko": "ADMIN", "zh": "ADMIN"},
+    "limited": {"en": "LIMITED", "es": "LIMITADO", "pt": "LIMITADO", "fr": "LIMITE", "de": "EINGESCHRAENKT", "ru": "OGRANICHENO", "tr": "SINIRLI", "th": "LIMITED", "ja": "LIMITED", "ko": "LIMITED", "zh": "LIMITED"},
+    "ready": {"en": "Ready", "es": "Listo", "pt": "Pronto", "fr": "Pret", "de": "Bereit", "ru": "Gotovo", "tr": "Hazir", "th": "Ready", "ja": "Ready", "ko": "Ready", "zh": "Ready"},
+    "action_hint_initial": {
+        "en": "Scan first to map the infection. ACCOUNT LOCKDOWN is ready any time for a one-click local browser, Discord, Telegram, and Steam session wipe on this PC.",
+        "es": "Haz un escaneo primero para mapear la infeccion. ACCOUNT LOCKDOWN queda listo en cualquier momento para cerrar sesiones locales de navegador, Discord, Telegram y Steam en este PC.",
+        "pt": "Faca um escaneamento primeiro para mapear a infeccao. ACCOUNT LOCKDOWN fica pronto a qualquer momento para limpar sessoes locais de navegador, Discord, Telegram e Steam neste PC.",
+        "fr": "Lancez d'abord une analyse pour cartographier l'infection. ACCOUNT LOCKDOWN reste pret a tout moment pour effacer les sessions locales du navigateur, de Discord, Telegram et Steam sur ce PC.",
+        "de": "Fuehre zuerst einen Scan aus, um die Infektion einzugrenzen. ACCOUNT LOCKDOWN kann jederzeit lokale Browser-, Discord-, Telegram- und Steam-Sitzungen auf diesem PC loeschen.",
+        "ru": "Snachala zapustite skanirovanie, chtoby ponyat infektsiyu. ACCOUNT LOCKDOWN gotov v lyuboy moment dlya sbrosa lokalnykh sessiy brauzera, Discord, Telegram i Steam na etom PK.",
+        "tr": "Once enfeksiyonu haritalamak icin tarama yapin. ACCOUNT LOCKDOWN bu bilgisayardaki tarayici, Discord, Telegram ve Steam oturumlarini tek tikla temizlemeye her an hazir.",
+        "th": "run scan kon nai kon phuea du wa mi arai tid yu. ACCOUNT LOCKDOWN phrom samrap laang session khong browser, Discord, Telegram lae Steam bon khrueng ni dai thanti.",
+        "ja": "Mazu scan de kansen jotai o kakunin shite kudasai. ACCOUNT LOCKDOWN wa kono PC no browser, Discord, Telegram, Steam session o ichido de clear dekimasu.",
+        "ko": "Meonjeo gamyeom sangtaereul paakhagi wihae seukaeneul silhaenghaseyo. ACCOUNT LOCKDOWN eun i PC eseo beuraujeo, Discord, Telegram, Steam sesi-eul han beone jeongrihal su issseumnida.",
+        "zh": "xian saomiao yibian nongqing ganran qingkuang. ACCOUNT LOCKDOWN keyi suishi yi ci qingchu zhe tai diannao shang de liulanqi, Discord, Telegram he Steam huihua.",
+    },
+    "scan_button": {"en": "1  SCAN", "es": "1  ESCANEAR", "pt": "1  ESCANEAR", "fr": "1  ANALYSER", "de": "1  SCAN", "ru": "1  SKAN", "tr": "1  TARA", "th": "1  SCAN", "ja": "1  SCAN", "ko": "1  SCAN", "zh": "1  SCAN"},
+    "clean_button": {"en": "2  CLEAN", "es": "2  LIMPIAR", "pt": "2  LIMPAR", "fr": "2  NETTOYER", "de": "2  BEREINIGEN", "ru": "2  OCHISTIT", "tr": "2  TEMIZLE", "th": "2  CLEAN", "ja": "2  CLEAN", "ko": "2  CLEAN", "zh": "2  CLEAN"},
+    "repair_button": {"en": "3  REPAIR", "es": "3  REPARAR", "pt": "3  REPARAR", "fr": "3  REPARER", "de": "3  REPARIEREN", "ru": "3  ISPRAVIT", "tr": "3  ONAR", "th": "3  REPAIR", "ja": "3  REPAIR", "ko": "3  REPAIR", "zh": "3  REPAIR"},
+    "lockdown_button": {"en": "ACCOUNT LOCKDOWN", "es": "BLOQUEO DE CUENTAS", "pt": "BLOQUEIO DE CONTAS", "fr": "VERROUILLAGE COMPTES", "de": "KONTO-SPERRE", "ru": "ZASCHITA AKKAUNTOV", "tr": "HESAP KILITLEME", "th": "ACCOUNT LOCKDOWN", "ja": "ACCOUNT LOCKDOWN", "ko": "ACCOUNT LOCKDOWN", "zh": "ACCOUNT LOCKDOWN"},
+    "utilities_button": {"en": "UTILITIES", "es": "UTILIDADES", "pt": "UTILITARIOS", "fr": "OUTILS", "de": "TOOLS", "ru": "INSTRUMENTY", "tr": "ARACLAR", "th": "TOOLS", "ja": "TOOLS", "ko": "TOOLS", "zh": "TOOLS"},
+    "advanced_scan_options": {"en": "Advanced scan options:", "es": "Opciones avanzadas de escaneo:", "pt": "Opcoes avancadas de escaneamento:", "fr": "Options avancees d analyse:", "de": "Erweiterte Scan-Optionen:", "ru": "Rasshirennye parametry skanirovaniya:", "tr": "Gelismis tarama secenekleri:", "th": "advanced scan options:", "ja": "Advanced scan options:", "ko": "Advanced scan options:", "zh": "Advanced scan options:"},
+    "turbo": {"en": "TURBO", "es": "TURBO", "pt": "TURBO", "fr": "TURBO", "de": "TURBO", "ru": "TURBO", "tr": "TURBO", "th": "TURBO", "ja": "TURBO", "ko": "TURBO", "zh": "TURBO"},
+    "paranoid": {"en": "PARANOID", "es": "PARANOICO", "pt": "PARANOICO", "fr": "PARANOIA", "de": "PARANOID", "ru": "PARANOID", "tr": "PARANOID", "th": "PARANOID", "ja": "PARANOID", "ko": "PARANOID", "zh": "PARANOID"},
+    "tools_account_recovery": {"en": "Account recovery checklist", "es": "Guia de recuperacion de cuentas", "pt": "Checklist de recuperacao de contas", "fr": "Checklist de recuperation des comptes", "de": "Checkliste fuer Konto-Wiederherstellung", "ru": "Plan vosstanovleniya akkauntov", "tr": "Hesap kurtarma kontrol listesi", "th": "account recovery checklist", "ja": "Account recovery checklist", "ko": "Account recovery checklist", "zh": "Account recovery checklist"},
+    "tools_export_report": {"en": "Export report", "es": "Exportar informe", "pt": "Exportar relatorio", "fr": "Exporter le rapport", "de": "Bericht exportieren", "ru": "Eksport otcheta", "tr": "Raporu disa aktar", "th": "export report", "ja": "Export report", "ko": "Export report", "zh": "Export report"},
+    "tools_revert": {"en": "Revert last clean", "es": "Revertir ultima limpieza", "pt": "Reverter ultima limpeza", "fr": "Annuler le dernier nettoyage", "de": "Letzte Bereinigung rueckgaengig", "ru": "Otkatit poslednyuyu ochistku", "tr": "Son temizligi geri al", "th": "revert last clean", "ja": "Revert last clean", "ko": "Revert last clean", "zh": "Revert last clean"},
+    "tools_trust": {"en": "Trust known path", "es": "Confiar en ruta conocida", "pt": "Confiar no caminho conhecido", "fr": "Faire confiance a ce chemin", "de": "Bekannten Pfad vertrauen", "ru": "Doverit izvestnomu puti", "tr": "Bilinen yola guven", "th": "trust known path", "ja": "Trust known path", "ko": "Trust known path", "zh": "Trust known path"},
+    "tools_clear": {"en": "Clear log", "es": "Limpiar registro", "pt": "Limpar log", "fr": "Effacer le journal", "de": "Protokoll loeschen", "ru": "Ochistit zhurnal", "tr": "Gunlugu temizle", "th": "clear log", "ja": "Clear log", "ko": "Clear log", "zh": "Clear log"},
+    "tools_updates": {"en": "Check updates", "es": "Buscar actualizaciones", "pt": "Verificar atualizacoes", "fr": "Verifier les mises a jour", "de": "Nach Updates suchen", "ru": "Proverit obnovleniya", "tr": "Guncellemeleri kontrol et", "th": "check updates", "ja": "Check updates", "ko": "Check updates", "zh": "Check updates"},
+    "turbo_title": {"en": "Turbo Mode", "es": "Modo Turbo", "pt": "Modo Turbo", "fr": "Mode Turbo", "de": "Turbo-Modus", "ru": "Turbo rezhim", "tr": "Turbo Modu", "th": "Turbo Mode", "ja": "Turbo Mode", "ko": "Turbo Mode", "zh": "Turbo Mode"},
+    "turbo_warning": {
+        "en": "Turbo mode lets RenKill use more system resources to scan faster.\n\nThis can make other programs sluggish or unstable while the scan is running.",
+        "es": "El modo Turbo permite que RenKill use mas recursos del sistema para escanear mas rapido.\n\nEsto puede volver otros programas lentos o inestables mientras el escaneo esta activo.",
+        "pt": "O modo Turbo permite que o RenKill use mais recursos do sistema para escanear mais rapido.\n\nIsso pode deixar outros programas lentos ou instaveis durante o escaneamento.",
+        "fr": "Le mode Turbo permet a RenKill d'utiliser davantage de ressources systeme pour analyser plus vite.\n\nCela peut ralentir ou destabiliser les autres programmes pendant l'analyse.",
+        "de": "Der Turbo-Modus erlaubt RenKill, mehr Systemressourcen fuer schnellere Scans zu nutzen.\n\nDadurch koennen andere Programme waehrend des Scans langsamer oder instabil werden.",
+        "ru": "Turbo rezhim pozvolyaet RenKill ispolzovat bolshe resursov sistemy dlya uskoreniya skanirovaniya.\n\nIz-za etogo drugie programmy mogut tormozit ili rabotat nestabilno vo vremya skana.",
+        "tr": "Turbo modu RenKill'in daha hizli tarama icin daha fazla sistem kaynagi kullanmasina izin verir.\n\nTarama sirasinda diger programlar yavaslayabilir veya kararsiz hale gelebilir.",
+        "th": "Turbo mode cha hai RenKill chai resource maak khuen phuea scan wai khuen.\n\nra-wang scan program eun at cha cha long rue mai stable dai.",
+        "ja": "Turbo mode wa RenKill ga yori ooku no shisutemu resource o tsukatte hayaku scan shimasu.\n\nscan chuu wa hoka no program ga omoku nattari futaian ni naru koto ga arimasu.",
+        "ko": "Turbo mode neun RenKill i deo manh-eun siseutem jag-won-eul sayonghae deo ppaleuge seukaen hage hamnida.\n\nseukaen jung dareun peurogeuraemi beoseobgeona bulanjeonghaejil su issseumnida.",
+        "zh": "Turbo mode hui rang RenKill shiyong geng duo xitong ziyuan lai geng kuai saomiao.\n\nsaomiao qi jian qita chengxu keneng hui biande huanman huo bu wending.",
+    },
+    "turbo_hint": {
+        "en": "Turbo mode is armed. RenKill will push harder on CPU and filesystem work to finish scans faster, which can make other apps feel sluggish until the scan ends.",
+        "es": "El modo Turbo esta activo. RenKill exigira mas CPU y disco para terminar antes, y otras aplicaciones pueden sentirse lentas hasta que termine el escaneo.",
+        "pt": "O modo Turbo esta ativo. O RenKill vai forcar mais CPU e disco para terminar antes, e outros apps podem ficar lentos ate o fim do escaneamento.",
+        "fr": "Le mode Turbo est actif. RenKill va pousser davantage le CPU et le disque pour finir plus vite, et les autres applis peuvent ralentir jusqu'a la fin de l'analyse.",
+        "de": "Turbo-Modus ist aktiv. RenKill nutzt CPU und Dateisystem staerker fuer schnellere Scans, wodurch andere Apps bis zum Scan-Ende traeger wirken koennen.",
+        "ru": "Turbo rezhim vklyuchen. RenKill budet silnee nagruzhat protsessor i failovuyu sistemu, poetomu drugie prilozheniya mogut podtormazhivat do okonchaniya skana.",
+        "tr": "Turbo modu aktif. RenKill taramayi hizlandirmak icin CPU ve dosya sistemini daha fazla zorlayacak; tarama bitene kadar diger uygulamalar yavaslayabilir.",
+        "th": "Turbo mode poet laeo. RenKill ja chai CPU lae file system maak khuen phuea hai scan set reo khuen lae app eun at cha cha long jon kwa scan cha set.",
+        "ja": "Turbo mode ga on ni narimashita. RenKill wa scan o hayaku oeru tame ni CPU to file system o yori tsuyoku tsukau node, scan ga owaru made hoka no app ga omoku naru koto ga arimasu.",
+        "ko": "Turbo mode ga kyeojyeosseumnida. RenKill eun seukaen sogdoreul nophigi wihae CPU wa file system-e deo ganghage jagyonghameuro seukaen-i kkeutnal ttaekkaji dareun app i mugeowojil su issseumnida.",
+        "zh": "Turbo mode yijing kaiqi. RenKill hui geng jiji di shiyong CPU he wenjian xitong lai jiakuai saomiao, zai saomiao jieshu qian qita app keneng hui ganjue bian man.",
+    },
+    "status_admin": {"en": "Ready - running as Administrator", "es": "Listo - ejecutandose como administrador", "pt": "Pronto - executando como administrador", "fr": "Pret - execution en administrateur", "de": "Bereit - laeuft als Administrator", "ru": "Gotovo - zapushcheno s pravami administratora", "tr": "Hazir - yonetici olarak calisiyor", "th": "Ready - run as admin", "ja": "Ready - Administrator de jikko chuu", "ko": "Ready - gwanrija gwonhan euro silhaeng jung", "zh": "Ready - yi guanliyuan shenfen yunxing"},
+    "status_limited": {"en": "WARNING: No admin rights - some scan vectors limited. Restart as Admin for full coverage.", "es": "ADVERTENCIA: Sin permisos de administrador; algunas rutas de escaneo quedaran limitadas. Reinicia como administrador para cobertura completa.", "pt": "AVISO: Sem privilegios de administrador; algumas rotas de escaneamento ficarao limitadas. Reinicie como administrador para cobertura total.", "fr": "AVERTISSEMENT : sans droits administrateur, certaines zones de scan seront limitees. Redemarrez en administrateur pour une couverture complete.", "de": "WARNUNG: Keine Administratorrechte - einige Scan-Wege sind eingeschraenkt. Fuer volle Abdeckung als Administrator neu starten.", "ru": "PREDAUPREZHDENIE: net prav administratora - chast skan-proverok budet ogranichena. Pereza pustite ot imeni administratora dlya polnogo pokrytiya.", "tr": "UYARI: Yonetici yetkisi yok; bazi tarama yollari sinirli kalacak. Tam kapsama icin yonetici olarak yeniden baslatin.", "th": "WARNING: mai mi sit admin bang suan khong kan scan at cha jamkat. restart pen admin phuea coverage tem.", "ja": "WARNING: admin ken ga nai tame, ikutsu ka no scan keiro ga seigen saremasu. zenmen cover no tame Administrator de saikidou shite kudasai.", "ko": "WARNING: gwanrija gwonhani eopseoyo. ilbu seukaen gyeongroga jehan doemyeo, wanjeonhan geomsareul wihae gwanrija lo dasi silhaenghae juseyo.", "zh": "WARNING: meiyou guanliyuan quanxian, mouxie saomiao luxian hui shou xianzhi. qing yi guanliyuan shenfen chongqi yihuoqu wanzheng jiance."},
+    "account_warning_title": {"en": "CRITICAL ACCOUNT SAFETY STEP", "es": "PASO CRITICO DE SEGURIDAD DE CUENTAS", "pt": "ETAPA CRITICA DE SEGURANCA DE CONTAS", "fr": "ETAPE CRITIQUE DE SECURITE DES COMPTES", "de": "KRITISCHER KONTO-SICHERHEITSSCHRITT", "ru": "KRITICHESKIY SHAG ZASCHITY AKKAUNTOV", "tr": "KRITIK HESAP GUVENLIGI ADIMI", "th": "CRITICAL ACCOUNT SAFETY STEP", "ja": "CRITICAL ACCOUNT SAFETY STEP", "ko": "CRITICAL ACCOUNT SAFETY STEP", "zh": "CRITICAL ACCOUNT SAFETY STEP"},
+    "account_warning_heading": {"en": "ACCOUNT HIJACK RISK IS NOT FIXED BY FILE CLEANUP ALONE", "es": "EL RIESGO DE ROBO DE CUENTAS NO SE ARREGLA SOLO BORRANDO ARCHIVOS", "pt": "O RISCO DE SEQUESTRO DE CONTAS NAO E RESOLVIDO SO COM A LIMPEZA DE ARQUIVOS", "fr": "LE RISQUE DE PIRATAGE DE COMPTE N EST PAS RESOLU PAR LA SEULE SUPPRESSION DES FICHIERS", "de": "KONTOUEBERNAHME WIRD NICHT ALLEIN DURCH DATEI-BEREINIGUNG BEHOBEN", "ru": "RISK UGO NA AKKAUNTA NE ISCHEZAET TOLKO POSLE OCHISTKI FAYLOV", "tr": "HESAP CALINMA RISKI SADECE DOSYA TEMIZLIGIYLE BITMEZ", "th": "khwam siang khong kan thuk yued account mai dai mot pai duai kan laang file yang diao", "ja": "account hijack risk wa file clean dake de wa kaisho saremasen", "ko": "gyejeong talchwi wiheom eun file cheongso man-euro hae gyeoldoeeji anseumnida", "zh": "zhanghao beijieguan de fengxian buhui yinwei zhishi qingli wenjian jiu jiechu"},
+    "account_warning_body": {
+        "en": "RenKill just removed local traces, but modern infostealers often steal browser cookies, Discord/Steam tokens, password-manager sessions, and saved login material before cleanup starts.\n\nThat means an attacker may still be logged into accounts from another device even after this PC looks clean.\n\nCurrent account risk: {risk}\n\nDo this from a clean phone or another trusted computer:\n  1. Secure the email account first.\n  2. Change important passwords.\n  3. Revoke sessions / deauthorize devices.\n  4. Check Steam trades, Discord authorized apps, mailbox forwarding, payment, and wallet activity.\n\nThen reboot this PC and run SCAN SYSTEM again.",
+        "es": "RenKill acaba de quitar rastros locales, pero los infostealers modernos suelen robar cookies del navegador, tokens de Discord/Steam, sesiones del gestor de contrasenas y material de inicio de sesion guardado antes de que empiece la limpieza.\n\nEso significa que un atacante todavia podria seguir conectado a tus cuentas desde otro dispositivo aunque este PC ya parezca limpio.\n\nRiesgo actual de cuenta: {risk}\n\nHaz esto desde un telefono limpio u otro equipo de confianza:\n  1. Protege primero la cuenta de correo.\n  2. Cambia las contrasenas importantes.\n  3. Revoca sesiones y dispositivos autorizados.\n  4. Revisa intercambios de Steam, apps autorizadas de Discord, reenvios de correo, pagos y actividad de wallets.\n\nDespues reinicia este PC y ejecuta SCAN otra vez.",
+    },
+    "account_warning_confirm": {"en": "I UNDERSTAND - I WILL SECURE ACCOUNTS FROM A CLEAN DEVICE", "es": "ENTIENDO - VOY A ASEGURAR LAS CUENTAS DESDE UN DISPOSITIVO LIMPIO", "pt": "EU ENTENDO - VOU PROTEGER AS CONTAS DE UM DISPOSITIVO LIMPO", "fr": "J AI COMPRIS - JE VAIS SECURISER LES COMPTES DEPUIS UN APPAREIL SAIN", "de": "VERSTANDEN - ICH SICHERE DIE KONTEN VON EINEM SAUBEREN GERAET AUS", "ru": "PONYATNO - YA ZASCHISCHU AKKAUNTY S CHISTOGO USTROYSTVA", "tr": "ANLADIM - HESAPLARI TEMIZ BIR CIHAZDAN GUVENE ALACAGIM", "th": "khao jai laeo - chan ja pai secure account chak clean device", "ja": "rikai shimashita - clean device kara account o secure shimasu", "ko": "ihaehaesseumnida - clean device eseo account reul bohohagessseumnida", "zh": "wo mingbai le - wo hui zai ganjing de shebei shang baozhang zhanghao anquan"},
+    "unknown_until_scan": {"en": "Unknown until a scan runs"},
+    "startup_press_scan": {"en": "Press SCAN to begin."},
+    "startup_containment_ready": {"en": "Containment tool   : ACCOUNT LOCKDOWN is ready for a one-click local browser, Discord, Telegram, and Steam session wipe."},
+    "update_ready": {"en": "Update ready       : GitHub release {tag} is available."},
+    "recovery_snapshot_ready": {"en": "Recovery snapshot available: {count} reversible change(s) ready to restore."},
+    "summary_no_threats": {"en": "No threats detected"},
+    "summary_probably_renloader": {"en": "Probably RenLoader / RenEngine"},
+    "summary_possible_renloader": {"en": "Possible RenLoader / RenEngine"},
+    "summary_possible_infostealer": {"en": "Possible infostealer activity"},
+    "summary_suspicious_weak": {"en": "Suspicious activity, weak RenLoader match"},
+    "summary_other_suspicious": {"en": "Something else suspicious"},
+    "status_scan_complete": {"en": "Scan complete. {summary}. Local {score}%. Account risk {risk}. Use CLEAN to remediate."},
+    "status_scan_complete_clean": {"en": "Scan complete. No threats detected. Local {score}%. Account risk {risk}."},
+    "status_scan_rescan_recommended": {"en": "No threats detected, but reboot and scan once more. Local {score}%. Account risk {risk}."},
+    "status_scan_persistence_returned": {"en": "Post-clean rescan found persistence rebuilding after cleanup. Local {score}%. Account risk {risk}."},
+    "status_scan_browser_returned": {"en": "Post-clean rescan found browser/session residue returning after cleanup. Local {score}%. Account risk {risk}."},
+    "status_scan_postclean_pass": {"en": "Post-clean rescan passed. No threats detected. Local {score}%. Account risk {risk}."},
+    "cleanup_finished": {"en": "Cleanup finished - {k} process(es) killed, {r} item(s) removed. Reboot, rescan, and treat account risk as {risk}."},
+    "hint_persistence_returned": {"en": "Persistence rebuilt after cleanup: {count} startup or relaunch target(s) came back. Treat the infection as still active until that creator is removed."},
+    "hint_browser_returned": {"en": "Browser aftermath still needs work: {count} suspicious browser-state item(s) came back after cleanup. Keep account recovery and session revocation moving from a clean device."},
+    "hint_startup_watch": {"en": "Startup watch: {count} suspicious startup item(s) were found. Use CLEAN, then reboot and rescan so hidden startup leftovers cannot relaunch the infection."},
+    "hint_confirmed_and_review": {"en": "{confirmed} confirmed malware-style item(s) and {review} review-first finding(s) were surfaced. Clean the confirmed traces, then use ACCOUNT RECOVERY and REPAIR as needed."},
+    "hint_threats_repair_lockdown": {"en": "Threats were found. Use CLEAN for malware traces, REPAIR for security/proxy drift, then ACCOUNT LOCKDOWN to wipe reusable local sessions on this PC."},
+    "hint_threats_repair": {"en": "Threats were found. Use CLEAN for malware traces, then REPAIR to restore safe protection and proxy settings."},
+    "hint_threats_lockdown": {"en": "Threats were found. Use CLEAN for confirmed traces, then use ACCOUNT LOCKDOWN to wipe local browser, Discord, Telegram, and Steam sessions on this PC."},
+    "hint_threats_clean": {"en": "Threats were found. Use CLEAN for confirmed traces. REVERT LAST CLEAN stays available for reversible changes."},
+    "hint_locally_clean_account_risk": {"en": "This scan looks locally clean, but account risk is still {risk}. ACCOUNT LOCKDOWN can wipe local sessions here; password/session recovery still belongs on a clean device."},
+    "hint_rescan_for_confidence": {"en": "No active threats were found, but a reboot and one more rescan will raise confidence that local persistence is fully gone."},
+    "hint_clean_with_lockdown_ready": {"en": "Scan came back clean. ACCOUNT LOCKDOWN still stays ready if you want a one-click local browser, Discord, Telegram, and Steam sign-out on this PC."},
+    "exposure_warning_generic": {"en": "Exposure warning - {label} data may have been accessed. Revoke sessions from a clean device"},
+    "exposure_warning_filezilla": {"en": "Exposure warning - FileZilla saved server credentials may have been accessible. Rotate downstream credentials from a clean device"},
+    "exposure_warning_steam": {"en": "Exposure warning - Steam client/session data may have been accessed. Change the Steam password, secure the tied email, and deauthorize devices from a clean device"},
+}
+
+def _normalize_ui_language(code):
+    value = str(code or "").replace("_", "-").lower()
+    if not value:
+        return "en"
+    if value.startswith("zh"):
+        return "zh"
+    return value.split("-", 1)[0]
+
+
+def _detect_ui_language():
+    candidates = []
+    try:
+        lang_id = ctypes.windll.kernel32.GetUserDefaultUILanguage()
+        mapped = locale.windows_locale.get(lang_id, "")
+        if mapped:
+            candidates.append(mapped)
+    except Exception:
+        pass
+    for getter in (locale.getdefaultlocale, locale.getlocale):
+        try:
+            result = getter()
+        except Exception:
+            result = None
+        if not result:
+            continue
+        if isinstance(result, tuple):
+            candidates.extend(part for part in result if part)
+        else:
+            candidates.append(result)
+    for candidate in candidates:
+        normalized = _normalize_ui_language(candidate)
+        if normalized in (UI_TRANSLATIONS.get("ready") or {}):
+            return normalized
+    return "en"
 
 MALICIOUS_FILENAMES = {
     "instaler.exe",
@@ -99,7 +251,6 @@ PROCESS_IOC_MARKERS = {
     "instaler",
     "lnstaier",
     "renpy",
-    "acr",
     "acrstealer",
     "ageo",
     "hexon",
@@ -149,6 +300,14 @@ PROCESS_IOC_MARKERS = {
     "esal",
     "modtask",
     "moduac",
+    "countloader",
+    "hell1-kitty.cc",
+    "hell10-kitty.cc",
+    "sphere-api.dialectosphere.in.net",
+    "openclaw-installer.com",
+    "openclaw-install",
+    "claude-desktop.gitlab.io",
+    "systembackgroundupdate",
 }
 
 SUSPICIOUS_DLL_NAMES = {
@@ -258,7 +417,6 @@ SOURCE_LURE_KEYWORDS = {
     "zoneind",
     "chime",
     "iviewers",
-    "acr",
     "acrstealer",
     "ageo",
     "hexon",
@@ -305,6 +463,10 @@ SOURCE_LURE_KEYWORDS = {
     "tokenova",
     "zdescargas",
     "hentakugames",
+    "countloader",
+    "systembackgroundupdate",
+    "openclaw-installer",
+    "claude-desktop",
 }
 
 SOURCE_LURE_FILENAME_STRONG = {
@@ -755,6 +917,10 @@ PROTECTED_CORE_PROCESS_NAMES = {
 }
 
 TRUSTED_VENDOR_PATH_MARKERS = (
+    "\\program files\\adobe\\",
+    "\\program files (x86)\\adobe\\",
+    "\\program files\\common files\\adobe\\",
+    "\\program files (x86)\\common files\\adobe\\",
     "\\program files\\avast software\\",
     "\\programdata\\avast software\\",
     "\\program files\\avg\\",
@@ -792,8 +958,56 @@ TRUSTED_VENDOR_PATH_MARKERS = (
     "\\appdata\\roaming\\opera software\\",
     "\\programdata\\obs-studio-hook\\",
     "\\program files\\windows defender\\",
+    "\\program files\\lenovo\\",
+    "\\program files (x86)\\lenovo\\",
     "\\program files\\netsupport\\",
     "\\program files (x86)\\netsupport\\",
+)
+
+LENOVO_PROGRAMDATA_COMPONENTS = (
+    "\\programdata\\lenovo\\vantage\\addindata\\lenovobatterygaugeaddin\\",
+    "\\programdata\\lenovo\\vantage\\addins\\batterywidgetaddin\\",
+    "\\programdata\\lenovo\\vantage\\addins\\smartcoloraddin\\",
+    "\\programdata\\lenovo\\udc\\hosts\\",
+)
+LENOVO_COMPONENT_PROCESS_NAMES = {
+    "appprovisioningplugin.exe",
+    "batterywidgethost.exe",
+    "messagingplugin.exe",
+    "qshelper.exe",
+    "segametool.exe",
+}
+KNOWN_VENDOR_RESIDUE_TOKENS = (
+    "adobe acrobat update task",
+    "adobe-genuine-software-integrity-scheduler",
+    "adobegcinvoker",
+    "adobearm.exe",
+    "agcinvokerutility.exe",
+    "agsservice.exe",
+    "lenovo\\vantage\\",
+    "lenovo vantage",
+    "vantageservice",
+    "scheduleeventaction.exe",
+    "batterywidgetaddin",
+    "lenovobatterygaugeaddin",
+    "genericmessagingaddin",
+    "smartperformance",
+    "microsoftedgeupdatetaskmachine",
+    "microsoftedgeupdate.exe",
+    "send to onenote",
+)
+BENIGN_DISABLED_STARTUP_RESIDUE_NAMES = (
+    "adobegcinvoker",
+    "nvidia broadcast",
+    "one note",
+    "onenote",
+    "opera browser assistant",
+    "opera stable",
+    "protonvpn",
+    "razeraxon",
+    "riot vanguard",
+    "riotclient",
+    "voicemod",
 )
 HIGH_VALUE_DEFENDER_PATH_MARKERS = (
     "\\appdata\\local\\google\\chrome\\application\\",
@@ -940,6 +1154,8 @@ MANUAL_REVIEW_CATEGORIES = {
     "Hosts Tampering Review",
     "Installed Program Review",
     "KnownDLLs Review",
+    "App Paths Review",
+    "Netsvcs Review",
     "Proxy Configuration Review",
     "SafeBoot Review",
     "Security Center Review",
@@ -950,6 +1166,7 @@ MANUAL_REVIEW_CATEGORIES = {
     "Startup Correlation Review",
     "Suspicious Loader Stage Directory",
     "Suspicious RenPy Loader Bundle",
+    "Web Redirect Chain Review",
     "Winlogon Notify Review",
     "WinHTTP Proxy Review",
 }
@@ -967,7 +1184,9 @@ COMMON_USERLAND_EXEC_MARKERS = (
 TEMP_STAGE_DIR_REGEX = re.compile(r"\\(?:appdata\\local\\)?temp\\tmp-\d+-[a-z0-9_-]{6,}\\", re.IGNORECASE)
 DRIVE_PATH_REGEX = re.compile(r"[A-Za-z]:\\[^\"'\r\n]+", re.IGNORECASE)
 IPV4_HTTP_REGEX = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:/[^\s\"']*)?", re.IGNORECASE)
+UNC_LOADER_REGEX = re.compile(r"\b(?:rundll32|regsvr32|mshta|wscript|cscript)(?:\.exe)?\b[^\r\n]*\\\\[A-Za-z0-9_.-]+\\", re.IGNORECASE)
 VERSION_TAG_REGEX = re.compile(r"v?(\d+)\.(\d+)\.(\d+)", re.IGNORECASE)
+WEB_REDIRECT_ROLE_HOST_REGEX = re.compile(r"^(?:get\d+|generate[0-9a-f]{5,}|file\d+)(?:[.-]|$)", re.IGNORECASE)
 GODOT_APP_USERDATA_MARKER = "\\appdata\\roaming\\godot\\app_userdata\\"
 ASAR_ARGUMENT_MARKERS = ("node_modules.asar", ".asar")
 IMYFONE_COMPANY_TOKENS = (
@@ -1085,6 +1304,12 @@ SCRIPT_LURE_REMOTE_MARKERS = (
     "infura.io",
     "eth.llamarpc.com",
     "cloudflare-eth.com",
+    "hell1-kitty.cc",
+    "hell10-kitty.cc",
+    "sphere-api.dialectosphere.in.net",
+    "openclaw-installer.com",
+    "claude-desktop.gitlab.io",
+    "github.com/openclaw-install/",
 )
 CLICKFIX_SHELL_MARKERS = (
     "powershell",
@@ -1134,6 +1359,42 @@ ACCOUNT_HIJACK_BRAND_TOKENS = (
     "steampowered",
     "youtube.com",
     "youtu.be",
+)
+WEB_REDIRECT_QUERY_KEYS = {"data", "state", "payload"}
+WEB_REDIRECT_STATE_KEYS = {"redirect", "timestamp", "progress", "redirectstep", "tag", "id", "password"}
+WEB_REDIRECT_SENSITIVE_URL_TOKENS = (
+    "account",
+    "accounts.",
+    "billing",
+    "card",
+    "checkout",
+    "discord",
+    "login",
+    "oauth",
+    "passkey",
+    "password",
+    "payment",
+    "recovery",
+    "security",
+    "session",
+    "steam",
+    "wallet",
+)
+WEB_REDIRECT_RISKY_DOWNLOAD_EXTENSIONS = (
+    ".7z",
+    ".bat",
+    ".cmd",
+    ".exe",
+    ".hta",
+    ".iso",
+    ".js",
+    ".lnk",
+    ".msi",
+    ".ps1",
+    ".rar",
+    ".scr",
+    ".vbs",
+    ".zip",
 )
 SESSION_SIGNAL_BROWSER_TOKENS = (
     "cookie",
@@ -1461,6 +1722,7 @@ PERSISTENCE_THREAT_CATEGORIES = {
     "Active Setup Persistence",
     "AppCert Persistence",
     "AppInit Persistence",
+    "App Paths Review",
     "Disabled Startup Artifact",
     "Compiled Temp Stage Directory",
     "Explorer Hijack Review",
@@ -1473,6 +1735,7 @@ PERSISTENCE_THREAT_CATEGORIES = {
     "Logon Script Persistence",
     "Malicious Scheduled Task",
     "Malicious Service",
+    "Netsvcs Review",
     "Persistence Artifact",
     "Persistence Staging Directory",
     "Policy Persistence",
@@ -1492,6 +1755,7 @@ RENLOADER_CORRELATION_CATEGORIES = {
     "Active Setup Persistence",
     "AppCert Persistence",
     "AppInit Persistence",
+    "App Paths Review",
     "Campaign IOC Process",
     "Defender Exclusion",
     "Execution Trace Anomaly",
@@ -1508,6 +1772,7 @@ RENLOADER_CORRELATION_CATEGORIES = {
     "Malicious Process",
     "Malicious Scheduled Task",
     "Malicious Service",
+    "Netsvcs Review",
     "Policy Persistence",
     "Persistence Artifact",
     "Persistence Process",
@@ -1524,6 +1789,7 @@ RENLOADER_CORRELATION_CATEGORIES = {
     "Suspicious Loader Stage Directory",
     "Suspicious Temp Stage Directory",
     "Suspicious RenPy Loader Bundle",
+    "Web Redirect Chain Review",
     "Winlogon Notify Review",
     "WMI Persistence",
 }
@@ -2057,11 +2323,12 @@ class Threat:
 # Scanner engine
 
 class ScanEngine:
-    def __init__(self, log_cb, progress_cb, paranoid=False, turbo=False, user_trusted_paths=None):
+    def __init__(self, log_cb, progress_cb, paranoid=False, turbo=False, user_trusted_paths=None, ui_language="en"):
         self.log = log_cb
         self.progress = progress_cb
         self.paranoid = paranoid
         self.turbo = turbo
+        self.ui_language = _normalize_ui_language(ui_language)
         self.threats: list = []
         self.killed = 0
         self.removed = 0
@@ -2096,6 +2363,14 @@ class ScanEngine:
         self.user_trusted_paths = list(user_trusted_paths or load_user_trusted_paths())
         self.account_lockdown_state = load_account_lockdown_state()
         self._reset_recovery_state()
+
+    def _ui(self, key, **values):
+        entry = UI_TRANSLATIONS.get(key, {})
+        text = entry.get(self.ui_language) or entry.get("en") or key
+        try:
+            return text.format(**values)
+        except Exception:
+            return text
 
     def _add(self, severity, category, description, path=None, action=None, trust_path=None):
         normalized_path = self._normalized_path(path) if path else ""
@@ -3489,6 +3764,11 @@ class ScanEngine:
         if "Browser Policy Review" in categories:
             browser_direct += 2
             credential_direct += 1
+        if "Web Redirect Chain Review" in categories:
+            browser_direct += 2
+            social_direct += 1
+            credential_direct += 1
+            global_signal += 1
         if "Defender Exclusion" in categories:
             global_signal += 1
         if categories & {"Source Lure Artifact", "Malicious Archive/Script", "Stealer Script Host", "Compiler Stage Process", "Stealth Profiling Script Host"}:
@@ -3668,10 +3948,10 @@ class ScanEngine:
             "",
             "Core steps:",
             "  1. Change the password on the email account tied to Steam, Discord, and browser sync first.",
-            "  2. Review mailbox forwarding rules, recovery methods, app passwords, and suspicious OAuth/app access.",
+            "  2. Review mailbox forwarding rules, recovery methods, app passwords, suspicious OAuth/app access, and unknown Microsoft device-code sign-ins.",
             "  3. Change passwords for anything saved in the browser or desktop apps on the infected PC.",
             "  4. Revoke active sessions and deauthorize devices, not just passwords.",
-            "  5. Re-enable MFA after passwords, sessions, and device trust are reset.",
+            "  5. Remove unknown trusted devices from Microsoft/Google/Steam/Discord before re-enabling MFA prompts.",
             "  6. Reboot the infected PC and run RenKill again before trusting it.",
         ]
 
@@ -3760,6 +4040,8 @@ class ScanEngine:
             "Explorer Hijack Review",
             "IFEO Persistence",
             "KnownDLLs Review",
+            "App Paths Review",
+            "Netsvcs Review",
             "Logon Script Persistence",
             "RenEngine Bundle",
             "Malicious File",
@@ -3875,6 +4157,7 @@ class ScanEngine:
                 "detail": "No malware-like artifacts matched the current RenKill rules.",
                 "confidence": "clean",
                 "color": GREEN,
+                "kind": "no_threats",
             }
             return self.last_summary
 
@@ -3928,6 +4211,13 @@ class ScanEngine:
             "detail": detail,
             "confidence": confidence,
             "color": color,
+            "kind": (
+                "probably_renloader" if renloader_hits >= 6 else
+                "possible_renloader" if renloader_hits >= 3 else
+                "possible_infostealer" if generic_stealer_hits >= 2 else
+                "suspicious_weak" if suspicious_only else
+                "other_suspicious"
+            ),
             "renloader_hits": renloader_hits,
             "generic_hits": generic_stealer_hits,
             "startup_layers": startup_layers,
@@ -4215,7 +4505,17 @@ class ScanEngine:
     @staticmethod
     def _contains_marker(path, markers):
         pl = path.lower()
-        return any(marker in pl for marker in markers)
+        for marker in markers:
+            token = str(marker or "").lower()
+            if not token:
+                continue
+            if token in {"acr", "ageo", "esal", "rshell"}:
+                if re.search(rf"(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])", pl):
+                    return True
+                continue
+            if token in pl:
+                return True
+        return False
 
     @staticmethod
     def _normalized_path(path):
@@ -4554,6 +4854,29 @@ class ScanEngine:
         pl = self._normalized_path(path)
         return bool(pl) and any(marker in pl for marker in TRUSTED_VENDOR_PATH_MARKERS)
 
+    def _is_lenovo_vantage_component(self, pname, path):
+        normalized = self._normalized_path(path)
+        if not normalized:
+            return False
+        process_name = str(pname or os.path.basename(normalized)).lower()
+        if process_name not in LENOVO_COMPONENT_PROCESS_NAMES:
+            return False
+        if not any(marker in normalized for marker in LENOVO_PROGRAMDATA_COMPONENTS):
+            return False
+        return self._has_trusted_file_metadata(path) or "\\programdata\\lenovo\\udc\\hosts\\" in normalized
+
+    def _is_known_vendor_residue(self, *values):
+        blob = " ".join(str(value or "").lower() for value in values)
+        if not blob or self._has_strong_campaign_context(blob):
+            return False
+        return any(token in blob for token in KNOWN_VENDOR_RESIDUE_TOKENS)
+
+    def _is_benign_disabled_startup_residue(self, item_name):
+        lowered = str(item_name or "").lower()
+        if not lowered or self._has_strong_campaign_context(lowered):
+            return False
+        return any(token in lowered for token in BENIGN_DISABLED_STARTUP_RESIDUE_NAMES)
+
     def _is_legit_netsupport_install_path(self, path):
         normalized = self._normalized_path(path)
         return bool(normalized) and any(marker in normalized for marker in NETSUPPORT_TRUSTED_PATH_MARKERS)
@@ -4620,6 +4943,8 @@ class ScanEngine:
         if self._is_local_tool_context(pexe, cmdline):
             return True
         if pname in TRUSTED_PROCESS_NAMES:
+            return True
+        if self._is_lenovo_vantage_component(pname, pexe):
             return True
         if self._is_trusted_vendor_path(pexe) or self._is_protected_system_path(pexe):
             return True
@@ -4715,7 +5040,11 @@ class ScanEngine:
         lowered = str(text or "").lower()
         if not lowered:
             return False
-        return any(marker in lowered for marker in SCRIPT_LURE_REMOTE_MARKERS) or bool(IPV4_HTTP_REGEX.search(lowered))
+        return (
+            any(marker in lowered for marker in SCRIPT_LURE_REMOTE_MARKERS)
+            or bool(IPV4_HTTP_REGEX.search(lowered))
+            or bool(UNC_LOADER_REGEX.search(lowered))
+        )
 
     @staticmethod
     def _looks_like_temp_compiler_cmdline(cmdline):
@@ -6579,6 +6908,8 @@ class ScanEngine:
 
         missing = self._missing_command_target_details(execute, task_label)
         if missing:
+            if self._is_known_vendor_residue(task_label, execute, arguments, working_directory, missing.get("raw")):
+                return None
             reason_text = self._format_missing_target_reason(missing)
             severity = "HIGH" if missing["score"] >= 3 else "MEDIUM"
             category = "Broken Scheduled Task Residue" if missing["score"] < 3 else "Broken Persistence Residue"
@@ -7234,6 +7565,202 @@ class ScanEngine:
             return True
         return any(marker in dpl for marker in BENIGN_HEAVY_SUBTREES)
 
+    @staticmethod
+    def _browser_history_roots():
+        return (
+            ("Chrome", os.path.join("AppData", "Local", "Google", "Chrome", "User Data"), "chromium"),
+            ("Edge", os.path.join("AppData", "Local", "Microsoft", "Edge", "User Data"), "chromium"),
+            ("Brave", os.path.join("AppData", "Local", "BraveSoftware", "Brave-Browser", "User Data"), "chromium"),
+            ("Opera", os.path.join("AppData", "Roaming", "Opera Software", "Opera Stable"), "chromium"),
+            ("Opera GX", os.path.join("AppData", "Roaming", "Opera Software", "Opera GX Stable"), "chromium"),
+            ("Firefox", os.path.join("AppData", "Roaming", "Mozilla", "Firefox", "Profiles"), "firefox"),
+        )
+
+    def _iter_browser_history_sources(self):
+        profile = os.environ.get("USERPROFILE", "")
+        for label, rel_root, kind in self._browser_history_roots():
+            root = os.path.join(profile, rel_root)
+            if kind == "chromium":
+                for profile_dir in self._chromium_profile_dirs(root):
+                    history_path = os.path.join(profile_dir, "History")
+                    if os.path.isfile(history_path):
+                        yield label, kind, history_path
+                continue
+
+            if not os.path.isdir(root):
+                continue
+            try:
+                for entry in os.listdir(root):
+                    profile_dir = os.path.join(root, entry)
+                    history_path = os.path.join(profile_dir, "places.sqlite")
+                    if os.path.isfile(history_path):
+                        yield label, kind, history_path
+            except Exception:
+                continue
+
+    @staticmethod
+    def _read_history_sqlite(db_path, kind, limit=1500):
+        temp_copy = None
+        try:
+            fd, temp_copy = tempfile.mkstemp(prefix="renkill-history-", suffix=".sqlite")
+            os.close(fd)
+            shutil.copy2(db_path, temp_copy)
+            conn = sqlite3.connect(temp_copy)
+            try:
+                if kind == "firefox":
+                    query = (
+                        "SELECT moz_places.url, moz_places.title, moz_historyvisits.visit_date "
+                        "FROM moz_places JOIN moz_historyvisits ON moz_places.id = moz_historyvisits.place_id "
+                        "ORDER BY moz_historyvisits.visit_date DESC LIMIT ?"
+                    )
+                else:
+                    query = "SELECT url, title, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT ?"
+                rows = conn.execute(query, (limit,)).fetchall()
+            finally:
+                conn.close()
+            for url, title, visited_at in rows:
+                yield str(url or ""), str(title or ""), int(visited_at or 0)
+        except Exception:
+            return
+        finally:
+            if temp_copy:
+                try:
+                    os.remove(temp_copy)
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _decode_base64_json(value):
+        raw = str(value or "").strip()
+        if not raw or len(raw) < 12 or len(raw) > 8192:
+            return None
+        raw = urllib.parse.unquote(raw)
+        if raw.startswith("{") and raw.endswith("}"):
+            try:
+                parsed = json.loads(raw)
+                return parsed if isinstance(parsed, dict) else None
+            except Exception:
+                return None
+
+        compact = re.sub(r"\s+", "", raw)
+        candidates = [compact]
+        if "-" in compact or "_" in compact:
+            candidates.append(compact.replace("-", "+").replace("_", "/"))
+        for candidate in candidates:
+            padded = candidate + ("=" * (-len(candidate) % 4))
+            try:
+                decoded = base64.b64decode(padded, validate=False)
+                text = decoded.decode("utf-8", errors="ignore").strip("\ufeff\x00 \r\n\t")
+                parsed = json.loads(text)
+            except Exception:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+        return None
+
+    @staticmethod
+    def _path_has_risky_download_extension(url):
+        try:
+            parsed = urllib.parse.urlparse(url)
+            path = urllib.parse.unquote(parsed.path or "").lower()
+        except Exception:
+            path = str(url or "").lower()
+        return any(path.endswith(ext) for ext in WEB_REDIRECT_RISKY_DOWNLOAD_EXTENSIONS)
+
+    @staticmethod
+    def _url_has_sensitive_account_surface(url, title=""):
+        text = f"{url} {title}".lower()
+        return any(token in text for token in WEB_REDIRECT_SENSITIVE_URL_TOKENS)
+
+    def _score_web_redirect_url(self, url):
+        try:
+            parsed = urllib.parse.urlparse(url)
+        except Exception:
+            return 0, []
+
+        host = (parsed.hostname or "").lower()
+        if not host:
+            return 0, []
+
+        score = 0
+        reasons = []
+        first_label = host.split(".", 1)[0]
+        role_host = WEB_REDIRECT_ROLE_HOST_REGEX.match(host) or WEB_REDIRECT_ROLE_HOST_REGEX.match(first_label)
+        if role_host:
+            score += 2
+            reasons.append("generated download/generate/file host")
+
+        query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        for key, values in query.items():
+            key_lower = str(key or "").lower()
+            if key_lower not in WEB_REDIRECT_QUERY_KEYS and not role_host:
+                continue
+            for value in values[:2]:
+                decoded = self._decode_base64_json(value)
+                if not decoded:
+                    continue
+                decoded_keys = {str(k).lower() for k in decoded.keys()}
+                if key_lower in WEB_REDIRECT_QUERY_KEYS:
+                    score += 2
+                    reasons.append(f"{key_lower}= decodes to JSON")
+                if "redirect" in decoded_keys:
+                    score += 3
+                    reasons.append("decoded JSON contains nested redirect")
+                if decoded_keys & WEB_REDIRECT_STATE_KEYS:
+                    score += 1
+                    reasons.append("decoded JSON contains redirect-state fields")
+                redirect_value = str(decoded.get("redirect") or "")
+                if redirect_value:
+                    try:
+                        redirect_host = (urllib.parse.urlparse(redirect_value).hostname or "").lower()
+                    except Exception:
+                        redirect_host = ""
+                    if redirect_host and redirect_host != host:
+                        score += 1
+                        reasons.append("nested redirect hands off to another host")
+
+        return score, sorted(set(reasons))
+
+    def scan_web_redirect_history(self):
+        self.log("WEB REDIRECT HISTORY REVIEW", "SECTION")
+        findings = []
+        for label, kind, history_path in self._iter_browser_history_sources():
+            if self._stop:
+                return
+            rows = list(self._read_history_sqlite(history_path, kind))
+            if not rows:
+                continue
+            for idx, (url, title, visited_at) in enumerate(rows):
+                score, reasons = self._score_web_redirect_url(url)
+                if score < 5:
+                    continue
+                nearby = rows[max(0, idx - 40):idx + 41]
+                nearby_account = any(self._url_has_sensitive_account_surface(u, t) for u, t, _ in nearby if u != url)
+                nearby_payload = any(self._path_has_risky_download_extension(u) for u, _, _ in nearby if u != url)
+                final_score = score + (3 if nearby_account else 0) + (3 if nearby_payload else 0)
+                severity = "HIGH" if final_score >= 8 else "MEDIUM"
+                context = []
+                if nearby_account:
+                    context.append("nearby account/password/payment pages")
+                if nearby_payload:
+                    context.append("nearby risky download URL")
+                reason_text = ", ".join(reasons + context)
+                findings.append((severity, label, url, title, visited_at, final_score, reason_text, history_path))
+
+        seen = set()
+        for severity, label, url, title, visited_at, score, reason_text, history_path in sorted(findings, reverse=True)[:12]:
+            key = (label, url)
+            if key in seen:
+                continue
+            seen.add(key)
+            title_text = f" ({title[:80]})" if title else ""
+            self._add(
+                severity,
+                "Web Redirect Chain Review",
+                f"{label} history shows a staged fake-download redirect pattern{title_text}: score {score} [{reason_text}]",
+                url or history_path,
+            )
+
     def scan_exposure_surface(self):
         if not self.threats:
             return
@@ -7254,20 +7781,20 @@ class ScanEngine:
             if label in session_targets:
                 if self._resettable_exposure_is_current(label, full_path, session_targets[label]):
                     self._note_exposure(
-                        f"Exposure warning - {label} data may have been accessed. Revoke sessions from a clean device",
+                        self._ui("exposure_warning_generic", label=label),
                         full_path
                     )
                 continue
             if os.path.exists(full_path):
                 self._note_exposure(
-                    f"Exposure warning - {label} data may have been accessed. Revoke sessions from a clean device",
+                    self._ui("exposure_warning_generic", label=label),
                     full_path
                 )
 
         for full_path in (() if not signals["credential_store_suspected"] else self._iter_filezilla_exposure_paths(profile)):
             if os.path.isfile(full_path):
                 self._note_exposure(
-                    "Exposure warning - FileZilla saved server credentials may have been accessible. Rotate downstream credentials from a clean device",
+                    self._ui("exposure_warning_filezilla"),
                     full_path,
                 )
         if not self._is_exposure_label_relevant("Steam", signals):
@@ -7278,7 +7805,7 @@ class ScanEngine:
             if not self._resettable_exposure_is_current("Steam", steam_root, steam_targets):
                 continue
             self._note_exposure(
-                "Exposure warning - Steam client/session data may have been accessed. Change the Steam password, secure the tied email, and deauthorize devices from a clean device",
+                self._ui("exposure_warning_steam"),
                 steam_root,
             )
 
@@ -7326,7 +7853,7 @@ class ScanEngine:
     def scan_process_modules(self):
         self.log("── MODULE SCAN ────────────────────────────────────────", "SECTION")
         if not PSUTIL_OK or not hasattr(psutil.Process, "memory_maps"):
-            self.log("psutil memory map support unavailable — module scan skipped", "WARN")
+            self.log("psutil memory map support unavailable - module scan skipped", "WARN")
             return
 
         if not self.paranoid and not self._module_scan_pid_targets:
@@ -7528,6 +8055,8 @@ class ScanEngine:
                                 missing = self._missing_command_target_details(run_value, item_name)
                                 if not missing:
                                     continue
+                                if self._is_known_vendor_residue(item_name, run_value, missing.get("raw")):
+                                    continue
                                 location = f"{run_hive_name}\\{run_key}"
                                 self._add(
                                     "MEDIUM",
@@ -7553,6 +8082,8 @@ class ScanEngine:
                             )
                             break
                         if not run_value_found:
+                            if self._is_benign_disabled_startup_residue(item_name):
+                                continue
                             location = f"{subkey}\\{item_name}"
                             self._add(
                                 "MEDIUM",
@@ -7604,6 +8135,8 @@ class ScanEngine:
                                 ),
                             )
                         elif child_name == "StartupFolder":
+                            if self._is_benign_disabled_startup_residue(item_name):
+                                continue
                             location = f"{subkey}\\{item_name}"
                             self._add(
                                 "MEDIUM",
@@ -7628,7 +8161,7 @@ class ScanEngine:
             timeout=60,
         )
         if rows is None:
-            self.log("PowerShell unavailable — service scan skipped", "WARN")
+            self.log("PowerShell unavailable - service scan skipped", "WARN")
             return
 
         for row in rows:
@@ -7663,6 +8196,156 @@ class ScanEngine:
             except Exception as exc:
                 self.log(f"Service scan warning: {exc}", "WARN")
 
+    def scan_app_paths(self):
+        self.log("APP PATHS REVIEW", "SECTION")
+        if not WINREG_OK:
+            self.log("winreg unavailable - App Paths review skipped", "WARN")
+            return
+
+        locations = (
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths", "HKCU"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths", "HKLM"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths", "HKLM"),
+        )
+        for hive, subkey, hive_name in locations:
+            try:
+                root = winreg.OpenKey(hive, subkey)
+            except (FileNotFoundError, PermissionError):
+                continue
+
+            index = 0
+            while True:
+                try:
+                    app_name = winreg.EnumKey(root, index)
+                except OSError:
+                    break
+                index += 1
+
+                app_subkey = f"{subkey}\\{app_name}"
+                try:
+                    app_key = winreg.OpenKey(hive, app_subkey)
+                except (FileNotFoundError, PermissionError):
+                    continue
+
+                try:
+                    target = str(winreg.QueryValueEx(app_key, "")[0] or "")
+                except OSError:
+                    target = ""
+                try:
+                    path_value = str(winreg.QueryValueEx(app_key, "Path")[0] or "")
+                except OSError:
+                    path_value = ""
+                try:
+                    winreg.CloseKey(app_key)
+                except Exception:
+                    pass
+
+                location = f"{hive_name}\\{app_subkey}"
+                command_blob = " ".join(part for part in (target, path_value) if part)
+                if not command_blob:
+                    continue
+                if self._is_local_tool_context(command_blob):
+                    continue
+
+                missing = self._missing_command_target_details(target, app_name) if target else None
+                has_malware_signal = self._value_has_malware_signal(command_blob)
+                writable_path_value = bool(path_value and self._path_in_user_writable_exec_zone(self._normalized_path(path_value)))
+                if not (has_malware_signal or writable_path_value or (missing and missing["score"] >= 3)):
+                    continue
+
+                if has_malware_signal:
+                    severity = "HIGH"
+                    reason = f"App Paths entry can hijack launches for {app_name}: {command_blob}"
+                elif writable_path_value:
+                    severity = "MEDIUM"
+                    reason = f"App Paths search path for {app_name} points into a user-writable location: {path_value}"
+                else:
+                    severity = "MEDIUM"
+                    reason = f"App Paths entry for {app_name} points at a missing suspicious target: {missing['raw']} [{self._format_missing_target_reason(missing)}]"
+
+                action = None
+                if severity == "HIGH":
+                    action = lambda h=hive, sk=app_subkey: self._delete_reg_tree(h, sk)
+                self._add(
+                    severity,
+                    "App Paths Review",
+                    reason,
+                    location,
+                    action,
+                )
+
+            try:
+                winreg.CloseKey(root)
+            except Exception:
+                pass
+
+    def _service_image_path(self, service_name):
+        try:
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, rf"SYSTEM\CurrentControlSet\Services\{service_name}")
+        except (FileNotFoundError, PermissionError):
+            return None
+        try:
+            value = str(winreg.QueryValueEx(key, "ImagePath")[0] or "")
+        except OSError:
+            value = ""
+        try:
+            winreg.CloseKey(key)
+        except Exception:
+            pass
+        return value
+
+    def scan_netsvcs(self):
+        self.log("NETSVCS REVIEW", "SECTION")
+        if not WINREG_OK:
+            self.log("winreg unavailable - netsvcs review skipped", "WARN")
+            return
+
+        subkey = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Svchost"
+        try:
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, subkey)
+        except (FileNotFoundError, PermissionError):
+            return
+
+        try:
+            names, _, _ = winreg.QueryValueEx(key, "netsvcs")
+        except OSError:
+            names = []
+        try:
+            winreg.CloseKey(key)
+        except Exception:
+            pass
+
+        if isinstance(names, str):
+            service_names = [name for name in names.split("\x00") if name]
+        else:
+            service_names = [str(name or "").strip() for name in names if str(name or "").strip()]
+
+        for service_name in service_names:
+            if self._stop:
+                return
+            image_path = self._service_image_path(service_name)
+            location = rf"HKLM\{subkey}[netsvcs:{service_name}]"
+            if image_path is None:
+                if self._looks_random(service_name) or self._contains_marker(service_name.lower(), PROCESS_IOC_MARKERS):
+                    self._add(
+                        "MEDIUM",
+                        "Netsvcs Review",
+                        f"netsvcs lists a missing suspicious service name: {service_name}",
+                        location,
+                    )
+                continue
+
+            if not image_path or self._is_local_tool_context(image_path):
+                continue
+            if self._value_has_malware_signal(image_path):
+                self._add(
+                    "HIGH",
+                    "Netsvcs Review",
+                    f"netsvcs service {service_name} points at a suspicious service image: {image_path}",
+                    location,
+                    lambda service=service_name: self._delete_service(service),
+                )
+
     def scan_wmi_persistence(self):
         self.log("WMI PERSISTENCE SCAN", "SECTION")
         queries = (
@@ -7674,7 +8357,7 @@ class ScanEngine:
         for class_name, script in queries:
             rows = self._run_powershell_json(script, timeout=45)
             if rows is None:
-                self.log("PowerShell unavailable — WMI scan skipped", "WARN")
+                self.log("PowerShell unavailable - WMI scan skipped", "WARN")
                 return
 
             for row in rows:
@@ -8677,7 +9360,7 @@ class ScanEngine:
 
                     visited += 1
                     if visited % 40 == 0:
-                        self.progress(f"Walked {visited} dirs…  {dirpath[:65]}")
+                        self.progress(f"Walked {visited} dirs...  {dirpath[:65]}")
 
                     dir_names_lower = {d.lower() for d in dirnames}
                     file_names_lower = {f.lower() for f in filenames}
@@ -9181,7 +9864,7 @@ class ScanEngine:
     def scan_processes(self):
         self.log("── PROCESS SCAN ───────────────────────────────────────", "SECTION")
         if not PSUTIL_OK:
-            self.log("psutil unavailable — process scan skipped", "WARN")
+            self.log("psutil unavailable - process scan skipped", "WARN")
             return
 
         connected_pids = self._collect_connected_pids()
@@ -9204,7 +9887,7 @@ class ScanEngine:
     def scan_network(self):
         self.log("── NETWORK SCAN ───────────────────────────────────────", "SECTION")
         if not PSUTIL_OK:
-            self.log("psutil unavailable — network scan skipped", "WARN")
+            self.log("psutil unavailable - network scan skipped", "WARN")
             return
 
         try:
@@ -9286,7 +9969,7 @@ class ScanEngine:
     def scan_registry(self):
         self.log("── REGISTRY SCAN ──────────────────────────────────────", "SECTION")
         if not WINREG_OK:
-            self.log("winreg unavailable — registry scan skipped", "WARN")
+            self.log("winreg unavailable - registry scan skipped", "WARN")
             return
 
         hives = [
@@ -10136,6 +10819,28 @@ class ScanEngine:
             self.log(self._format_removal_failure("delete registry value", f"{subkey}[{name}]", exc), "WARN")
         return False
 
+    def _delete_reg_tree(self, hive, subkey):
+        if not WINREG_OK:
+            return False
+        try:
+            key = winreg.OpenKey(hive, subkey, 0, winreg.KEY_READ | winreg.KEY_WRITE)
+            while True:
+                try:
+                    child = winreg.EnumKey(key, 0)
+                except OSError:
+                    break
+                self._delete_reg_tree(hive, f"{subkey}\\{child}")
+            winreg.CloseKey(key)
+            winreg.DeleteKey(hive, subkey)
+            if self._recovery_session:
+                self._record_recovery_note(f"deleted registry key {subkey}")
+            self.removed += 1
+            self.log(f"Deleted registry key: {subkey}", "SUCCESS")
+            return True
+        except Exception as exc:
+            self.log(self._format_removal_failure("delete registry key", subkey, exc), "WARN")
+        return False
+
     def _delete_wmi_subscription(self, filter_name="", consumer_name="", consumer_class=""):
         if not filter_name and not consumer_name:
             return False
@@ -10546,6 +11251,8 @@ class ScanEngine:
             self.scan_shortcut_targets()
             self.scan_disabled_startup_items()
             self.scan_services()
+            self.scan_app_paths()
+            self.scan_netsvcs()
             self.scan_wmi_persistence()
             self.scan_scheduled_tasks()
             self.scan_registry()
@@ -10569,6 +11276,7 @@ class ScanEngine:
             self.scan_firewall_rules()
             self.scan_installed_programs()
             self.scan_browser_extensions()
+            self.scan_web_redirect_history()
         finally:
             self._restore_turbo_priority(priority_token)
         self.threats.sort()
@@ -10584,7 +11292,16 @@ class ScanEngine:
             f"-- SCAN COMPLETE  |  {len(self.threats)} threat(s) found  -  {crit} CRITICAL  {high} HIGH --",
             "SECTION"
         )
-        self.log(f"Summary verdict   : {summary['label']}", "CRITICAL" if summary["confidence"] == "high" else "WARN" if summary["confidence"] == "medium" else "INFO")
+        summary_label_key = {
+            "no_threats": "summary_no_threats",
+            "probably_renloader": "summary_probably_renloader",
+            "possible_renloader": "summary_possible_renloader",
+            "possible_infostealer": "summary_possible_infostealer",
+            "suspicious_weak": "summary_suspicious_weak",
+            "other_suspicious": "summary_other_suspicious",
+        }.get(summary.get("kind"))
+        summary_label = self._ui(summary_label_key) if summary_label_key else summary["label"]
+        self.log(f"Summary verdict   : {summary_label}", "CRITICAL" if summary["confidence"] == "high" else "WARN" if summary["confidence"] == "medium" else "INFO")
         self.log(f"Assessment        : {summary['detail']}", "INFO")
         self.log(f"Confirmed items   : {breakdown['confirmed']}  |  Review-first: {breakdown['review']}  |  Other: {breakdown['other']}", "INFO")
         self.log(f"Local confidence  : {cleanup['score']}%  -  {cleanup['label']}", "WARN" if cleanup["score"] < 90 else "INFO")
@@ -10802,6 +11519,37 @@ class ScanEngine:
         else:
             self._append_report_bullets(lines, ["No high-confidence account exposure paths were flagged."])
 
+        cleanup_plan = []
+        repair_plan = []
+        review_plan = []
+        for threat in self.threats:
+            item = f"{threat.severity} | {threat.category} | {threat.path or threat.description}"
+            if threat.action and threat.category in PROTECTION_REPAIR_CATEGORIES:
+                repair_plan.append(item)
+            elif threat.action:
+                cleanup_plan.append(item)
+            elif threat.category in MANUAL_REVIEW_CATEGORIES:
+                review_plan.append(item)
+
+        self._append_report_section(lines, "RENKILL REMEDIATION PLAN")
+        if cleanup_plan:
+            self._append_report_field(lines, "Kill & Clean", f"{len(cleanup_plan)} actionable item(s)")
+            self._append_report_bullets(lines, cleanup_plan[:40], indent="  ")
+            if len(cleanup_plan) > 40:
+                self._append_report_bullets(lines, [f"{len(cleanup_plan) - 40} more actionable item(s) omitted from this preview."], indent="  ")
+        else:
+            self._append_report_field(lines, "Kill & Clean", "No automatic malware-removal actions queued")
+        if repair_plan:
+            self._append_report_field(lines, "Repair Defaults", f"{len(repair_plan)} protection repair item(s)")
+            self._append_report_bullets(lines, repair_plan[:30], indent="  ")
+        else:
+            self._append_report_field(lines, "Repair Defaults", "No protection repair actions queued")
+        if review_plan:
+            self._append_report_field(lines, "Manual Review", f"{len(review_plan)} review-first item(s)")
+            self._append_report_bullets(lines, review_plan[:30], indent="  ")
+        else:
+            self._append_report_field(lines, "Manual Review", "No review-first leftovers queued")
+
         self._append_report_section(lines, "FINDINGS BY SURFACE")
         group_order = (
             "Startup / Persistence",
@@ -10900,6 +11648,7 @@ def _rgb_to_hex(rgb_triplet):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
+        self._lang = _detect_ui_language()
         self.title(f"RenKill  v{VERSION}")
         self.geometry("940x700")
         self.minsize(760, 540)
@@ -10911,7 +11660,7 @@ class App(tk.Tk):
         self._turbo_var = tk.BooleanVar(value=False)
         self._paranoid_var = tk.BooleanVar(value=False)
         self._action_hint_var = tk.StringVar(
-            value="Scan first to map the infection. ACCOUNT LOCKDOWN is ready any time for a one-click local browser, Discord, Telegram, and Steam session wipe on this PC."
+            value=self._tr("action_hint_initial")
         )
         self._repair_defaults_available = False
         self._revert_available = False
@@ -10935,9 +11684,41 @@ class App(tk.Tk):
         summary = self._update_revert_button()
         if summary["available"]:
             self._log(
-                f"Recovery snapshot available: {summary['reversible_count']} reversible change(s) ready to restore.",
+                self._tr("recovery_snapshot_ready", count=summary["reversible_count"]),
                 "INFO",
             )
+
+    def _tr(self, key, **values):
+        entry = UI_TRANSLATIONS.get(key) or {}
+        template = entry.get(self._lang) or entry.get("en") or key
+        try:
+            return template.format(**values)
+        except Exception:
+            return template
+
+    def _summary_label(self, summary):
+        kind = (summary or {}).get("kind")
+        if kind == "no_threats":
+            return self._tr("summary_no_threats")
+        if kind == "probably_renloader":
+            return self._tr("summary_probably_renloader")
+        if kind == "possible_renloader":
+            return self._tr("summary_possible_renloader")
+        if kind == "possible_infostealer":
+            return self._tr("summary_possible_infostealer")
+        if kind == "suspicious_weak":
+            return self._tr("summary_suspicious_weak")
+        if kind == "other_suspicious":
+            return self._tr("summary_other_suspicious")
+        return (summary or {}).get("label", "")
+
+    def _scan_status_text(self, key, cleanup, account_risk_text, summary=None):
+        return self._tr(
+            key,
+            summary=self._summary_label(summary or {}),
+            score=cleanup["score"],
+            risk=account_risk_text,
+        )
 
     def _fit_window_to_content(self):
         self.update_idletasks()
@@ -10962,14 +11743,14 @@ class App(tk.Tk):
         left.pack(side="left")
         tk.Label(left, text="RenKill", font=(MONO, 20, "bold"),
                  bg=BG, fg=RED).pack(side="left")
-        tk.Label(left, text=f"  v{VERSION}  |  RenEngine / HijackLoader Removal Tool",
+        tk.Label(left, text=f"  {self._tr('subtitle', version=VERSION)}",
                  font=(MONO, 10), bg=BG, fg=FG3).pack(side="left", pady=3)
 
         right = tk.Frame(bar, bg=BG)
         right.pack(side="right")
         admin_ok = is_admin()
         tk.Label(right,
-                 text=" ADMIN " if admin_ok else " LIMITED ",
+                 text=f" {self._tr('admin') if admin_ok else self._tr('limited')} ",
                  font=(MONO, 9, "bold"),
                  bg=GREEN if admin_ok else AMBER,
                  fg=BG, padx=5, pady=2).pack(side="right")
@@ -10980,11 +11761,11 @@ class App(tk.Tk):
         sbar = tk.Frame(self, bg=BG2, padx=18, pady=7)
         sbar.pack(fill="x")
         sbar.grid_columnconfigure(0, weight=1)
-        self._status_var = tk.StringVar(value="Ready")
+        self._status_var = tk.StringVar(value=self._tr("ready"))
         self._status_lbl = tk.Label(sbar, textvariable=self._status_var,
                                     font=(MONO, 10), bg=BG2, fg=GREEN, anchor="w", justify="left")
         self._status_lbl.grid(row=0, column=0, sticky="ew")
-        self._count_var = tk.StringVar(value="—")
+        self._count_var = tk.StringVar(value="-")
         self._count_lbl = tk.Label(sbar, textvariable=self._count_var,
                                    font=(MONO, 10, "bold"), bg=BG2, fg=RED, anchor="e", justify="right")
         self._count_lbl.grid(row=1, column=0, sticky="ew", pady=(3, 0))
@@ -10993,29 +11774,51 @@ class App(tk.Tk):
         brow = tk.Frame(self, bg=BG, padx=18, pady=10)
         brow.pack(fill="x")
 
-        primary_actions = tk.Frame(brow, bg=BG)
-        primary_actions.pack(fill="x")
-        secondary_actions = tk.Frame(brow, bg=BG, pady=6)
-        secondary_actions.pack(fill="x")
+        action_row = tk.Frame(brow, bg=BG)
+        action_row.pack(fill="x")
 
-        self._btn_scan = self._btn(primary_actions, "⟳  SCAN SYSTEM", BLUE, self._do_scan)
-        self._btn_kill = self._btn(primary_actions, "✕  KILL & CLEAN", RED, self._do_kill)
-        self._btn_revert = self._btn(primary_actions, "REVERT LAST CLEAN", BLUE, self._do_revert)
-        self._btn_sessions = self._btn(primary_actions, "⌁  ACCOUNT LOCKDOWN", AMBER, self._do_reset_sessions)
-        self._btn_repair = self._btn(secondary_actions, "🛡  REPAIR DEFAULTS", GREEN, self._do_repair_defaults)
-        self._btn_report = self._btn(secondary_actions, "↓  EXPORT REPORT", GREEN, self._do_report)
-        self._btn_trust = self._btn(secondary_actions, "TRUST KNOWN PATH", BLUE, self._do_trust_path)
-        self._btn_clear = self._btn(secondary_actions, "⌫  CLEAR LOG", FG3, self._do_clear)
+        main_actions = tk.Frame(action_row, bg=BG)
+        main_actions.pack(side="left", fill="x", expand=True)
 
-        self._btn_update = self._btn(secondary_actions, "CHECK UPDATES", BLUE, self._do_update)
-        self._btn_recovery = self._btn(secondary_actions, "ACCOUNT RECOVERY", AMBER, self._do_recovery_plan)
+        safety_actions = tk.Frame(action_row, bg=BG)
+        safety_actions.pack(side="right")
 
-        mode_flags = tk.Frame(secondary_actions, bg=BG)
-        mode_flags.pack(side="right", padx=(12, 0), pady=2)
+        self._btn_scan = self._btn(main_actions, self._tr("scan_button"), BLUE, self._do_scan, width=13)
+        self._btn_kill = self._btn(main_actions, self._tr("clean_button"), RED, self._do_kill, width=13)
+        self._btn_repair = self._btn(main_actions, self._tr("repair_button"), GREEN, self._do_repair_defaults, width=13)
+        self._btn_sessions = self._btn(safety_actions, self._tr("lockdown_button"), AMBER, self._do_reset_sessions, width=18)
+        self._btn_account_warning = self._btn(safety_actions, "!", RED, self._do_account_warning, width=3)
+        self._btn_tools = self._btn(safety_actions, self._tr("utilities_button"), FG2, self._show_tools_menu, width=12)
+
+        advanced_row = tk.Frame(brow, bg=BG, pady=7)
+        advanced_row.pack(fill="x")
+
+        advanced_left = tk.Frame(advanced_row, bg=BG)
+        advanced_left.pack(side="left")
+        tk.Label(
+            advanced_left,
+            text=self._tr("advanced_scan_options"),
+            font=(MONO, 9, "bold"),
+            bg=BG,
+            fg=FG3,
+        ).pack(side="left", padx=(2, 10))
+
+        self._btn_revert = self._hidden_button(self._do_revert)
+        self._btn_report = self._hidden_button(self._do_report)
+        self._btn_trust = self._hidden_button(self._do_trust_path)
+        self._btn_clear = self._hidden_button(self._do_clear)
+        self._btn_update = self._hidden_button(self._do_update)
+        self._btn_recovery = self._hidden_button(self._do_recovery_plan)
+        self._update_button_text = "CHECK UPDATES"
+        self._update_button_color = BLUE
+        self._tools_menu = None
+
+        mode_flags = tk.Frame(advanced_left, bg=BG)
+        mode_flags.pack(side="left")
 
         self._turbo_chk = tk.Checkbutton(
             mode_flags,
-            text="TURBO MODE",
+            text=self._tr("turbo"),
             variable=self._turbo_var,
             onvalue=True,
             offvalue=False,
@@ -11029,14 +11832,12 @@ class App(tk.Tk):
             relief="flat",
             bd=0,
             highlightthickness=0,
-            anchor="e",
-            justify="right",
         )
-        self._turbo_chk.pack(anchor="e")
+        self._turbo_chk.pack(side="left", padx=(0, 12))
 
         self._paranoid_chk = tk.Checkbutton(
             mode_flags,
-            text="PARANOID MODE",
+            text=self._tr("paranoid"),
             variable=self._paranoid_var,
             onvalue=True,
             offvalue=False,
@@ -11050,7 +11851,7 @@ class App(tk.Tk):
             bd=0,
             highlightthickness=0,
         )
-        self._paranoid_chk.pack(anchor="e")
+        self._paranoid_chk.pack(side="left")
 
         self._btn_kill.configure(state="disabled")
         self._btn_revert.configure(state="disabled")
@@ -11122,13 +11923,74 @@ class App(tk.Tk):
                  font=(MONO, 9, "bold"), bg=BG, fg=FG2).pack(side="right")
 
     @staticmethod
-    def _btn(parent, text, color, cmd):
+    def _btn(parent, text, color, cmd, width=None):
         b = tk.Button(parent, text=text, font=(MONO, 10, "bold"),
                       bg=BG4, fg=color, activebackground=color, activeforeground=BG,
                       relief="flat", padx=14, pady=6, cursor="hand2",
                       bd=0, command=cmd)
+        if width:
+            b.configure(width=width)
         b.pack(side="left", padx=(0, 8))
         return b
+
+    @staticmethod
+    def _hidden_button(cmd):
+        # Utility actions live in the menu, but the rest of the app still
+        # expects button-like objects for simple state tracking.
+        b = tk.Button(command=cmd)
+        b.configure(state="normal")
+        return b
+
+    def _tools_label(self, label, button=None):
+        if button is None:
+            return label
+        try:
+            state = str(button.cget("state"))
+        except Exception:
+            state = "normal"
+        return f"{label}  (unavailable)" if state == "disabled" else label
+
+    def _show_tools_menu(self):
+        menu = Menu(self, tearoff=False, bg=BG3, fg=FG, activebackground=BLUE, activeforeground=BG)
+        menu.add_command(
+            label=self._tools_label(self._tr("tools_account_recovery"), self._btn_recovery),
+            command=self._do_recovery_plan,
+            state=self._btn_recovery.cget("state"),
+        )
+        menu.add_command(
+            label=self._tools_label(self._tr("tools_export_report"), self._btn_report),
+            command=self._do_report,
+            state=self._btn_report.cget("state"),
+        )
+        menu.add_command(
+            label=self._tools_label(self._tr("tools_revert"), self._btn_revert),
+            command=self._do_revert,
+            state=self._btn_revert.cget("state"),
+        )
+        menu.add_separator()
+        menu.add_command(
+            label=self._tools_label(self._tr("tools_trust"), self._btn_trust),
+            command=self._do_trust_path,
+            state=self._btn_trust.cget("state"),
+        )
+        menu.add_command(
+            label=self._tools_label(self._tr("tools_clear"), self._btn_clear),
+            command=self._do_clear,
+            state=self._btn_clear.cget("state"),
+        )
+        menu.add_separator()
+        menu.add_command(
+            label=self._update_button_text,
+            command=self._do_update,
+            state=self._btn_update.cget("state"),
+        )
+        self._tools_menu = menu
+        try:
+            x = self._btn_tools.winfo_rootx()
+            y = self._btn_tools.winfo_rooty() + self._btn_tools.winfo_height()
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
 
     @staticmethod
     def _is_frozen_release():
@@ -11149,8 +12011,15 @@ class App(tk.Tk):
 
     def _set_update_button(self, text, color=BLUE, state="normal"):
         def _apply():
+            translated = text
+            if text == "CHECK UPDATES":
+                translated = self._tr("tools_updates")
+            self._update_button_text = translated
+            self._update_button_color = color
             if hasattr(self, "_btn_update"):
-                self._btn_update.configure(text=text, fg=color, activebackground=color, state=state)
+                self._btn_update.configure(text=translated, fg=color, activebackground=color, state=state)
+            if hasattr(self, "_btn_tools") and state == "normal":
+                self._btn_tools.configure(fg=color if "UPDATE" in text.upper() else FG2)
         self.after(0, _apply)
 
     def _read_update_state(self):
@@ -11264,8 +12133,8 @@ class App(tk.Tk):
 
         self._update_check_in_progress = True
         if not silent:
-            self._set_update_button("CHECKING…", AMBER, "disabled")
-            self._set_status("Checking GitHub releases for updates…", AMBER)
+            self._set_update_button("CHECKING...", AMBER, "disabled")
+            self._set_status("Checking GitHub releases for updates...", AMBER)
 
         def _run():
             release_info = None
@@ -11292,10 +12161,7 @@ class App(tk.Tk):
                 if release_info and self._has_newer_release(release_info):
                     self._update_info = release_info
                     self._set_update_button(f"UPDATE TO {release_info['version']}", GREEN, "normal")
-                    self._log(
-                        f"Update ready       : GitHub release {release_info['tag_name']} is available.",
-                        "INFO",
-                    )
+                    self._log(self._tr("update_ready", tag=release_info["tag_name"]), "INFO")
                     if silent:
                         self._set_action_hint(
                             f"Update available: {release_info['tag_name']} is live on GitHub releases. CHECK UPDATES can pull it down and restart RenKill safely.",
@@ -11372,9 +12238,9 @@ class App(tk.Tk):
                 if progress_cb:
                     if total > 0:
                         percent = max(1, min(100, int(downloaded * 100 / total)))
-                        progress_cb(f"Downloading update… {percent}%")
+                        progress_cb(f"Downloading update... {percent}%")
                     else:
-                        progress_cb(f"Downloading update… {downloaded // 1024} KB")
+                        progress_cb(f"Downloading update... {downloaded // 1024} KB")
 
         with zipfile.ZipFile(zip_path, "r") as archive:
             archive.extractall(extract_dir)
@@ -11512,7 +12378,7 @@ class App(tk.Tk):
         self._btn_update.configure(state="disabled")
         self._btn_sessions.configure(state="disabled")
         self._btn_report.configure(state="disabled")
-        self._set_status(f"Downloading {release_info['tag_name']}…", AMBER)
+        self._set_status(f"Downloading {release_info['tag_name']}...", AMBER)
 
         def _run():
             script_path = ""
@@ -11561,7 +12427,7 @@ class App(tk.Tk):
                     )
                     return
 
-                self._set_status(f"Applying {release_info['tag_name']} and restarting…", GREEN)
+                self._set_status(f"Applying {release_info['tag_name']} and restarting...", GREEN)
                 self._log(
                     f"Updater ready      : applying {release_info['tag_name']} from GitHub releases and restarting RenKill.",
                     "SUCCESS",
@@ -11760,12 +12626,11 @@ class App(tk.Tk):
         if not self._turbo_warned:
             self._turbo_warned = True
             messagebox.showwarning(
-                "Turbo Mode",
-                "Turbo mode lets RenKill use more system resources to scan faster.\n\n"
-                "This can make other programs sluggish or unstable while the scan is running."
+                self._tr("turbo_title"),
+                self._tr("turbo_warning"),
             )
         self._set_action_hint(
-            "Turbo mode is armed. RenKill will push harder on CPU and filesystem work to finish scans faster, which can make other apps feel sluggish until the scan ends.",
+            self._tr("turbo_hint"),
             CYAN,
         )
 
@@ -11823,67 +12688,49 @@ class App(tk.Tk):
             browser_compare = self._scanner.post_cleanup_browser_summary or self._scanner.compare_post_cleanup_browser_state()
         if persistence_compare and persistence_compare["reappeared_count"]:
             self._set_action_hint(
-                f"Persistence rebuilt after cleanup: {persistence_compare['reappeared_count']} startup or relaunch target(s) came back. Treat the infection as still active until that creator is removed.",
+                self._tr("hint_persistence_returned", count=persistence_compare["reappeared_count"]),
                 RED,
             )
             return
         if browser_compare and browser_compare["reappeared_count"]:
             self._set_action_hint(
-                f"Browser aftermath still needs work: {browser_compare['reappeared_count']} suspicious browser-state item(s) came back after cleanup. Keep account recovery and session revocation moving from a clean device.",
+                self._tr("hint_browser_returned", count=browser_compare["reappeared_count"]),
                 AMBER,
             )
             return
         if startup_hits:
             self._set_action_hint(
-                f"Startup watch: {startup_hits} suspicious startup item(s) were found. Use KILL & CLEAN, then reboot and rescan so hidden startup leftovers cannot relaunch the infection.",
+                self._tr("hint_startup_watch", count=startup_hits),
                 RED if startup_hits >= 2 else AMBER,
             )
             return
         if threat_count > 0:
             if breakdown["confirmed"] and breakdown["review"]:
                 self._set_action_hint(
-                    f"{breakdown['confirmed']} confirmed malware-style item(s) and {breakdown['review']} review-first finding(s) were surfaced. Clean the confirmed traces, then use ACCOUNT RECOVERY and REPAIR DEFAULTS as needed.",
+                    self._tr("hint_confirmed_and_review", confirmed=breakdown["confirmed"], review=breakdown["review"]),
                     AMBER,
                 )
                 return
             if repair_hits and (self._session_reset_available or exposure["score"] >= 50):
-                self._set_action_hint(
-                    "Threats were found. Use KILL & CLEAN for malware traces, REPAIR DEFAULTS for security/proxy drift, then ACCOUNT LOCKDOWN to wipe reusable local sessions on this PC.",
-                    AMBER,
-                )
+                self._set_action_hint(self._tr("hint_threats_repair_lockdown"), AMBER)
             elif repair_hits:
-                self._set_action_hint(
-                    "Threats were found. Use KILL & CLEAN for malware traces, then REPAIR DEFAULTS to restore safe protection and proxy settings.",
-                    AMBER,
-                )
+                self._set_action_hint(self._tr("hint_threats_repair"), AMBER)
             elif self._session_reset_available or exposure["score"] >= 50:
-                self._set_action_hint(
-                    "Threats were found. Use KILL & CLEAN for confirmed traces, then use ACCOUNT LOCKDOWN to wipe local browser, Discord, Telegram, and Steam sessions on this PC.",
-                    AMBER,
-                )
+                self._set_action_hint(self._tr("hint_threats_lockdown"), AMBER)
             else:
-                self._set_action_hint(
-                    "Threats were found. Use KILL & CLEAN for confirmed traces. REVERT LAST CLEAN stays available for reversible changes.",
-                    AMBER,
-                )
+                self._set_action_hint(self._tr("hint_threats_clean"), AMBER)
             return
         if exposure["score"] >= 50:
             account_risk_text = self._scanner._format_account_risk_value(exposure, compact=True)
             self._set_action_hint(
-                f"This scan looks locally clean, but account risk is still {account_risk_text}. ACCOUNT LOCKDOWN can wipe local sessions here; password/session recovery still belongs on a clean device.",
+                self._tr("hint_locally_clean_account_risk", risk=account_risk_text),
                 AMBER,
             )
             return
         if cleanup["score"] < 100:
-            self._set_action_hint(
-                "No active threats were found, but a reboot and one more rescan will raise confidence that local persistence is fully gone.",
-                FG3,
-            )
+            self._set_action_hint(self._tr("hint_rescan_for_confidence"), FG3)
             return
-        self._set_action_hint(
-            "Scan came back clean. ACCOUNT LOCKDOWN still stays ready if you want a one-click local browser, Discord, Telegram, and Steam sign-out on this PC.",
-            FG3,
-        )
+        self._set_action_hint(self._tr("hint_clean_with_lockdown_ready"), FG3)
 
     def _set_progress(self, msg):
         self.after(0, lambda: self._prog_var.set(sanitize_for_display(msg)))
@@ -11899,25 +12746,25 @@ class App(tk.Tk):
 
     def _check_admin(self):
         if is_admin():
-            self._set_status("Ready — running as Administrator")
+            self._set_status(self._tr("status_admin"))
         else:
             self._set_status(
-                "WARNING: No admin rights — some scan vectors limited. Restart as Admin for full coverage.",
+                self._tr("status_limited"),
                 AMBER
             )
 
     def _startup_msg(self):
         self._log(f"{TOOL_NAME} v{VERSION}", "SECTION")
         self._log(f"Scan roots queued : {len(SCAN_ROOTS)}", "INFO")
-        self._log(f"psutil            : {'OK' if PSUTIL_OK else 'MISSING — pip install psutil'}", "INFO" if PSUTIL_OK else "WARN")
+        self._log(f"psutil            : {'OK' if PSUTIL_OK else 'MISSING - pip install psutil'}", "INFO" if PSUTIL_OK else "WARN")
         self._log(f"winreg            : {'OK' if WINREG_OK else 'MISSING'}", "INFO" if WINREG_OK else "WARN")
-        self._log(f"Admin             : {'YES — full scan' if is_admin() else 'NO — limited scan'}", "INFO" if is_admin() else "WARN")
+        self._log(f"Admin             : {'YES - full scan' if is_admin() else 'NO - limited scan'}", "INFO" if is_admin() else "WARN")
         self._log("Scan mode         : Standard", "INFO")
-        self._log("Containment tool   : ACCOUNT LOCKDOWN is ready for a one-click local browser, Discord, Telegram, and Steam session wipe.", "WARN")
-        self._log("Press SCAN SYSTEM to begin.", "DEFAULT")
+        self._log(self._tr("startup_containment_ready"), "WARN")
+        self._log(self._tr("startup_press_scan"), "DEFAULT")
 
     def _load_recovery_summary(self):
-        scanner = ScanEngine(lambda *_: None, lambda *_: None, user_trusted_paths=self._user_trusted_paths)
+        scanner = ScanEngine(lambda *_: None, lambda *_: None, user_trusted_paths=self._user_trusted_paths, ui_language=self._lang)
         return scanner.get_latest_recovery_summary()
 
     def _update_revert_button(self):
@@ -11952,6 +12799,82 @@ class App(tk.Tk):
             "Continue?"
         )
 
+    def _show_critical_account_security_warning(self, account_risk_text):
+        dialog = tk.Toplevel(self)
+        dialog.title(self._tr("account_warning_title"))
+        dialog.configure(bg="#210808")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        try:
+            dialog.attributes("-topmost", True)
+        except Exception:
+            pass
+
+        frame = tk.Frame(dialog, bg="#210808", highlightbackground=RED, highlightthickness=3)
+        frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        tk.Label(
+            frame,
+            text=self._tr("account_warning_heading"),
+            font=(MONO, 14, "bold"),
+            bg="#210808",
+            fg="#FFFFFF",
+            pady=10,
+        ).pack(fill="x")
+
+        body = self._tr("account_warning_body", risk=account_risk_text)
+        tk.Label(
+            frame,
+            text=body,
+            font=(MONO, 10, "bold"),
+            bg="#210808",
+            fg=YELLOW,
+            justify="left",
+            wraplength=680,
+            padx=18,
+            pady=8,
+        ).pack(fill="x")
+
+        button_row = tk.Frame(frame, bg="#210808")
+        button_row.pack(fill="x", padx=18, pady=(8, 18))
+
+        understood = {"value": False}
+
+        def _close():
+            understood["value"] = True
+            dialog.destroy()
+
+        tk.Button(
+            button_row,
+            text=self._tr("account_warning_confirm"),
+            command=_close,
+            font=(MONO, 10, "bold"),
+            bg=RED,
+            fg="#FFFFFF",
+            activebackground="#ff6767",
+            activeforeground="#FFFFFF",
+            relief="flat",
+            padx=12,
+            pady=8,
+        ).pack(fill="x")
+
+        dialog.protocol("WM_DELETE_WINDOW", _close)
+        dialog.update_idletasks()
+        x = self.winfo_rootx() + max(0, (self.winfo_width() - dialog.winfo_width()) // 2)
+        y = self.winfo_rooty() + max(0, (self.winfo_height() - dialog.winfo_height()) // 2)
+        dialog.geometry(f"+{x}+{y}")
+        dialog.grab_set()
+        self.wait_window(dialog)
+        return understood["value"]
+
+    def _do_account_warning(self):
+        if self._scanner:
+            exposure = self._scanner.assess_account_exposure()
+            account_risk_text = self._scanner._format_account_risk_summary(exposure)
+        else:
+            account_risk_text = self._tr("unknown_until_scan")
+        self._show_critical_account_security_warning(account_risk_text)
+
     def _do_scan(self):
         if self._thread and self._thread.is_alive():
             return
@@ -11962,7 +12885,7 @@ class App(tk.Tk):
         self._btn_sessions.configure(state="disabled")
         self._btn_report.configure(state="disabled")
         self._btn_update.configure(state="disabled")
-        self._count_var.set("Scanning…")
+        self._count_var.set("Scanning...")
         if self._turbo_var.get() and self._paranoid_var.get():
             scan_mode = "TURBO + PARANOID"
         elif self._turbo_var.get():
@@ -11983,6 +12906,7 @@ class App(tk.Tk):
             paranoid=self._paranoid_var.get(),
             turbo=self._turbo_var.get(),
             user_trusted_paths=self._user_trusted_paths,
+            ui_language=self._lang,
         )
         self._scanner.post_cleanup_scan = self._last_remediation_ts > 0
         self._scanner.rebooted_after_cleanup = self._scanner.post_cleanup_scan and self._boot_time() > self._last_remediation_ts
@@ -12003,7 +12927,7 @@ class App(tk.Tk):
                     self._btn_repair.configure(state="normal")
                     self._btn_sessions.configure(state="normal")
                     self._count_var.set("Scan error")
-                    self._set_status("Scan failed — see log for the exact error.", RED)
+                    self._set_status("Scan failed - see log for the exact error.", RED)
                 self.after(0, _fail)
                 return
 
@@ -12049,7 +12973,7 @@ class App(tk.Tk):
                     self._btn_kill.configure(state="normal")
                     self._count_var.set(f"{n} threats  |  local {cleanup['score']}%  |  account {account_risk_text}")
                     self._set_status(
-                        f"Scan complete. {summary['label']}. Local {cleanup['score']}%. Account risk {account_risk_text}. Use KILL & CLEAN to remediate.",
+                        self._scan_status_text("status_scan_complete", cleanup, account_risk_text, summary),
                         summary["color"]
                     )
                     if startup_hits:
@@ -12077,7 +13001,7 @@ class App(tk.Tk):
                     account_risk_text = self._scanner._format_account_risk_value(exposure, compact=True)
                     self._count_var.set(f"Clean  |  local {cleanup['score']}%  |  account {account_risk_text}")
                     self._set_status(
-                        f"No threats detected, but reboot and scan once more. Local {cleanup['score']}%. Account risk {account_risk_text}.",
+                        self._scan_status_text("status_scan_rescan_recommended", cleanup, account_risk_text),
                         AMBER
                     )
                 elif self._scanner.post_cleanup_scan:
@@ -12085,17 +13009,17 @@ class App(tk.Tk):
                     self._count_var.set(f"Clean  |  local {cleanup['score']}%  |  account {account_risk_text}")
                     if persistence_compare and persistence_compare["reappeared_count"]:
                         self._set_status(
-                            f"Post-clean rescan found persistence rebuilding after cleanup. Local {cleanup['score']}%. Account risk {account_risk_text}.",
+                            self._scan_status_text("status_scan_persistence_returned", cleanup, account_risk_text),
                             RED,
                         )
                     elif browser_compare and browser_compare["reappeared_count"]:
                         self._set_status(
-                            f"Post-clean rescan found browser/session residue returning after cleanup. Local {cleanup['score']}%. Account risk {account_risk_text}.",
+                            self._scan_status_text("status_scan_browser_returned", cleanup, account_risk_text),
                             AMBER,
                         )
                     else:
                         self._set_status(
-                            f"Post-clean rescan passed. No threats detected. Local {cleanup['score']}%. Account risk {account_risk_text}.",
+                            self._scan_status_text("status_scan_postclean_pass", cleanup, account_risk_text),
                             GREEN,
                         )
                     if persistence_compare:
@@ -12111,7 +13035,7 @@ class App(tk.Tk):
                 else:
                     account_risk_text = self._scanner._format_account_risk_value(exposure, compact=True)
                     self._count_var.set(f"Clean  |  local {cleanup['score']}%  |  account {account_risk_text}")
-                    self._set_status(f"Scan complete. No threats detected. Local {cleanup['score']}%. Account risk {account_risk_text}.", GREEN)
+                    self._set_status(self._scan_status_text("status_scan_complete_clean", cleanup, account_risk_text), GREEN)
                 self._update_post_scan_hint(n, cleanup, exposure)
             self.after(0, _done)
 
@@ -12137,7 +13061,7 @@ class App(tk.Tk):
         self._btn_repair.configure(state="disabled")
         self._btn_revert.configure(state="disabled")
         self._btn_update.configure(state="disabled")
-        self._set_status("Executing remediation…", AMBER)
+        self._set_status("Executing remediation...", AMBER)
 
         self._btn_scan.configure(state="disabled")
 
@@ -12188,6 +13112,7 @@ class App(tk.Tk):
                     f"Cleanup finished - {k} process(es) killed, {r} item(s) removed. Reboot, rescan, and treat account risk as {account_risk_text}.",
                     GREEN
                 )
+                self._show_critical_account_security_warning(account_risk_text)
                 messagebox.showinfo(
                     "RenKill - Remediation Complete",
                     f"Processes killed     : {k}\n"
@@ -12247,7 +13172,7 @@ class App(tk.Tk):
         self._btn_repair.configure(state="disabled")
         self._btn_revert.configure(state="disabled")
         self._btn_update.configure(state="disabled")
-        self._set_status("Repairing protection defaults…", AMBER)
+        self._set_status("Repairing protection defaults...", AMBER)
 
         def _run():
             try:
@@ -12261,7 +13186,7 @@ class App(tk.Tk):
                     self._btn_repair.configure(state="normal" if self._repair_defaults_available else "disabled")
                     self._restore_update_button_state()
                     self._update_revert_button()
-                    self._set_status("Repair Defaults failed — see log for the exact error.", RED)
+                    self._set_status("Repair Defaults failed - see log for the exact error.", RED)
                     if diag_path:
                         self._log(f"Diagnostic log written to: {diag_path}", "WARN")
                     self._log(f"Repair Defaults crash: {exc}", "CRITICAL")
@@ -12275,7 +13200,7 @@ class App(tk.Tk):
                 self._restore_update_button_state()
                 summary = self._update_revert_button()
                 self._set_status(
-                    f"Repair Defaults finished — {repaired} protection setting(s)/rule(s) repaired. Run SCAN SYSTEM again to confirm.",
+                    f"Repair Defaults finished - {repaired} protection setting(s)/rule(s) repaired. Run SCAN SYSTEM again to confirm.",
                     GREEN if repaired else AMBER,
                 )
                 self._repair_defaults_available = False
@@ -12285,12 +13210,9 @@ class App(tk.Tk):
                     FG3,
                 )
                 if summary["available"]:
-                    self._log(
-                        f"Recovery snapshot available: {summary['reversible_count']} reversible change(s) ready to restore.",
-                        "INFO",
-                    )
+                    self._log(self._tr("recovery_snapshot_ready", count=summary["reversible_count"]), "INFO")
                 messagebox.showinfo(
-                    "RenKill — Repair Defaults Complete",
+                    "RenKill - Repair Defaults Complete",
                     f"Protection items repaired: {repaired}\n\n"
                     "Next step:\n"
                     "  - Run SCAN SYSTEM again\n"
@@ -12331,6 +13253,7 @@ class App(tk.Tk):
                 self._set_progress,
                 paranoid=self._paranoid_var.get(),
                 user_trusted_paths=self._user_trusted_paths,
+                ui_language=self._lang,
             )
             result = scanner.revert_last_remediation()
 
@@ -12416,7 +13339,7 @@ class App(tk.Tk):
 
         self._reload_user_trusted_paths()
         self._log(f"Saved reviewed-safe path: {normalized}", "SUCCESS")
-        self._set_status("Known-good path saved — rerun SCAN SYSTEM to refresh review noise.", GREEN)
+        self._set_status("Known-good path saved - rerun SCAN SYSTEM to refresh review noise.", GREEN)
         return True, f"Saved as known-good:\n{normalized}"
 
     def _trust_path_from_log(self, raw_path):
@@ -12499,7 +13422,7 @@ class App(tk.Tk):
 
         self._btn_sessions.configure(state="disabled")
         self._btn_update.configure(state="disabled")
-        self._set_status("Running account lockdown…", AMBER)
+        self._set_status("Running account lockdown...", AMBER)
 
         def _run():
             killed = 0
@@ -12549,11 +13472,11 @@ class App(tk.Tk):
                 if self._scanner is not None:
                     self._scanner.account_lockdown_state = load_account_lockdown_state()
                 self._set_status(
-                    f"Account lockdown complete — {removed} storage item(s) cleared.",
+                    f"Account lockdown complete - {removed} storage item(s) cleared.",
                     GREEN if removed else AMBER
                 )
                 messagebox.showinfo(
-                    "RenKill — Account Lockdown Complete",
+                    "RenKill - Account Lockdown Complete",
                     f"Processes closed : {killed}\n"
                     f"Storage items wiped: {removed}\n"
                     f"DNS cache flushed: {'yes' if dns_flushed else 'no'}\n"
@@ -12575,7 +13498,7 @@ class App(tk.Tk):
         threading.Thread(target=_run, daemon=True).start()
 
     def _do_recovery_plan(self):
-        scanner = self._scanner or ScanEngine(lambda *_: None, lambda *_: None, user_trusted_paths=self._user_trusted_paths)
+        scanner = self._scanner or ScanEngine(lambda *_: None, lambda *_: None, user_trusted_paths=self._user_trusted_paths, ui_language=self._lang)
         exposure = scanner.assess_account_exposure() if self._scanner else {
             "score": 0,
             "label": "General recovery guidance",
@@ -12583,7 +13506,7 @@ class App(tk.Tk):
             "color": FG3,
         }
         plan_text = scanner.build_account_recovery_plan(exposure)
-        messagebox.showinfo("RenKill — Account Recovery", plan_text)
+        messagebox.showinfo("RenKill - Account Recovery", plan_text)
 
     def _do_report(self):
         if not self._scanner:

@@ -404,6 +404,18 @@ The payload families in this ecosystem steal browser credentials, cookies, auth 
 - After RenKill cleanup, run Windows Security Full Scan and Microsoft Defender Offline. Microsoft's guidance is that Offline Scan is specifically useful against persistent threats that hide from the normal running OS.
 - If CRITICAL detections return after cleanup and offline scanning, a full Windows reinstall is still the safest option.
 
+## Late-May 2026 Check-In
+
+Recent reporting still supports the same core local cleanup model: look for user-writable launchers, scheduled tasks, Winlogon/Userinit drift, script-host download chains, browser/session theft, and security-policy tampering. The newer wrinkle is that more campaigns are leaning into trusted-looking surfaces: fake Claude/OpenClaw installer pages, UNC `rundll32` loader commands, staged JavaScript/PowerShell/mshta chains, and legitimate account flows such as Microsoft device-code authentication.
+
+The practical RenKill changes from this pass are intentionally narrow:
+
+- Treat `ACR Stealer` as an exact stealer-family marker instead of letting `acr` match normal Adobe Acrobat paths.
+- Trust known Lenovo Vantage / UDC helper components only when their path and process name match Lenovo's expected layout.
+- Suppress stale Adobe, Lenovo, Edge Update, and OneNote broken-updater residue when no malware context is present.
+- Keep watching for UNC script-host loader commands, CountLoader-style staged loaders, OpenClaw/Hologram fake installers, and fake Claude Code ClickFix lures.
+- Keep account recovery guidance focused on OAuth grants, device-code sign-ins, mailbox rules, active sessions, and trusted devices.
+
 ## Sources
 
 - Cyderes, "RenEngine Loader and HijackLoader: Dual-Stage Attack Chain Fueling Stealer Campaigns" (2026-02-04): https://www.cyderes.com/howler-cell/renengine-loader-hijackloader-attack-chain
@@ -426,6 +438,10 @@ The payload families in this ecosystem steal browser credentials, cookies, auth 
 - Microsoft Support, "Virus and Threat Protection in the Windows Security App" (accessed 2026-04-17): https://support.microsoft.com/en-us/windows/help-protect-my-pc-with-microsoft-defender-offline-9306d528-64bf-4668-5b80-ff533f183d6c
 - BleepingComputer, "FRST Tutorial - How to use Farbar Recovery Scan Tool" (updated 2025-09-11, accessed 2026-04-18): https://www.bleepingcomputer.com/forums/t/781976/frst-tutorial-how-to-use-farbar-recovery-scan-tool/
 - Emsisoft, "How do I run a scan with FRST?" (accessed 2026-04-18): https://www.emsisoft.com/en/help/1738/how-do-i-run-a-scan-with-frst/
+- Red Canary, "Intelligence Insights: May 2026" (accessed 2026-05-29): https://redcanary.com/blog/threat-intelligence/intelligence-insights-may-2026/
+- Netskope, "OpenClaw's Hologram: Fake Installer Ships Rust Infostealer" (2026-05-07, accessed 2026-05-29): https://www.netskope.com/de/blog/openclaw-hologram-fake-installer-ships-rust-infostealer
+- McAfee Labs, "Sinkholing CountLoader: Insights into Its Recent Campaign" (2026-05-13, accessed 2026-05-29): https://www.mcafee.com/blogs/other-blogs/mcafee-labs/sinkholing-countloader-insights-into-its-recent-campaign/
+- Microsoft Security Blog, "Lumma Stealer: Breaking down the delivery techniques and capabilities of a prolific infostealer" (2025-05-21, accessed 2026-05-29): https://www.microsoft.com/en-us/security/blog/2025/05/21/lumma-stealer-breaking-down-the-delivery-techniques-and-capabilities-of-a-prolific-infostealer/
 - Reddit, "Ran renpy's `instaler` might be cooked" (2026-04-18, accessed 2026-04-18): https://www.reddit.com/r/computerviruses/comments/1sok6ko/ran_renpys_instaler_might_be_cooked/
 - Reddit, "accidentally ran the ren'py installer malware and now i have the mr beast crypto scam messages" (2026-04-15, accessed 2026-04-18): https://www.reddit.com/r/computerviruses/comments/1sma7sc/accidentally_ran_the_renpy_installer_malware_and/
 - Reddit, "Friend ran Renpy \"Instaler\" and got discord hacked" (2026-04-15, accessed 2026-04-18): https://www.reddit.com/r/computerviruses/comments/1smgprq/friend_ran_renpy_instaler_and_got_discord_hacked/

@@ -1,4 +1,4 @@
-# RenKill v1.6.3
+# RenKill v1.7.1
 
 RenKill is a Windows cleanup tool for the fake Ren'Py `Instaler.exe` / `setup.exe` loader chain and the nearby infostealer and account-hijacker cases that now show up through trainers, cracks, fake playtests, fake VPNs, fake utilities, and Discord or Steam lures.
 
@@ -7,6 +7,8 @@ The tool is built around behavior and persistence, not one filename. These infec
 RenKill is not a replacement for changing passwords and revoking sessions from a clean device. It is meant to remove the local infection and give the user a clearer answer about whether persistence stayed gone after cleanup.
 
 Current release notes are in [CHANGELOG.md](./CHANGELOG.md).
+
+RenKill now reads the Windows UI language and localizes the visible app shell, key scan-status messaging, exposure warnings, and the critical safety prompts where translations are available, with English fallback when a string has not been translated yet.
 
 ## What RenKill Looks For
 
@@ -18,9 +20,13 @@ Current release notes are in [CHANGELOG.md](./CHANGELOG.md).
 | Scheduled tasks | Logon relaunchers, highest-privilege tasks, script hosts, staged Python payloads, missing task targets |
 | WMI and services | WMI consumers, fake helper services, missing or user-writable service paths |
 | Shell and logon hooks | Winlogon shell/userinit drift, Notify DLLs, Explorer hooks, toast activation residue |
+| FRST-style load points | App Paths hijacks, `netsvcs` service membership, IFEO, KnownDLLs, Active Setup, RunOnceEx, shell hooks |
 | Browser and session state | Chromium, Firefox, Discord, Telegram, Steam, wallet, VPN, password-manager, and FileZilla exposure indicators |
+| Web redirect chains | Generated fake-download hosts, encoded redirect state, suspicious browser-history aftermath, and risky nearby downloads |
 | Security posture | Defender exclusions, Defender policy drift, proxy settings, Security Center service state, suspicious firewall rules |
 | Post-clean confidence | Reboot/rescan comparison for startup persistence and suspicious browser residue |
+
+The scanner keeps a small vendor-noise filter for known updater residue from software such as Adobe, Lenovo Vantage, Edge Update, and OneNote. Those entries are ignored only when they match normal vendor paths or names and do not carry campaign markers.
 
 ## How Cleanup Works
 
@@ -34,12 +40,14 @@ When RenKill quarantines a file, it moves it out of the live path, gives risky p
 
 `ACCOUNT LOCKDOWN` clears local session material from this PC, including supported browser profiles and common desktop app session stores. It helps reduce the chance that leftover local cookies, tokens, or web data can be reused after cleanup.
 
+After `KILL & CLEAN`, RenKill also shows a critical account-safety warning. That warning is intentional: modern infostealers can steal usable browser cookies and app sessions before the local files are removed, so users still need to revoke sessions and secure accounts from a clean device.
+
 After running malware, users should still use a clean device to:
 
 1. Secure the email account tied to Steam, Discord, Google, Microsoft, and other important services.
 2. Change passwords for saved browser accounts.
 3. Revoke active sessions and trusted devices.
-4. Review Discord Authorized Apps, Steam device trust, Steam Web API access, and mailbox forwarding rules.
+4. Review Discord Authorized Apps, Steam device trust, Steam Web API access, Microsoft/Google OAuth grants, unknown device-code sign-ins, and mailbox forwarding rules.
 5. Move crypto assets to fresh wallets if wallet software or browser wallets were present.
 
 ## Typical Use
@@ -52,6 +60,10 @@ After running malware, users should still use a clean device to:
 6. Use `ACCOUNT LOCKDOWN` if the user ran the malware or account abuse already happened.
 7. Reboot and scan again.
 8. Use the exported report if another helper needs a readable case log.
+
+The main window keeps the first-run path simple: `SCAN`, `CLEAN`, `REPAIR`, and `ACCOUNT LOCKDOWN` stay visible. Less common actions live under `UTILITIES` so the tool feels calmer for users who are already stressed.
+
+The red `!` button opens the account-safety warning at any time. It exists because local cleanup and account recovery are different jobs: RenKill can remove local persistence, but stolen cookies and sessions still need clean-device revocation.
 
 ## Trusted Paths
 
@@ -91,7 +103,7 @@ dist\RenKill\RenKill.exe
 GitHub Actions builds release packages from version tags:
 
 ```text
-v1.6.3
+v1.7.1
 ```
 
 The public release ships as a folder package instead of a single packed EXE. That keeps updates more reliable and reduces the amount of AV friction caused by fresh one-file packers.
