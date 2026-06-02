@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.7.2 - 2026-06-02
+
+- Continued the persistence sweep for current infostealer behavior:
+  - added detection for Python SOCKS/proxy persistence patterns seen in ClickFix/PySoxy-style chains
+  - added detection and cleanup allowance for network-active `rundll32.exe` instances with no normal DLL command line
+  - hardened scan helpers so malformed review findings are skipped with a warning instead of crashing the whole scan
+  - fixed the `NETSVCS REVIEW` registry unpack bug that could stop a scan with `expected 3, got 2`
+  - cleaned corrupted section separators from the source/log text so scan output stays readable
+
 ## v1.7.1 - 2026-05-29
 
 - Tuned scan accuracy using the 2026-05-30 RenKill reports:

@@ -1,4 +1,4 @@
-# RenKill v1.7.1
+# RenKill v1.7.2
 
 RenKill is a Windows cleanup tool for the fake Ren'Py `Instaler.exe` / `setup.exe` loader chain and the nearby infostealer and account-hijacker cases that now show up through trainers, cracks, fake playtests, fake VPNs, fake utilities, and Discord or Steam lures.
 
@@ -103,7 +103,7 @@ dist\RenKill\RenKill.exe
 GitHub Actions builds release packages from version tags:
 
 ```text
-v1.7.1
+v1.7.2
 ```
 
 The public release ships as a folder package instead of a single packed EXE. That keeps updates more reliable and reduces the amount of AV friction caused by fresh one-file packers.

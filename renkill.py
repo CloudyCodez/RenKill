@@ -46,7 +46,7 @@ except ImportError:
 
 # IOC definitions
 
-VERSION = "1.7.1"
+VERSION = "1.7.2"
 TOOL_NAME = "RenKill"
 UPDATE_REPO_OWNER = "CloudyCodez"
 UPDATE_REPO_NAME = "RenKill"
@@ -308,6 +308,10 @@ PROCESS_IOC_MARKERS = {
     "openclaw-install",
     "claude-desktop.gitlab.io",
     "systembackgroundupdate",
+    "pysoxy",
+    "proxychains",
+    "socks5",
+    "ultahostserviceid",
 }
 
 SUSPICIOUS_DLL_NAMES = {
@@ -1484,6 +1488,30 @@ STARTUP_DOWNLOADER_TOKENS = (
     "wget ",
     "/load",
 )
+PYTHON_PROXY_MARKERS = (
+    "pysoxy",
+    "socks5",
+    "socks proxy",
+    "socksserver",
+    "proxychains",
+    "asyncio.start_server",
+    "socketserver",
+    "socket.socket",
+)
+PYTHON_PROXY_CONTEXT_MARKERS = (
+    "-m ",
+    ".py",
+    "\\appdata\\",
+    "\\programdata\\",
+    "\\temp\\",
+    "base64",
+    "frombase64string",
+    "downloadstring",
+    "invoke-webrequest",
+    "iwr ",
+    "curl ",
+    "wget ",
+)
 SUSPICIOUS_STREAM_NAME_MARKERS = (
     "appdata",
     "asar",
@@ -1739,6 +1767,7 @@ PERSISTENCE_THREAT_CATEGORIES = {
     "Persistence Artifact",
     "Persistence Staging Directory",
     "Policy Persistence",
+    "Python Proxy Persistence",
     "Registry Persistence",
     "RunOnceEx Persistence",
     "SafeBoot Review",
@@ -1784,6 +1813,8 @@ RENLOADER_CORRELATION_CATEGORIES = {
     "Startup-Launched Process",
     "Stealth Profiling Script Host",
     "Stealer Script Host",
+    "Python Proxy Persistence",
+    "Suspicious Rundll32 Network Process",
     "Compiler Stage Process",
     "Compiled Temp Stage Directory",
     "Suspicious Loader Stage Directory",
@@ -1808,9 +1839,11 @@ PROCESS_REMEDIATION_CATEGORIES = {
     "Paranoid Script Host",
     "Persistence Process",
     "Process in Temp",
+    "Python Proxy Persistence",
     "Startup-Launched Process",
     "Stealth Profiling Script Host",
     "Stealer Script Host",
+    "Suspicious Rundll32 Network Process",
     "Suspicious Process",
     "Suspicious Userland Process",
     "WMI Persistence",
@@ -2394,6 +2427,14 @@ class ScanEngine:
         log_trust_path = trust_path if trust_path is not None else normalized_path
         self.log(f"{description}", severity, log_trust_path)
         return t
+
+    def _normalize_finding(self, finding, source):
+        if not finding:
+            return None
+        if isinstance(finding, (list, tuple)) and len(finding) == 3:
+            return finding
+        self.log(f"{source} returned a malformed finding and was skipped: {finding}", "WARN")
+        return None
 
     def _note_exposure(self, description, path=None):
         note = (description, path or "")
@@ -5059,6 +5100,31 @@ class ScanEngine:
         )
 
     @staticmethod
+    def _looks_like_python_proxy_chain(cmdline):
+        lowered = str(cmdline or "").lower()
+        if not lowered or "python" not in lowered:
+            return False
+        proxy_hits = sum(1 for marker in PYTHON_PROXY_MARKERS if marker in lowered)
+        if proxy_hits <= 0:
+            return False
+        context_hits = sum(1 for marker in PYTHON_PROXY_CONTEXT_MARKERS if marker in lowered)
+        return context_hits >= 1 or proxy_hits >= 2
+
+    @staticmethod
+    def _looks_like_blank_network_rundll32(pname, cmdline, connected):
+        if str(pname or "").lower() != "rundll32.exe" or not connected:
+            return False
+        lowered = str(cmdline or "").strip().lower()
+        if not lowered:
+            return True
+        if "," in lowered or ".dll" in lowered or "\\\\" in lowered:
+            return False
+        parts = [part for part in re.split(r"\s+", lowered.strip('"')) if part]
+        if len(parts) <= 1:
+            return True
+        return parts[-1].endswith("\\rundll32.exe") or parts[-1] == "rundll32.exe"
+
+    @staticmethod
     def _looks_like_logon_persistence_builder(cmdline):
         lowered = str(cmdline or "").lower()
         if not lowered:
@@ -5382,6 +5448,8 @@ class ScanEngine:
             return False, target
         if self._is_local_tool_context(pexe, cmdline):
             return True, target
+        if self._looks_like_blank_network_rundll32(pname, cmdline, self._pid_has_external_connection(pid)):
+            return False, target
         if self._is_protected_core_process(pname, pexe) or self._is_protected_security_process(pname, pexe):
             return True, target
         if self._has_strong_campaign_context(pname, pexe, cmdline):
@@ -6849,6 +6917,13 @@ class ScanEngine:
                 f"Scheduled task launches a temp compiler-stage payload build: {task_label}",
             )
 
+        if self._looks_like_python_proxy_chain(blob):
+            return (
+                "HIGH",
+                "Malicious Scheduled Task",
+                f"Scheduled task relaunches a Python SOCKS/proxy access chain: {task_label}",
+            )
+
         if self._looks_like_temp_stage_launcher(normalized_executable):
             score = self._score_startup_temp_launcher(executable, arguments, working_directory)
             if score >= 3 and not self._is_safe_process_context(executable_name, executable, arguments, allow_metadata=True):
@@ -7851,7 +7926,7 @@ class ScanEngine:
         return pid in self._module_scan_pid_targets
 
     def scan_process_modules(self):
-        self.log("── MODULE SCAN ────────────────────────────────────────", "SECTION")
+        self.log("MODULE SCAN", "SECTION")
         if not PSUTIL_OK or not hasattr(psutil.Process, "memory_maps"):
             self.log("psutil memory map support unavailable - module scan skipped", "WARN")
             return
@@ -7927,7 +8002,7 @@ class ScanEngine:
                 self.log(f"Module scan warning: {exc}", "WARN")
 
     def scan_startup_persistence(self):
-        self.log("── STARTUP ARTIFACT SCAN ─────────────────────────────", "SECTION")
+        self.log("STARTUP ARTIFACT SCAN", "SECTION")
         appdata = os.environ.get("APPDATA", "")
         programdata = os.environ.get("PROGRAMDATA", "")
         startup_roots = []
@@ -7944,6 +8019,9 @@ class ScanEngine:
                     fpath = os.path.join(root, fname)
                     finding = self._evaluate_startup_file_entry(fpath)
                     if finding:
+                        finding = self._normalize_finding(finding, "startup file review")
+                        if not finding:
+                            continue
                         severity, category, description = finding
                         self._add(
                             severity,
@@ -7979,6 +8057,9 @@ class ScanEngine:
                     row.get("Arguments"),
                     row.get("WorkingDirectory"),
                 )
+                if not finding:
+                    continue
+                finding = self._normalize_finding(finding, "shortcut review")
                 if not finding:
                     continue
                 severity, category, description = finding
@@ -8185,6 +8266,9 @@ class ScanEngine:
                         "Broken Service Residue",
                         f"Service still references a missing payload and should be cleaned: {name or display_name} -> {missing['raw']} [{reason_text}]",
                     )
+                finding = self._normalize_finding(finding, "service scan")
+                if not finding:
+                    continue
                 severity, category, description = finding
                 self._add(
                     severity,
@@ -8294,6 +8378,14 @@ class ScanEngine:
             pass
         return value
 
+    @staticmethod
+    def _coerce_registry_name_list(value):
+        if isinstance(value, str):
+            return [name.strip() for name in value.split("\x00") if name.strip()]
+        if isinstance(value, (list, tuple)):
+            return [str(name or "").strip() for name in value if str(name or "").strip()]
+        return []
+
     def scan_netsvcs(self):
         self.log("NETSVCS REVIEW", "SECTION")
         if not WINREG_OK:
@@ -8307,7 +8399,7 @@ class ScanEngine:
             return
 
         try:
-            names, _, _ = winreg.QueryValueEx(key, "netsvcs")
+            names, _ = winreg.QueryValueEx(key, "netsvcs")
         except OSError:
             names = []
         try:
@@ -8315,36 +8407,37 @@ class ScanEngine:
         except Exception:
             pass
 
-        if isinstance(names, str):
-            service_names = [name for name in names.split("\x00") if name]
-        else:
-            service_names = [str(name or "").strip() for name in names if str(name or "").strip()]
+        service_names = self._coerce_registry_name_list(names)
 
         for service_name in service_names:
             if self._stop:
                 return
-            image_path = self._service_image_path(service_name)
-            location = rf"HKLM\{subkey}[netsvcs:{service_name}]"
-            if image_path is None:
-                if self._looks_random(service_name) or self._contains_marker(service_name.lower(), PROCESS_IOC_MARKERS):
-                    self._add(
-                        "MEDIUM",
-                        "Netsvcs Review",
-                        f"netsvcs lists a missing suspicious service name: {service_name}",
-                        location,
-                    )
-                continue
+            try:
+                image_path = self._service_image_path(service_name)
+                location = rf"HKLM\{subkey}[netsvcs:{service_name}]"
+                lowered_name = service_name.lower()
+                if image_path is None:
+                    if self._looks_random(service_name) or self._contains_marker(lowered_name, PROCESS_IOC_MARKERS):
+                        self._add(
+                            "MEDIUM",
+                            "Netsvcs Review",
+                            f"netsvcs lists a missing suspicious service name: {service_name}",
+                            location,
+                        )
+                    continue
 
-            if not image_path or self._is_local_tool_context(image_path):
-                continue
-            if self._value_has_malware_signal(image_path):
-                self._add(
-                    "HIGH",
-                    "Netsvcs Review",
-                    f"netsvcs service {service_name} points at a suspicious service image: {image_path}",
-                    location,
-                    lambda service=service_name: self._delete_service(service),
-                )
+                if not image_path or self._is_local_tool_context(image_path):
+                    continue
+                if self._value_has_malware_signal(image_path):
+                    self._add(
+                        "HIGH",
+                        "Netsvcs Review",
+                        f"netsvcs service {service_name} points at a suspicious service image: {image_path}",
+                        location,
+                        lambda service=service_name: self._delete_service(service),
+                    )
+            except Exception as exc:
+                self.log(f"netsvcs review warning for {service_name}: {exc}", "WARN")
 
     def scan_wmi_persistence(self):
         self.log("WMI PERSISTENCE SCAN", "SECTION")
@@ -9306,7 +9399,7 @@ class ScanEngine:
         except Exception:
             return False
 
-    # ── Filesystem scan ─────────────────────────────────────────────────────
+    # Filesystem scan
 
     def scan_filesystem(self):
         roots = [root for root in SCAN_ROOTS if root and os.path.isdir(root)]
@@ -9324,7 +9417,7 @@ class ScanEngine:
                     except Exception as exc:
                         self.log(f"Walk error: {exc}", "WARN")
             return
-        self.log("── FILESYSTEM SCAN ────────────────────────────────────", "SECTION")
+        self.log("FILESYSTEM SCAN", "SECTION")
         visited = 0
 
         for root in SCAN_ROOTS:
@@ -9528,15 +9621,24 @@ class ScanEngine:
 
     def _collect_connected_pids(self):
         connected_pids = set()
-        if not self.paranoid:
-            return connected_pids
         try:
             for conn in psutil.net_connections(kind="inet"):
                 if conn.pid and self._has_external_raddr(conn):
                     connected_pids.add(conn.pid)
         except Exception as exc:
-            self.log(f"Paranoid network correlation skipped: {exc}", "WARN")
+            self.log(f"Process network correlation skipped: {exc}", "WARN")
         return connected_pids
+
+    def _pid_has_external_connection(self, pid):
+        if not pid or not PSUTIL_OK:
+            return False
+        try:
+            for conn in psutil.net_connections(kind="inet"):
+                if conn.pid == pid and self._has_external_raddr(conn):
+                    return True
+        except Exception:
+            return False
+        return False
 
     def _collect_process_rows(self):
         proc_rows = []
@@ -9584,6 +9686,26 @@ class ScanEngine:
         if pname in {"cmd.exe", "powershell.exe", "pwsh.exe", "python.exe", "pythonw.exe"} and (
             self._is_local_tool_context(pexe, cmdline) or self._is_project_like_path(self._extract_command_target(cmdline) or cmdline)
         ):
+            return
+        if self._looks_like_blank_network_rundll32(pname, cmdline, pid in connected_pids):
+            self._add_process_seed(
+                seeds,
+                pid,
+                "HIGH",
+                "Suspicious Rundll32 Network Process",
+                f"rundll32.exe has an external network connection with no normal DLL command line: PID {pid}",
+                pexe or cmdline or pname,
+            )
+            return
+        if pname in {"python.exe", "pythonw.exe"} and self._looks_like_python_proxy_chain(cmdline):
+            self._add_process_seed(
+                seeds,
+                pid,
+                "HIGH" if pid in connected_pids else "MEDIUM",
+                "Python Proxy Persistence",
+                f"Python process looks like a SOCKS/proxy access chain: {pname} (PID {pid})  {cmdline}",
+                pexe or cmdline,
+            )
             return
         if pname in {"powershell.exe", "pwsh.exe", "cmd.exe"} and self._looks_like_vm_profile_powershell(cmdline_lower):
             self._add_process_seed(
@@ -9859,10 +9981,10 @@ class ScanEngine:
                 lambda p=pid: self._kill_process_tree(p),
             )
 
-    # ── Process scan ────────────────────────────────────────────────────────
+    # Process scan
 
     def scan_processes(self):
-        self.log("── PROCESS SCAN ───────────────────────────────────────", "SECTION")
+        self.log("PROCESS SCAN", "SECTION")
         if not PSUTIL_OK:
             self.log("psutil unavailable - process scan skipped", "WARN")
             return
@@ -9882,10 +10004,10 @@ class ScanEngine:
         self._module_scan_pid_targets = set(seeds)
         self._flush_process_hits(seeds)
 
-    # ── Network scan ────────────────────────────────────────────────────────
+    # Network scan
 
     def scan_network(self):
-        self.log("── NETWORK SCAN ───────────────────────────────────────", "SECTION")
+        self.log("NETWORK SCAN", "SECTION")
         if not PSUTIL_OK:
             self.log("psutil unavailable - network scan skipped", "WARN")
             return
@@ -9933,10 +10055,10 @@ class ScanEngine:
         except Exception as exc:
             self.log(f"Network scan error: {exc}", "WARN")
 
-    # ── Scheduled task scan ─────────────────────────────────────────────────
+    # Scheduled task scan
 
     def scan_scheduled_tasks(self):
-        self.log("── SCHEDULED TASK SCAN ────────────────────────────────", "SECTION")
+        self.log("SCHEDULED TASK SCAN", "SECTION")
         try:
             for row in self._collect_scheduled_task_rows():
                 if self._stop:
@@ -9952,6 +10074,9 @@ class ScanEngine:
                 )
                 if not finding:
                     continue
+                finding = self._normalize_finding(finding, "scheduled task scan")
+                if not finding:
+                    continue
                 severity, category, description = finding
                 task_name = f"{row.get('TaskPath') or ''}{row.get('TaskName') or ''}"
                 self._add(
@@ -9964,10 +10089,10 @@ class ScanEngine:
         except Exception as exc:
             self.log(f"Task scan error: {exc}", "WARN")
 
-    # ── Registry scan ───────────────────────────────────────────────────────
+    # Registry scan
 
     def scan_registry(self):
-        self.log("── REGISTRY SCAN ──────────────────────────────────────", "SECTION")
+        self.log("REGISTRY SCAN", "SECTION")
         if not WINREG_OK:
             self.log("winreg unavailable - registry scan skipped", "WARN")
             return
@@ -10170,6 +10295,9 @@ class ScanEngine:
             finding = self._looks_suspicious_policy_persistence(row)
             if not finding:
                 continue
+            finding = self._normalize_finding(finding, "policy persistence review")
+            if not finding:
+                continue
             severity, category, description = finding
             location = f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]"
             action = None
@@ -10195,6 +10323,9 @@ class ScanEngine:
             finding = self._looks_suspicious_runonceex(row)
             if not finding:
                 continue
+            finding = self._normalize_finding(finding, "RunOnceEx review")
+            if not finding:
+                continue
             severity, category, description = finding
             location = f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]"
             self._add(
@@ -10215,6 +10346,9 @@ class ScanEngine:
             if self._stop:
                 return
             finding = self._looks_suspicious_active_setup(row)
+            if not finding:
+                continue
+            finding = self._normalize_finding(finding, "Active Setup review")
             if not finding:
                 continue
             severity, category, description = finding
@@ -10412,6 +10546,9 @@ class ScanEngine:
             finding = self._looks_suspicious_logon_persistence(row)
             if not finding:
                 continue
+            finding = self._normalize_finding(finding, "logon persistence review")
+            if not finding:
+                continue
             severity, category, description = finding
             location = f"{row.get('HiveName')}\\{row.get('Subkey')}[{row.get('ValueName')}]"
             action = None
@@ -10435,6 +10572,9 @@ class ScanEngine:
             if self._stop:
                 return
             finding = self._looks_suspicious_explorer_hijack(row)
+            if not finding:
+                continue
+            finding = self._normalize_finding(finding, "Explorer hijack review")
             if not finding:
                 continue
             severity, category, description = finding
@@ -10462,6 +10602,9 @@ class ScanEngine:
             finding = self._looks_suspicious_toast_activation(row)
             if not finding:
                 continue
+            finding = self._normalize_finding(finding, "notification registration review")
+            if not finding:
+                continue
             severity, category, description = finding
             location = f"{row.get('HiveName')}\\{row.get('Subkey')}[(Default)]"
             self._add(
@@ -10482,6 +10625,9 @@ class ScanEngine:
             if self._stop:
                 return
             finding = self._looks_suspicious_shell_persistence(row.get("ValueName"), row.get("Value"))
+            if not finding:
+                continue
+            finding = self._normalize_finding(finding, "shell persistence review")
             if not finding:
                 continue
             severity, category, description = finding
@@ -11348,7 +11494,7 @@ class ScanEngine:
         self._capture_pre_cleanup_snapshot()
 
         file_cleanup_categories = self._active_file_remediation_categories()
-        self.log("── EXECUTING REMEDIATION ──────────────────────────────", "SECTION")
+        self.log("EXECUTING REMEDIATION", "SECTION")
 
         self._run_remediation_bucket(PROCESS_REMEDIATION_CATEGORIES)
 
@@ -11361,8 +11507,8 @@ class ScanEngine:
         self._run_remediation_bucket({"Malicious Scheduled Task", "Registry Persistence"})
 
         self.log(
-            f"── REMEDIATION DONE  |  {self.killed} process(es) killed  "
-            f"{self.removed} file(s)/entry(ies) removed ──",
+            f"REMEDIATION DONE  |  {self.killed} process(es) killed  "
+            f"{self.removed} file(s)/entry(ies) removed",
             "SECTION"
         )
 
@@ -11380,7 +11526,7 @@ class ScanEngine:
         self._try_create_restore_point("repair")
         starting_removed = self.removed
 
-        self.log("── REPAIRING PROTECTION DEFAULTS ─────────────────────", "SECTION")
+        self.log("REPAIRING PROTECTION DEFAULTS", "SECTION")
         ordered_categories = (
             "Browser Policy Review",
             "Defender Exclusion",
@@ -11403,7 +11549,7 @@ class ScanEngine:
             self.log(f"Could not flush Windows DNS cache after protection repair: {dns_detail}", "WARN")
 
         self.log(
-            f"── PROTECTION REPAIR DONE  |  {self.removed - starting_removed} setting(s)/rule(s) repaired ──",
+            f"PROTECTION REPAIR DONE  |  {self.removed - starting_removed} setting(s)/rule(s) repaired",
             "SECTION",
         )
         self._log_recovery_snapshot_summary()
@@ -13483,13 +13629,13 @@ class App(tk.Tk):
                     f"Apps affected    : {app_list}\n\n"
                     f"This clears LOCAL browser, Discord, Telegram, Steam, and related session-style storage on this PC.\n"
                     f"You still need to do the following from a CLEAN device:\n"
-                    f"  • Change the tied email password first, then app/site passwords\n"
-                    f"  • Review mailbox forwarding rules, recovery methods, and app passwords\n"
-                    f"  • Revoke remote sessions and deauthorize trusted devices\n"
-                    f"  • Review Discord Authorized Apps\n"
-                    f"  • Review Steam login activity, device trust, and trade/market actions\n"
-                    f"  • Turn off browser sync and clear synced data before re-enabling it\n"
-                    f"  • Move crypto to fresh wallet addresses\n"
+                    f"  - Change the tied email password first, then app/site passwords\n"
+                    f"  - Review mailbox forwarding rules, recovery methods, and app passwords\n"
+                    f"  - Revoke remote sessions and deauthorize trusted devices\n"
+                    f"  - Review Discord Authorized Apps\n"
+                    f"  - Review Steam login activity, device trust, and trade/market actions\n"
+                    f"  - Turn off browser sync and clear synced data before re-enabling it\n"
+                    f"  - Move crypto to fresh wallet addresses\n"
                 )
                 self._btn_sessions.configure(state="normal")
                 self._restore_update_button_state()
