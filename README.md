@@ -1,5 +1,9 @@
 # RenKill v1.7.2
 
+
+THIS PROJECT HAS BEEN DEPRECATED. FOR UPDATED UTILITIES SURROUNDING THIS VIRUS, PLEASE VISIT: https://github.com/CloudyCodez/RenGuard
+
+
 RenKill is a Windows cleanup tool for the fake Ren'Py `Instaler.exe` / `setup.exe` loader chain and the nearby infostealer and account-hijacker cases that now show up through trainers, cracks, fake playtests, fake VPNs, fake utilities, and Discord or Steam lures.
 
 The tool is built around behavior and persistence, not one filename. These infections rotate names quickly, but they still tend to leave the same kinds of evidence: staged payload folders, scheduled tasks, startup relaunchers, policy drift, suspicious browser or extension state, and account-session fallout.
